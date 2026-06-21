@@ -1,0 +1,418 @@
+2026-06-20 07:48:00,284 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 07:48:00,289 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 07:48:16,063 [INFO] main: Новый дайджест: BSB +12.23% score 86
+2026-06-20 07:48:16,075 [INFO] main: Окно публикации открыто, публикуем дайджест BSB
+2026-06-20 07:48:16,876 [INFO] text_generator: Сгенерирован текст поста для BSB: $BSB сработал в плюс, рост составил +12.23%, с результатом 86, можно ли было ожидать такого результата 🤔
+Не финансовая рекомендация, управляй риском сам.
+2026-06-20 07:48:17,985 [INFO] binance_publisher: Пост успешно опубликован, id=336034599001426
+2026-06-20 07:48:17,987 [INFO] main: Опубликовано: {'id': 336034599001426, 'status': 'ok'}
+2026-06-20 07:48:18,018 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 07:48:18,018 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 08:03:21,989 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 08:03:21,996 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 08:03:37,691 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 08:03:37,691 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 13:20:29,053 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 13:20:29,067 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 13:20:30,272 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 13:20:30,272 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 13:44:49,881 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 13:44:49,892 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 13:44:50,657 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 13:44:50,657 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:51:42,847 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:51:42,855 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:51:42,856 [INFO] main: === Начало цикла ===
+2026-06-20 18:51:42,858 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3870)
+2026-06-20 18:51:42,858 [INFO] telegram_listener: Загружаем https://t.me/s/resultrsi
+2026-06-20 18:51:43,505 [INFO] telegram_listener: Страница загружена успешно, статус: 200
+2026-06-20 18:51:43,530 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:51:43,544 [INFO] telegram_listener: Новых постов найдено: 15 (ID от 3871 до 3885)
+2026-06-20 18:51:43,545 [INFO] telegram_listener: После фильтрации (с текстом или картинкой): 1 постов
+2026-06-20 18:51:43,546 [INFO] main: Новый дайджест: UB +6.63% score 84
+2026-06-20 18:51:43,561 [INFO] main: Окно публикации открыто, тип отложенного поста: digest
+2026-06-20 18:51:43,561 [INFO] main: Публикуем дайджест UB
+2026-06-20 18:51:44,336 [INFO] text_generator: Сгенерирован текст поста для UB: $UB сработал в плюс, прирост составил +6.63% и score 84, интересно, смог бы он удержать этот уровень в будущем 🤔
+Не финансовая рекомендация, управляй риском сам.
+2026-06-20 18:51:45,030 [WARNING] chart_generator: Не удалось получить данные для графика UB: 400 Client Error: Bad Request for url: https://api.binance.com/api/v3/klines?symbol=UBUSDT&interval=1h&limit=48
+2026-06-20 18:51:45,946 [INFO] binance_publisher: Пост успешно опубликован, id=336197654797825
+2026-06-20 18:51:45,950 [INFO] main: Опубликовано: {'id': 336197654797825, 'status': 'ok'}
+2026-06-20 18:51:45,972 [INFO] main: === Конец цикла ===
+2026-06-20 18:51:45,975 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:51:45,976 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:05:14,533 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:05:14,540 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:05:14,541 [INFO] main: === Начало цикла ===
+2026-06-20 18:05:14,552 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 0)
+2026-06-20 18:05:14,553 [INFO] telegram_listener: Загружаем https://t.me/s/resultrsi
+2026-06-20 18:05:15,328 [INFO] telegram_listener: Страница загружена успешно, статус: 200
+2026-06-20 18:05:15,352 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:05:15,367 [INFO] telegram_listener: Новых постов найдено: 20 (ID от 3867 до 3886)
+2026-06-20 18:05:15,367 [INFO] telegram_listener: После фильтрации (с текстом или картинкой): 1 постов
+2026-06-20 18:05:15,370 [INFO] main: Новый дайджест: UB +6.63% score 84
+2026-06-20 18:05:15,386 [INFO] main: Окно публикации открыто, тип отложенного поста: digest
+2026-06-20 18:05:15,386 [INFO] main: Публикуем дайджест UB
+2026-06-20 18:05:16,322 [INFO] text_generator: Сгенерирован текст поста для UB: $UB сработал в плюс на таймфрейме 4h, рост составил +6.63% и score 84, можно ли было ожидать такого результата? 🤔
+Не финансовая рекомендация, управляй риском сам.
+2026-06-20 18:05:16,324 [INFO] main: К посту добавлена ссылка на монету: $UBUSDT
+2026-06-20 18:05:16,325 [INFO] main: Картинки из Telegram нет, генерирую график через Binance API...
+2026-06-20 18:05:16,326 [WARNING] main: Ошибка при генерации графика для UB: module 'chart_generator' has no attribute 'generate_chart_image'
+2026-06-20 18:05:17,304 [INFO] binance_publisher: Пост успешно опубликован, id=336200978041026
+2026-06-20 18:05:17,306 [INFO] main: Опубликовано: {'id': 336200978041026, 'status': 'ok'}
+2026-06-20 18:05:17,327 [INFO] main: === Конец цикла ===
+2026-06-20 18:05:17,329 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:05:17,329 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:06:52,470 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:06:52,478 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:06:52,478 [INFO] main: === Начало цикла ===
+2026-06-20 18:06:52,480 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3886)
+2026-06-20 18:06:52,481 [INFO] telegram_listener: Загружаем https://t.me/s/resultrsi
+2026-06-20 18:06:53,111 [INFO] telegram_listener: Страница загружена успешно, статус: 200
+2026-06-20 18:06:53,135 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:06:53,136 [INFO] telegram_listener: Новых постов не найдено
+2026-06-20 18:06:53,136 [INFO] telegram_listener: После фильтрации (с текстом или картинкой): 0 постов
+2026-06-20 18:06:53,141 [INFO] main: === Конец цикла ===
+2026-06-20 18:06:53,142 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:06:53,143 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:10:48,834 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:10:48,842 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:10:48,842 [INFO] main: === Начало цикла ===
+2026-06-20 18:10:48,854 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 0)
+2026-06-20 18:10:48,854 [INFO] telegram_listener: Загружаем https://t.me/s/resultrsi
+2026-06-20 18:10:49,491 [INFO] telegram_listener: Страница загружена успешно, статус: 200
+2026-06-20 18:10:49,517 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:10:49,531 [INFO] telegram_listener: Новых постов найдено: 20 (ID от 3867 до 3886)
+2026-06-20 18:10:49,531 [INFO] telegram_listener: После фильтрации (с текстом или картинкой): 1 постов
+2026-06-20 18:10:49,533 [INFO] main: Новый дайджест: UB +6.63% score 84
+2026-06-20 18:10:49,546 [INFO] main: Окно публикации открыто, тип отложенного поста: digest
+2026-06-20 18:10:49,546 [INFO] main: Публикуем дайджест UB
+2026-06-20 18:10:50,464 [INFO] text_generator: Сгенерирован текст поста для UB: $UB на таймфрейме 4h сработал в плюс, рост составил +6.63% с score 84, можно ли было ожидать такой результат 🤔 
+Не финансовая рекомендация, управляй риском сам.
+2026-06-20 18:10:50,466 [INFO] main: К посту добавлена ссылка на монету: $UBUSDT
+2026-06-20 18:10:50,466 [INFO] main: Картинки из Telegram нет, генерирую график через Binance API...
+2026-06-20 18:10:50,466 [WARNING] main: Ошибка при генерации графика для UB: module 'chart_generator' has no attribute 'generate_chart_image'
+2026-06-20 18:10:51,397 [INFO] binance_publisher: Пост успешно опубликован, id=336202346432706
+2026-06-20 18:10:51,399 [INFO] main: Опубликовано: {'id': 336202346432706, 'status': 'ok'}
+2026-06-20 18:10:51,423 [INFO] main: === Конец цикла ===
+2026-06-20 18:10:51,424 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:10:51,425 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:12:41,580 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:12:41,587 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:12:41,587 [INFO] main: === Начало цикла ===
+2026-06-20 18:12:41,600 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 0)
+2026-06-20 18:12:41,600 [INFO] telegram_listener: Загружаем https://t.me/s/resultrsi
+2026-06-20 18:12:42,217 [INFO] telegram_listener: Страница загружена успешно, статус: 200
+2026-06-20 18:12:42,242 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:12:42,257 [INFO] telegram_listener: Новых постов найдено: 20 (ID от 3867 до 3886)
+2026-06-20 18:12:42,257 [INFO] telegram_listener: После фильтрации (с текстом или картинкой): 1 постов
+2026-06-20 18:12:42,259 [INFO] main: Проверяю пост: text=True, image_url=None
+2026-06-20 18:12:42,259 [INFO] main: ❌ Картинка не найдена в посте
+2026-06-20 18:12:42,259 [INFO] main: Новый дайджест: UB +6.63% score 84
+2026-06-20 18:12:42,276 [INFO] main: Окно публикации открыто, тип отложенного поста: digest
+2026-06-20 18:12:42,276 [INFO] main: Публикуем дайджест UB
+2026-06-20 18:12:43,132 [INFO] text_generator: Сгенерирован текст поста для UB: $UB сработал в плюс на 4h таймфрейме, рост составил +6.63% и score 84, можно ли было ожидать такого результата, или это просто удача 🤔
+Не финансовая рекомендация, управляй риском сам.
+2026-06-20 18:12:43,133 [INFO] main: К посту добавлена ссылка на монету: $UBUSDT
+2026-06-20 18:12:43,134 [INFO] main: Картинки из Telegram нет, генерирую график через Binance API...
+2026-06-20 18:12:43,134 [WARNING] main: Ошибка при генерации графика для UB: module 'chart_generator' has no attribute 'generate_chart_image'
+2026-06-20 18:12:44,175 [INFO] binance_publisher: Пост успешно опубликован, id=336202808332465
+2026-06-20 18:12:44,177 [INFO] main: Опубликовано: {'id': 336202808332465, 'status': 'ok'}
+2026-06-20 18:12:44,196 [INFO] main: === Конец цикла ===
+2026-06-20 18:12:44,198 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:12:44,198 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:17:07,713 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:17:07,720 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:17:07,721 [INFO] main: === Начало цикла ===
+2026-06-20 18:17:07,723 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3886)
+2026-06-20 18:17:07,723 [INFO] telegram_listener: Загружаем https://t.me/s/resultrsi
+2026-06-20 18:17:08,384 [INFO] telegram_listener: Страница загружена успешно, статус: 200
+2026-06-20 18:17:08,421 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:17:08,422 [INFO] telegram_listener: Пост 3887: text=False, photo_wrap=False
+2026-06-20 18:17:08,423 [INFO] telegram_listener: Пост 3888: text=False, photo_wrap=False
+2026-06-20 18:17:08,438 [INFO] telegram_listener: Новых постов найдено: 2 (ID от 3887 до 3888)
+2026-06-20 18:17:08,438 [INFO] telegram_listener: После фильтрации (с текстом или картинкой): 0 постов
+2026-06-20 18:17:08,443 [INFO] main: === Конец цикла ===
+2026-06-20 18:17:08,445 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:17:08,445 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:18:58,048 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:18:58,056 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:18:58,056 [INFO] main: === Начало цикла ===
+2026-06-20 18:18:58,059 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3888)
+2026-06-20 18:18:58,719 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:18:58,720 [INFO] telegram_listener: 📸 Пост 3889: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:18:58,720 [INFO] telegram_listener: 📸 Пост 3890: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:18:58,733 [INFO] telegram_listener: После фильтрации: 2 постов с текстом или картинкой
+2026-06-20 18:18:58,735 [INFO] main: Проверяю пост: text=False, image_url=https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg
+2026-06-20 18:18:59,449 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:18:59,460 [INFO] main: Проверяю пост: text=False, image_url=https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg
+2026-06-20 18:19:00,065 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:19:00,069 [INFO] main: === Конец цикла ===
+2026-06-20 18:19:00,070 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:19:00,070 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:21:06,488 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:21:06,497 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:21:06,497 [INFO] main: === Начало цикла ===
+2026-06-20 18:21:06,499 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3890)
+2026-06-20 18:21:22,270 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:21:22,271 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
+2026-06-20 18:21:22,274 [INFO] main: === Конец цикла ===
+2026-06-20 18:21:22,275 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:21:22,276 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:22:30,233 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:22:30,240 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:22:30,240 [INFO] main: === Начало цикла ===
+2026-06-20 18:22:30,242 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3890)
+2026-06-20 18:22:30,885 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:22:30,885 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
+2026-06-20 18:22:30,889 [INFO] main: === Конец цикла ===
+2026-06-20 18:22:30,890 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:22:30,890 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:28:44,372 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:28:44,378 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:28:44,379 [INFO] main: === Начало цикла ===
+2026-06-20 18:28:44,390 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 0)
+2026-06-20 18:28:45,118 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:28:45,119 [INFO] telegram_listener: 📸 Пост 3871: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,119 [INFO] telegram_listener: 📸 Пост 3872: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,120 [INFO] telegram_listener: 📸 Пост 3873: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,120 [INFO] telegram_listener: 📸 Пост 3874: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,121 [INFO] telegram_listener: 📸 Пост 3875: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,121 [INFO] telegram_listener: 📸 Пост 3876: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,121 [INFO] telegram_listener: 📸 Пост 3877: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,121 [INFO] telegram_listener: 📸 Пост 3878: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,122 [INFO] telegram_listener: 📸 Пост 3879: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,122 [INFO] telegram_listener: 📸 Пост 3880: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,122 [INFO] telegram_listener: 📸 Пост 3881: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,123 [INFO] telegram_listener: 📸 Пост 3882: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,123 [INFO] telegram_listener: 📸 Пост 3883: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,124 [INFO] telegram_listener: 📸 Пост 3884: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,124 [INFO] telegram_listener: 📸 Пост 3885: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,124 [INFO] telegram_listener: 📸 Пост 3886: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,125 [INFO] telegram_listener: 📸 Пост 3887: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,125 [INFO] telegram_listener: 📸 Пост 3888: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,125 [INFO] telegram_listener: 📸 Пост 3889: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,126 [INFO] telegram_listener: 📸 Пост 3890: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:28:45,139 [INFO] telegram_listener: После фильтрации: 20 постов с текстом или картинкой
+2026-06-20 18:28:45,815 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:46,472 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:47,148 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:47,767 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:48,482 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:49,062 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:49,679 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:50,311 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:50,996 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:51,632 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:52,216 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:52,731 [WARNING] image_analyzer: Не удалось распознать картинку https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg: 429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions
+2026-06-20 18:28:53,181 [WARNING] image_analyzer: Не удалось распознать картинку https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg: 429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions
+2026-06-20 18:28:53,183 [INFO] main: ✅ К дайджесту UB добавлена картинка
+2026-06-20 18:28:53,183 [INFO] main: Новый дайджест: UB +6.63% score 84
+2026-06-20 18:28:53,705 [WARNING] image_analyzer: Не удалось распознать картинку https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg: 429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions
+2026-06-20 18:28:54,157 [WARNING] image_analyzer: Не удалось распознать картинку https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg: 429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions
+2026-06-20 18:28:54,591 [WARNING] image_analyzer: Не удалось распознать картинку https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg: 429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions
+2026-06-20 18:28:55,226 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:28:55,683 [WARNING] image_analyzer: Не удалось распознать картинку https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg: 429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions
+2026-06-20 18:28:56,140 [WARNING] image_analyzer: Не удалось распознать картинку https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg: 429 Client Error: Too Many Requests for url: https://api.groq.com/openai/v1/chat/completions
+2026-06-20 18:28:56,143 [INFO] main: Окно публикации открыто, тип отложенного поста: image
+2026-06-20 18:28:56,144 [INFO] main: Публикуем пост по картинке NULL
+2026-06-20 18:28:56,849 [INFO] text_generator: Сгенерирован текст поста по картинке для NULL: $NULL как только появятся какие-либо закономерности, станет ясно, стоит ли ждать продолжения тенденции или же всё изменится 🤔 
+Не финансовая рекомендация, управляй риском сам.
+2026-06-20 18:28:57,421 [WARNING] main: Не удалось скачать оригинальную картинку https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg: [Errno 2] No such file or directory: 'C:\\Users\\Alexei\\OneDrive\\Документы\\Рабочий стол\\Bot _ Binance Square\\signal_monitor\\charts\\tmphs_idxjt.jpg'
+2026-06-20 18:28:58,319 [INFO] binance_publisher: Пост успешно опубликован, id=336206798260561
+2026-06-20 18:28:58,320 [INFO] main: Опубликовано: {'id': 336206798260561, 'status': 'ok'}
+2026-06-20 18:28:58,343 [INFO] main: === Конец цикла ===
+2026-06-20 18:28:58,344 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:28:58,345 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 18:32:44,307 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 18:32:44,316 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 18:32:44,316 [INFO] main: === Начало цикла ===
+2026-06-20 18:32:44,326 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 0)
+2026-06-20 18:32:45,014 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 18:32:45,015 [INFO] telegram_listener: 📸 Пост 3871: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,015 [INFO] telegram_listener: 📸 Пост 3872: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,016 [INFO] telegram_listener: 📸 Пост 3873: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,016 [INFO] telegram_listener: 📸 Пост 3874: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,016 [INFO] telegram_listener: 📸 Пост 3875: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,017 [INFO] telegram_listener: 📸 Пост 3876: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,017 [INFO] telegram_listener: 📸 Пост 3877: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,017 [INFO] telegram_listener: 📸 Пост 3878: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,018 [INFO] telegram_listener: 📸 Пост 3879: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,018 [INFO] telegram_listener: 📸 Пост 3880: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,018 [INFO] telegram_listener: 📸 Пост 3881: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,019 [INFO] telegram_listener: 📸 Пост 3882: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,020 [INFO] telegram_listener: 📸 Пост 3883: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,020 [INFO] telegram_listener: 📸 Пост 3884: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,021 [INFO] telegram_listener: 📸 Пост 3885: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,021 [INFO] telegram_listener: 📸 Пост 3886: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,021 [INFO] telegram_listener: 📸 Пост 3887: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,022 [INFO] telegram_listener: 📸 Пост 3888: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,022 [INFO] telegram_listener: 📸 Пост 3889: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,022 [INFO] telegram_listener: 📸 Пост 3890: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 18:32:45,032 [INFO] telegram_listener: После фильтрации: 20 постов с текстом или картинкой
+2026-06-20 18:32:45,655 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 18:32:45,667 [INFO] main: Окно публикации открыто, тип отложенного поста: image
+2026-06-20 18:32:45,668 [INFO] main: Публикуем пост по картинке NULL
+2026-06-20 18:32:46,341 [INFO] text_generator: Сгенерирован текст поста по картинке для NULL: $NULL стоит на месте, интересно, сдвинется ли с этого места в ближайшее время 🤔
+Не финансовая рекомендация, управляй риском сам.
+2026-06-20 18:32:46,940 [WARNING] main: Не удалось скачать оригинальную картинку https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhMCR8OA_NIb48ZhJ9l5Y33l16gajp457X70VhQtbmCpaiLxl9ilWnk6p8UzRYnr8pTUMYpzTVcFUXdSZ4Oz-w8mWzIRfqwuGhV7lqTjSYklFLQK6Ob5x85NTIbhTkI6PLLDr-cVR45bHFe9x5WneeCbecdDbMPiSvKFkMRt-k-fxn7Mc-Ql9aVWWO8S9wuAMchlRayy8yY-SPGpunyj7TQpTDQM1-wowkvLRTSzi2knH96oHI9klBjyEsoR69jxYvUHbZ5zCl1W8BzP2aiirA_chze-3nvvmoFDfk5Vgva8lwYokjqpVtbZYw.jpg: [Errno 2] No such file or directory: 'C:\\Users\\Alexei\\OneDrive\\Документы\\Рабочий стол\\Bot _ Binance Square\\signal_monitor\\charts\\tmpnhzxtqod.jpg'
+2026-06-20 18:32:47,944 [INFO] binance_publisher: Пост успешно опубликован, id=336207738794850
+2026-06-20 18:32:47,945 [INFO] main: Опубликовано: {'id': 336207738794850, 'status': 'ok'}
+2026-06-20 18:32:47,967 [INFO] main: === Конец цикла ===
+2026-06-20 18:32:47,968 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 18:32:47,969 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 19:41:08,525 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 19:41:08,533 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 19:41:08,533 [INFO] main: === Начало цикла ===
+2026-06-20 19:41:08,543 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 0)
+2026-06-20 19:41:09,250 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 19:41:09,251 [INFO] telegram_listener: 📸 Пост 3871: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,251 [INFO] telegram_listener: 📸 Пост 3872: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,252 [INFO] telegram_listener: 📸 Пост 3873: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,252 [INFO] telegram_listener: 📸 Пост 3874: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,253 [INFO] telegram_listener: 📸 Пост 3875: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,253 [INFO] telegram_listener: 📸 Пост 3876: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,254 [INFO] telegram_listener: 📸 Пост 3877: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,255 [INFO] telegram_listener: 📸 Пост 3878: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,255 [INFO] telegram_listener: 📸 Пост 3879: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,256 [INFO] telegram_listener: 📸 Пост 3880: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,257 [INFO] telegram_listener: 📸 Пост 3881: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,258 [INFO] telegram_listener: 📸 Пост 3882: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,259 [INFO] telegram_listener: 📸 Пост 3883: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,260 [INFO] telegram_listener: 📸 Пост 3884: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,260 [INFO] telegram_listener: 📸 Пост 3885: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,261 [INFO] telegram_listener: 📸 Пост 3886: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,261 [INFO] telegram_listener: 📸 Пост 3887: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,262 [INFO] telegram_listener: 📸 Пост 3888: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,263 [INFO] telegram_listener: 📸 Пост 3889: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,263 [INFO] telegram_listener: 📸 Пост 3890: найдена картинка https://cdn4.telesco.pe/file/cUF1ffn5iukAp2U8UnpTXnCAqjqezhM
+2026-06-20 19:41:09,277 [INFO] telegram_listener: После фильтрации: 20 постов с текстом или картинкой
+2026-06-20 19:41:10,077 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 19:41:10,095 [INFO] main: Окно публикации открыто, тип отложенного поста: image
+2026-06-20 19:41:10,095 [INFO] main: Публикуем пост по картинке NULL
+2026-06-20 19:41:11,508 [INFO] text_generator: Сгенерирован текст поста по картинке для NULL: $NULL пока что нет понятного движения, интересно, когда появится хоть какой-то тренд? 
+Не финансовая рекомендация, управляй риском сам.
+2026-06-20 19:41:12,140 [INFO] binance_publisher: Загружаю картинку: tmp57bkmicw.jpg
+2026-06-20 19:41:14,202 [INFO] binance_publisher: Картинка загружена в S3, ждём обработки...
+2026-06-20 19:41:14,899 [INFO] binance_publisher: Картинка обрабатывается на сервере... (1/10)
+2026-06-20 19:41:18,629 [INFO] binance_publisher: Картинка готова: https://public.bnbstatic.com/image/pgc/20260620/e75e9903a6ad4b1c8f6d61e16744d4be.jpg
+2026-06-20 19:41:19,602 [INFO] binance_publisher: Пост успешно опубликован, id=336209834478049
+2026-06-20 19:41:19,603 [INFO] main: Опубликовано: {'id': 336209834478049, 'status': 'ok'}
+2026-06-20 19:41:19,628 [INFO] main: === Конец цикла ===
+2026-06-20 19:41:19,630 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 19:41:19,630 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 20:59:12,418 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 20:59:12,428 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 20:59:12,439 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3890)
+2026-06-20 20:59:13,215 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 20:59:13,216 [INFO] telegram_listener: 📸 Пост 3891: найдена картинка https://cdn4.telesco.pe/file/K-2sGn9JnkWiLe1v-DPq2nYw5xP2edQ
+2026-06-20 20:59:13,216 [INFO] telegram_listener: 📸 Пост 3892: найдена картинка https://cdn4.telesco.pe/file/K-2sGn9JnkWiLe1v-DPq2nYw5xP2edQ
+2026-06-20 20:59:13,217 [INFO] telegram_listener: 📸 Пост 3893: найдена картинка https://cdn4.telesco.pe/file/K-2sGn9JnkWiLe1v-DPq2nYw5xP2edQ
+2026-06-20 20:59:13,217 [INFO] telegram_listener: 📸 Пост 3894: найдена картинка https://cdn4.telesco.pe/file/K-2sGn9JnkWiLe1v-DPq2nYw5xP2edQ
+2026-06-20 20:59:13,229 [INFO] telegram_listener: После фильтрации: 4 постов с текстом или картинкой
+2026-06-20 20:59:13,982 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 20:59:14,650 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 20:59:15,631 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 20:59:16,356 [INFO] main: Новая картинка распознана: NULL, направление unclear
+2026-06-20 20:59:16,365 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 20:59:16,366 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 21:05:40,108 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 21:05:40,114 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 21:05:40,117 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3894)
+2026-06-20 21:05:40,753 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 21:05:40,753 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
+2026-06-20 21:05:40,757 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 21:05:40,758 [INFO] apscheduler.scheduler: Scheduler started2026-06-20 21:27:24,391 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 21:27:24,399 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 21:27:24,401 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3894)
+2026-06-20 21:27:25,128 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 21:27:25,129 [INFO] telegram_listener: Пост 3895: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-20 21:27:25,130 [INFO] telegram_listener: Пост 3896: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-20 21:27:25,130 [INFO] telegram_listener: Пост 3897: есть текст, картинки нет
+2026-06-20 21:27:25,131 [INFO] telegram_listener: Пост 3898: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-20 21:27:25,144 [INFO] telegram_listener: После фильтрации: 1 постов с текстом или картинкой
+2026-06-20 21:27:25,146 [INFO] main: Новый дайджест: BEL +5.23% score 95
+2026-06-20 21:27:25,161 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 21:27:25,162 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 21:29:18,297 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 21:29:18,303 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 21:29:18,305 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3898)
+2026-06-20 21:29:18,977 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 21:29:18,978 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
+2026-06-20 21:29:18,981 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 21:29:18,981 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-20 21:34:15,553 [INFO] main: Бот запущен. Интервал проверки: 60с, минимальный интервал постов: 4.0ч
+2026-06-20 21:34:15,561 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-20 21:34:15,562 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3898)
+2026-06-20 21:34:16,179 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-20 21:34:16,180 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
+2026-06-20 21:34:16,184 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-20 21:34:16,184 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-21 07:56:03,463 [INFO] main: Бот запущен. Интервал проверки: 60с. Окна публикации - валюта: 4.0ч, мнение: 48.0ч, статья: 168.0ч
+2026-06-21 07:56:03,481 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-21 07:56:03,494 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3898)
+2026-06-21 07:56:04,915 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-21 07:56:04,917 [INFO] telegram_listener: Пост 3904: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,918 [INFO] telegram_listener: Пост 3905: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,919 [INFO] telegram_listener: Пост 3906: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,920 [INFO] telegram_listener: Пост 3907: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,921 [INFO] telegram_listener: Пост 3908: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,922 [INFO] telegram_listener: Пост 3909: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,924 [INFO] telegram_listener: Пост 3910: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,925 [INFO] telegram_listener: Пост 3911: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,926 [INFO] telegram_listener: Пост 3912: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,927 [INFO] telegram_listener: Пост 3913: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,928 [INFO] telegram_listener: Пост 3914: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,929 [INFO] telegram_listener: Пост 3915: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,930 [INFO] telegram_listener: Пост 3916: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,932 [INFO] telegram_listener: Пост 3917: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,933 [INFO] telegram_listener: Пост 3918: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,935 [INFO] telegram_listener: Пост 3919: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,936 [INFO] telegram_listener: Пост 3920: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,937 [INFO] telegram_listener: Пост 3921: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,938 [INFO] telegram_listener: Пост 3922: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,940 [INFO] telegram_listener: Пост 3923: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 07:56:04,967 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
+2026-06-21 07:56:04,978 [INFO] main: Окно публикации (валюта) открыто, тип отложенного поста: digest
+2026-06-21 07:56:04,979 [INFO] main: Публикуем дайджест BEL
+2026-06-21 07:56:06,380 [INFO] text_generator: Сгенерирован текст поста для BEL: $BEL двигается в правильном направлении, +5.23% за 8 часов - приятный результат, и score 95 говорит сам за себя, но что дальше? 🤔
+
+Информационный пост, не финансовая рекомендация.
+2026-06-21 07:56:08,150 [INFO] chart_generator: График сохранён: C:\Users\Alexei\OneDrive\Документы\Рабочий стол\Bot _ Binance Square\signal_monitor\charts\BEL_1h.png
+2026-06-21 07:56:08,313 [INFO] binance_publisher: Загружаю картинку: BEL_1h.png
+2026-06-21 07:56:12,320 [INFO] binance_publisher: Картинка загружена в S3, ждём обработки...
+2026-06-21 07:56:13,653 [INFO] binance_publisher: Картинка готова: https://public.bnbstatic.com/image/pgc/20260621/c22402d540a04171922229fa7737123a.png
+2026-06-21 07:56:15,289 [INFO] binance_publisher: Пост успешно опубликован, id=336390450071298
+2026-06-21 07:56:15,293 [INFO] main: Опубликовано (валюта): {'id': 336390450071298, 'status': 'ok'}
+2026-06-21 07:56:15,351 [INFO] main: Окно публикации (мнение) открыто - генерирую пост
+2026-06-21 07:56:18,361 [INFO] opinion_generator: Сгенерирован пост-мнение (BTC +2.71%): Последние 2 дня принесли нам рост стоимости BTC на 2.71%, интересно, сможет ли эта тенденция продолжиться? 🚀 Может быть, это сигнал к более позитивным изменениям на рынке.
+
+Информационный пост, не финансовая рекомендация.
+2026-06-21 07:56:20,000 [INFO] binance_publisher: Пост успешно опубликован, id=336390469331730
+2026-06-21 07:56:20,003 [INFO] main: Опубликовано (мнение): {'id': 336390469331730, 'status': 'ok'}
+2026-06-21 07:56:20,035 [INFO] main: Окно публикации (статья) открыто - собираю историю за неделю
+2026-06-21 07:56:20,038 [INFO] article_generator: Недостаточно данных для статьи (0 записей за неделю) - пропускаю
+2026-06-21 07:56:20,038 [WARNING] main: Недостаточно данных для статьи - пропускаю до следующего окна
+2026-06-21 07:56:20,065 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-21 07:56:20,066 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-21 14:19:39,541 [INFO] main: Бот запущен. Интервал проверки: 60с. Окна публикации - валюта: 4.0ч, мнение: 48.0ч, статья: 168.0ч
+2026-06-21 14:19:39,552 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-21 14:19:39,556 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3923)
+2026-06-21 14:19:40,472 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-21 14:19:40,473 [INFO] telegram_listener: Пост 3924: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 14:19:40,473 [INFO] telegram_listener: Пост 3925: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 14:19:40,473 [INFO] telegram_listener: Пост 3926: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 14:19:40,473 [INFO] telegram_listener: Пост 3927: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 14:19:40,474 [INFO] telegram_listener: Пост 3928: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 14:19:40,474 [INFO] telegram_listener: Пост 3929: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 14:19:40,474 [INFO] telegram_listener: Пост 3930: ни текста, ни картинки (вероятно альбом) - пропускаю
+2026-06-21 14:19:40,486 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
+2026-06-21 14:19:40,495 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-21 14:19:40,495 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-21 14:20:43,912 [INFO] main: Бот запущен. Интервал проверки: 60с. Окна публикации - валюта: 4.0ч, мнение: 48.0ч, статья: 168.0ч
+2026-06-21 14:20:43,919 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-21 14:20:43,921 [INFO] telegram_listener: Проверяем канал @resultrsi (последний обработанный пост: 3930)
+2026-06-21 14:20:44,615 [INFO] telegram_listener: Найдено всего постов на странице: 20
+2026-06-21 14:20:44,615 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
+2026-06-21 14:20:44,626 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-21 14:20:44,626 [INFO] apscheduler.scheduler: Scheduler started
