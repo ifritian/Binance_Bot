@@ -76,12 +76,6 @@ def fetch_new_channel_posts() -> list[ChannelPost]:
         text_div = msg_div.find("div", class_="tgme_widget_message_text")
         text = text_div.get_text(separator="\n").strip() if text_div else ""
 
-        # Картинку ищем ТОЛЬКО через background-image у photo_wrap -
-        # это надёжный признак конкретно фото этого сообщения.
-        # Если его нет - картинки нет (например, это альбом из нескольких
-        # фото, который t.me/s/ не показывает напрямую) - НЕ пытаемся
-        # угадать картинку через произвольный <img>, чтобы не подхватить
-        # аватар канала/эмодзи/другой мусор с разметки страницы.
         image_url = None
         photo_wrap = msg_div.find("a", class_="tgme_widget_message_photo_wrap")
         if photo_wrap and photo_wrap.get("style"):
@@ -100,10 +94,12 @@ def fetch_new_channel_posts() -> list[ChannelPost]:
 
     parsed.sort(key=lambda p: p.post_id)
 
-    if parsed:
-        max_id = max(p.post_id for p in parsed)
-        queue_manager.set_last_message_id(max_id)
-
     result = [p for p in parsed if p.text or p.image_url]
+    
+    # ИСПРАВЛЕНИЕ: сохраняй ID только отфильтрованных постов!
+    if result:
+        max_id = max(p.post_id for p in result)
+        queue_manager.set_last_message_id(max_id)
+    
     logger.info("После фильтрации: %s постов с текстом или картинкой", len(result))
     return result
