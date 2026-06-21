@@ -62,6 +62,17 @@ def fetch_new_channel_posts() -> list[ChannelPost]:
             if bg_match:
                 image_url = bg_match.group(1)
 
+        if image_url is None:
+            # Альбом (несколько фото в одном сообщении) - Telegram оборачивает
+            # их в отдельный контейнер с другим набором классов.
+            grouped = msg_div.find("div", class_="tgme_widget_message_grouped_wrap")
+            if grouped:
+                grouped_photo = grouped.find("a", class_="tgme_widget_message_grouped_photo")
+                if grouped_photo and grouped_photo.get("style"):
+                    bg_match = _BG_IMAGE_RE.search(grouped_photo["style"])
+                    if bg_match:
+                        image_url = bg_match.group(1)
+
         if image_url:
             logger.info("📸 Пост %s: найдена картинка %s", post_id, image_url[:60])
         elif text:
@@ -74,11 +85,16 @@ def fetch_new_channel_posts() -> list[ChannelPost]:
     parsed.sort(key=lambda p: p.post_id)
 
     result = [p for p in parsed if p.text or p.image_url]
-    
-    # ИСПРАВЛЕНИЕ: сохраняй ID только отфильтрованных постов!
-    if result:
-        max_id = max(p.post_id for p in result)
+
+    # Продвигаем last_id по ВСЕМ увиденным постам (включая нераспознанные
+    # альбомы/служебные сообщения), а не только по тем, что прошли фильтр.
+    # Иначе при долгой серии нераспознанных постов last_id не двигается,
+    # и при следующем тике мы просто заново их пересматриваем, рискуя
+    # потерять старые посты, если новых за это время вышло больше 20
+    # (страница t.me/s/ показывает только последние ~20 сообщений).
+    if parsed:
+        max_id = max(p.post_id for p in parsed)
         queue_manager.set_last_message_id(max_id)
-    
+
     logger.info("После фильтрации: %s постов с текстом или картинкой", len(result))
     return result
