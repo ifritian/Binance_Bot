@@ -16,6 +16,10 @@ BASE_DIR = Path(__file__).parent
 FOLLOWUP_CHANNEL_USERNAME = os.environ.get("FOLLOWUP_CHANNEL_USERNAME", "")
 TELEGRAM_PREVIEW_URL = "https://t.me/s/{channel}"
 
+# --- Telegram API (для слушания @syndicateproobot) ---
+TELEGRAM_API_ID = int(os.environ.get("TELEGRAM_API_ID", "0"))
+TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
+
 # --- Binance Square ---
 BINANCE_SQUARE_API_KEY = os.environ.get("BINANCE_SQUARE_API_KEY", "")
 BINANCE_SQUARE_BASE_V1 = "https://www.binance.com/bapi/composite/v1/public/pgc/openApi"
