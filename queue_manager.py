@@ -113,6 +113,22 @@ def get_digest_history(since_seconds_ago: float) -> list[dict]:
     return [h for h in history if h["ts"] >= cutoff]
 
 
+# --- Недавно опубликованные тикеры - для разнообразия (избегаем повторов) ---
+
+_RECENT_TICKERS_LIMIT = 3
+
+
+def get_recent_tickers() -> list[str]:
+    return _get("recent_tickers", [])
+
+
+def log_posted_ticker(ticker: str) -> None:
+    history = get_recent_tickers()
+    history.append(ticker.upper())
+    history = history[-_RECENT_TICKERS_LIMIT:]
+    _set("recent_tickers", history)
+
+
 # --- Отложенный пост, ждущий своего окна публикации ---
 # Может быть двух видов: "digest" (текстовый дайджест с числами)
 # или "image" (качественный инсайт по картинке, без чисел).

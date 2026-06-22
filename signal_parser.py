@@ -79,3 +79,21 @@ def parse_signal(text: str) -> Optional[Signal]:
         return None
 
     return Signal(title=title, entries=entries, raw_text=text)
+
+
+def pick_entry(entries: list[FollowUpEntry], recent_tickers: list[str]) -> FollowUpEntry:
+    """
+    Выбирает запись из дайджеста для публикации, стараясь не повторять
+    тикеры, которые публиковались недавно (recent_tickers - последние
+    N опубликованных тикеров, самый свежий последним).
+
+    Приоритет:
+    1. Первая запись, тикер которой НЕ встречается в recent_tickers.
+    2. Если все тикеры дайджеста недавно публиковались - берём первую
+       запись как раньше (лучше повтор, чем совсем пропустить пост).
+    """
+    recent_set = {t.upper() for t in recent_tickers}
+    for entry in entries:
+        if entry.ticker.upper() not in recent_set:
+            return entry
+    return entries[0]

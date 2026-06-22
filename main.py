@@ -53,10 +53,20 @@ def check_for_new_signals() -> None:
         if post.text:
             signal = signal_parser.parse_signal(post.text)
             if signal is not None:
-                top = signal.top
-                logger.info("Новый дайджест: %s %s score %s", top.ticker, top.change_pct, top.score)
-                queue_manager.set_pending_digest(signal)
-                queue_manager.log_digest_history(top, signal.title)  # для еженедельной статьи
+                # выбираем запись из дайджеста, избегая повтора недавних тикеров,
+                # вместо того чтобы всегда брать первую (для разнообразия постов)
+                recent = queue_manager.get_recent_tickers()
+                chosen = signal_parser.pick_entry(signal.entries, recent)
+                logger.info(
+                    "Новый дайджест: %s %s score %s (недавние тикеры: %s)",
+                    chosen.ticker, chosen.change_pct, chosen.score, recent,
+                )
+                # сохраняем только выбранную запись - дальше публикуется именно она
+                signal_to_store = signal_parser.Signal(
+                    title=signal.title, entries=[chosen], raw_text=signal.raw_text
+                )
+                queue_manager.set_pending_digest(signal_to_store)
+                queue_manager.log_digest_history(chosen, signal.title)  # для еженедельной статьи
                 continue  # текст распознан как дайджест - картинку (если есть) не трогаем
 
         if post.image_url:
@@ -161,6 +171,8 @@ def try_publish_currency_post() -> None:
         return
 
     if published:
+        ticker = payload.top.ticker if kind == "digest" else payload.ticker
+        queue_manager.log_posted_ticker(ticker)
         queue_manager.set_last_post_time("currency")
         queue_manager.clear_pending_post()
     # если не опубликовано - пост остаётся в очереди, попробуем на следующем тике
