@@ -54,12 +54,12 @@ def _set(key: str, value) -> None:
 
 # --- id последнего просмотренного поста в канале ---
 
-def get_last_message_id() -> int:
-    return _get("last_message_id", 0)
+def get_telegram_update_offset() -> int:
+    return _get("telegram_update_offset", 0)
 
 
-def set_last_message_id(message_id: int) -> None:
-    _set("last_message_id", message_id)
+def set_telegram_update_offset(update_id: int) -> None:
+    _set("telegram_update_offset", update_id)
 
 
 # --- Время последней публикации, отдельно по каждому формату поста ---

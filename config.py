@@ -11,14 +11,10 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).parent
 
-# --- Telegram (публичный канал - скрапим preview-страницу, без авторизации) ---
+# --- Telegram (Bot API - бот добавлен админом в канал) ---
 # Username канала без @, например: resultrsi
 FOLLOWUP_CHANNEL_USERNAME = os.environ.get("FOLLOWUP_CHANNEL_USERNAME", "")
-TELEGRAM_PREVIEW_URL = "https://t.me/s/{channel}"
-
-# --- Telegram API (для pyrogram, если будем использовать) ---
-TELEGRAM_API_ID = int(os.environ.get("TELEGRAM_API_ID", "0"))
-TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 # --- Binance Square ---
 BINANCE_SQUARE_API_KEY = os.environ.get("BINANCE_SQUARE_API_KEY", "")
@@ -45,6 +41,7 @@ def validate_config() -> list[str]:
     """Возвращает список незаполненных обязательных переменных."""
     required = {
         "FOLLOWUP_CHANNEL_USERNAME": FOLLOWUP_CHANNEL_USERNAME,
+        "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
         "BINANCE_SQUARE_API_KEY": BINANCE_SQUARE_API_KEY,
         "GROQ_API_KEY": GROQ_API_KEY,
     }
