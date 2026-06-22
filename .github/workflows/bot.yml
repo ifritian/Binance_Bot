@@ -12,6 +12,15 @@ on:
 permissions:
   contents: write
 
+# Защита от параллельных запусков - если предыдущий прогон ещё не
+# закончился (например, нажали "Run workflow" вручную во время
+# обычного запуска по расписанию), новый запуск ждёт очереди вместо
+# того чтобы стартовать параллельно. Это и вызывало 409 Conflict
+# от Telegram (getUpdates разрешает только одно подключение на бота).
+concurrency:
+  group: square-signal-bot
+  cancel-in-progress: false
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
