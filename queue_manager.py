@@ -133,6 +133,16 @@ def log_posted_ticker(ticker: str) -> None:
 # Может быть двух видов: "digest" (текстовый дайджест с числами)
 # или "image" (качественный инсайт по картинке, без чисел).
 
+# --- Последний использованный режим тона хука - для ротации ---
+
+def get_last_hook_mode() -> Optional[str]:
+    return _get("last_hook_mode", None)
+
+
+def set_last_hook_mode(mode: str) -> None:
+    _set("last_hook_mode", mode)
+
+
 def get_pending_post() -> Optional[tuple[str, object]]:
     """Возвращает (kind, payload) или None, если очередь пуста."""
     data = _get("pending_post", None)

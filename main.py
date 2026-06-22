@@ -25,6 +25,7 @@ import chart_generator
 import config
 import image_analyzer
 import opinion_generator
+import post_format
 import queue_manager
 import signal_parser
 import telegram_listener
@@ -80,8 +81,10 @@ def _publish_digest(signal) -> bool:
     top = signal.top
     logger.info("Публикуем дайджест %s", top.ticker)
 
+    hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
+
     try:
-        post_text = text_generator.generate_post_text(top, signal.title)
+        post_text = text_generator.generate_post_text(top, signal.title, hook_mode)
     except Exception as e:
         logger.error("Ошибка генерации текста: %s", e)
         return False
@@ -104,14 +107,19 @@ def _publish_digest(signal) -> bool:
         )
         return False
 
-    return _do_publish(post_text, [chart_path])
+    published = _do_publish(post_text, [chart_path])
+    if published:
+        queue_manager.set_last_hook_mode(hook_mode)
+    return published
 
 
 def _publish_image_insight(insight) -> bool:
     logger.info("Публикуем пост по картинке %s", insight.ticker)
 
+    hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
+
     try:
-        post_text = text_generator.generate_post_text_from_image(insight)
+        post_text = text_generator.generate_post_text_from_image(insight, hook_mode)
     except Exception as e:
         logger.error("Ошибка генерации текста по картинке: %s", e)
         return False
@@ -134,7 +142,10 @@ def _publish_image_insight(insight) -> bool:
         )
         return False
 
-    return _do_publish(post_text, [image_path])
+    published = _do_publish(post_text, [image_path])
+    if published:
+        queue_manager.set_last_hook_mode(hook_mode)
+    return published
 
 
 def _do_publish(post_text: str, image_paths) -> bool:
