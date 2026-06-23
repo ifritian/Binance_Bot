@@ -82,6 +82,25 @@ def seconds_since_last_post(post_type: str = "currency") -> float:
     return time.time() - last
 
 
+# --- Случайный разброс окна публикации ---
+# Решается ОДИН РАЗ после каждой публикации (не на каждом тике, иначе
+# порог "плавал" бы туда-сюда и было бы непредсказуемо). Хранится до
+# следующей публикации этого формата, потом пересчитывается заново.
+
+def get_jitter_seconds(post_type: str) -> float:
+    return _get(f"jitter_seconds:{post_type}", 0)
+
+
+def roll_new_jitter(post_type: str, max_jitter_seconds: float) -> float:
+    """Бросает новый случайный разброс в диапазоне [-max, +max] и
+    сохраняет его для следующего окна публикации этого формата."""
+    import random
+
+    value = random.uniform(-max_jitter_seconds, max_jitter_seconds)
+    _set(f"jitter_seconds:{post_type}", value)
+    return value
+
+
 # --- История дайджестов за последние дни - для еженедельной статьи ---
 # Храним отдельно от "отложенного поста" (pending_post) - это лог ВСЕХ
 # увиденных дайджестов, а не только последнего, чтобы статья могла

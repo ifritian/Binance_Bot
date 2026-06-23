@@ -33,6 +33,13 @@ OPINION_INTERVAL_HOURS = float(os.environ.get("OPINION_INTERVAL_HOURS", "48"))
 ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))
 
+# Случайный разброс окна публикации (+/-), чтобы интервалы не были
+# идеально механическими. Не меняет МИНИМАЛЬНЫЙ интервал в среднем -
+# просто сдвигает конкретное окно туда-сюда на случайную величину.
+CURRENCY_JITTER_MINUTES = float(os.environ.get("CURRENCY_JITTER_MINUTES", "20"))
+OPINION_JITTER_HOURS = float(os.environ.get("OPINION_JITTER_HOURS", "4"))
+ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
+
 DB_PATH = BASE_DIR / "bot_state.db"
 LOG_PATH = BASE_DIR / "bot.log"
 

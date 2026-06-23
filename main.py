@@ -161,7 +161,7 @@ def _do_publish(post_text: str, image_paths) -> bool:
 
 def try_publish_currency_post() -> None:
     seconds_elapsed = queue_manager.seconds_since_last_post("currency")
-    min_seconds = config.MIN_POST_INTERVAL_HOURS * 3600
+    min_seconds = config.MIN_POST_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("currency")
 
     if seconds_elapsed < min_seconds:
         return  # окно публикации ещё не открылось
@@ -185,6 +185,7 @@ def try_publish_currency_post() -> None:
         ticker = payload.top.ticker if kind == "digest" else payload.ticker
         queue_manager.log_posted_ticker(ticker)
         queue_manager.set_last_post_time("currency")
+        queue_manager.roll_new_jitter("currency", config.CURRENCY_JITTER_MINUTES * 60)
         queue_manager.clear_pending_post()
     # если не опубликовано - пост остаётся в очереди, попробуем на следующем тике
 
@@ -195,7 +196,7 @@ def try_publish_currency_post() -> None:
 
 def try_publish_opinion_post() -> None:
     seconds_elapsed = queue_manager.seconds_since_last_post("opinion")
-    min_seconds = config.OPINION_INTERVAL_HOURS * 3600
+    min_seconds = config.OPINION_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("opinion")
 
     if seconds_elapsed < min_seconds:
         return
@@ -226,6 +227,7 @@ def try_publish_opinion_post() -> None:
 
     logger.info("Опубликовано (мнение): %s", published_result)
     queue_manager.set_last_post_time("opinion")
+    queue_manager.roll_new_jitter("opinion", config.OPINION_JITTER_HOURS * 3600)
 
 
 # ============================================================
@@ -234,7 +236,7 @@ def try_publish_opinion_post() -> None:
 
 def try_publish_article_post() -> None:
     seconds_elapsed = queue_manager.seconds_since_last_post("article")
-    min_seconds = config.ARTICLE_INTERVAL_HOURS * 3600
+    min_seconds = config.ARTICLE_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("article")
 
     if seconds_elapsed < min_seconds:
         return
@@ -253,6 +255,7 @@ def try_publish_article_post() -> None:
         # сдвигаем таймер, чтобы не пытаться каждую минуту - попробуем
         # снова через обычный интервал, а не спамить логи
         queue_manager.set_last_post_time("article")
+        queue_manager.roll_new_jitter("article", config.ARTICLE_JITTER_HOURS * 3600)
         return
 
     title, body, _ = result
@@ -275,6 +278,7 @@ def try_publish_article_post() -> None:
 
     logger.info("Опубликовано (статья): %s", published_result)
     queue_manager.set_last_post_time("article")
+    queue_manager.roll_new_jitter("article", config.ARTICLE_JITTER_HOURS * 3600)
 
 
 # ============================================================
