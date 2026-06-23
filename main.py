@@ -203,14 +203,16 @@ def try_publish_opinion_post() -> None:
 
     logger.info("Окно публикации (мнение) открыто - генерирую пост")
 
+    theme = opinion_generator.pick_theme(queue_manager.get_last_opinion_theme())
+
     try:
-        result = opinion_generator.generate_opinion_post()
+        result = opinion_generator.generate_opinion_post(theme)
     except Exception as e:
         logger.error("Ошибка генерации поста-мнения: %s", e)
         return
 
     if result is None:
-        logger.warning("Не удалось получить данные BTC для поста-мнения - пропускаю до следующего окна")
+        logger.warning("Не удалось получить данные для темы %s - пропускаю до следующего окна", theme)
         return
 
     post_text, pct = result
@@ -224,6 +226,8 @@ def try_publish_opinion_post() -> None:
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации поста-мнения: %s", e)
         return
+
+    queue_manager.set_last_opinion_theme(theme)
 
     logger.info("Опубликовано (мнение): %s", published_result)
     queue_manager.set_last_post_time("opinion")

@@ -152,6 +152,16 @@ def log_posted_ticker(ticker: str) -> None:
 # Может быть двух видов: "digest" (текстовый дайджест с числами)
 # или "image" (качественный инсайт по картинке, без чисел).
 
+# --- Последняя использованная тема поста-мнения - для ротации ---
+
+def get_last_opinion_theme() -> Optional[str]:
+    return _get("last_opinion_theme", None)
+
+
+def set_last_opinion_theme(theme: str) -> None:
+    _set("last_opinion_theme", theme)
+
+
 # --- Последний использованный режим тона хука - для ротации ---
 
 def get_last_hook_mode() -> Optional[str]:
