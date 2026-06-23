@@ -57,9 +57,9 @@ def pick_theme(last_theme: Optional[str]) -> str:
 
 
 def _calc_change_pct(ticker: str) -> Optional[float]:
-    """% изменения цены тикера за последние 48 часов."""
+    """% изменения цены тикера за последние 2 дня."""
     try:
-        klines = fetch_klines(ticker, interval="4h", limit=12)  # 12 * 4ч = 48ч
+        klines = fetch_klines(ticker, days=2)
     except requests.RequestException as e:
         logger.warning("Не удалось получить данные %s для поста-мнения: %s", ticker, e)
         return None
@@ -68,7 +68,7 @@ def _calc_change_pct(ticker: str) -> Optional[float]:
         return None
 
     open_price = float(klines[0][1])
-    close_price = float(klines[-1][4])
+    close_price = float(klines[-1][1])
     if open_price == 0:
         return None
 
