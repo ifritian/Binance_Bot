@@ -324,5 +324,45 @@ def main() -> None:
         logger.info("Бот остановлен.")
 
 
+import argparse
+import sys
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Telegram to Binance Bot")
+    parser.add_argument("--once", action="store_true", help="Run one tick and exit")
+    args = parser.parse_args()
+    
+    missing = config.validate_config()
+    if missing:
+        logger.error(
+            "Не заполнены обязательные переменные в .env: %s. "
+            "Заполни их и перезапусти бота.",
+            ", ".join(missing),
+        )
+        return
+
+    logger.info(
+        "Бот запущен. Интервал проверки: %sс. Окна публикации - валюта: %sч, мнение: %sч, статья: %sч",
+        config.POLL_INTERVAL_SECONDS, config.MIN_POST_INTERVAL_HOURS,
+        config.OPINION_INTERVAL_HOURS, config.ARTICLE_INTERVAL_HOURS,
+    )
+
+    if args.once:
+        # Режим --once: один тик и выход
+        logger.info("Режим --once: запуск одного тика")
+        tick()
+        logger.info("Тик завершён, выход")
+        sys.exit(0)
+    else:
+        # Обычный режим: бесконечный цикл со шедулером
+        scheduler = BlockingScheduler()
+        scheduler.add_job(tick, "interval", seconds=config.POLL_INTERVAL_SECONDS, next_run_time=None)
+        tick()  # сразу один проход при старте
+        try:
+            scheduler.start()
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("Бот остановлен.")
+
+
 if __name__ == "__main__":
     main()
