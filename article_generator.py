@@ -49,6 +49,44 @@ _TITLE_PROMPT = """Придумай короткий цепляющий заго
 по итогам недели в крипте (на основе тех же фактов). Без кавычек,
 одна строка, не длиннее 70 символов."""
 
+# Дополнительный акцент в зависимости от того, как сложилась неделя -
+# добавляется к базовому промпту, чтобы статья не звучала одинаково
+# независимо от того, что реально произошло.
+_COMPOSITION_EMPHASIS = {
+    "mostly_wins": (
+        "Эта неделя была в основном удачной (большинство сигналов сработали "
+        "в плюс) - сделай акцент на том, что сработало и почему, без "
+        "избыточного праздничного тона, но дай это прочувствовать."
+    ),
+    "mostly_losses": (
+        "Эта неделя была сложной (большинство сигналов не оправдали "
+        "ожиданий) - не превращай это в извинения, но честно отметь это, "
+        "и сделай акцент на выводах и важности риск-менеджмента, а не "
+        "только на перечислении фактов."
+    ),
+    "mixed": (
+        "Неделя получилась смешанной (примерно поровну удачных и неудачных "
+        "сигналов) - дай сбалансированный разбор, не перекашивая в сторону "
+        "только успехов или только неудач."
+    ),
+}
+
+
+def _analyze_week_composition(history: list[dict]) -> str:
+    """Определяет, как сложилась неделя: 'mostly_wins', 'mostly_losses'
+    или 'mixed' - по доле favorable-записей в истории."""
+    if not history:
+        return "mixed"
+
+    favorable_count = sum(1 for h in history if h.get("result") == "favorable")
+    ratio = favorable_count / len(history)
+
+    if ratio >= 0.65:
+        return "mostly_wins"
+    if ratio <= 0.35:
+        return "mostly_losses"
+    return "mixed"
+
 
 def _format_facts(history: list[dict]) -> str:
     lines = []
@@ -88,13 +126,18 @@ def generate_weekly_article(history: list[dict]) -> Optional[tuple[str, str, lis
         return None
 
     facts = _format_facts(history)
+    composition = _analyze_week_composition(history)
+    system_prompt = f"{_SYSTEM_PROMPT}\n\n{_COMPOSITION_EMPHASIS[composition]}"
 
-    body_hook = _call_groq(_SYSTEM_PROMPT, f"Факты за неделю:\n{facts}")
+    body_hook = _call_groq(system_prompt, f"Факты за неделю:\n{facts}")
     title = _call_groq(_TITLE_PROMPT, f"Факты за неделю:\n{facts}", max_tokens=50)
     title = title.strip().strip('"').strip("«»")[:70]
 
     body = assemble_post(body_hook)
-    logger.info("Сгенерирована статья: %s (фактов: %d)", title, len(history))
+    logger.info(
+        "Сгенерирована статья: %s (фактов: %d, композиция недели: %s)",
+        title, len(history), composition,
+    )
     return title, body, history
 
 
