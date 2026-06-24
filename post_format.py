@@ -14,6 +14,26 @@ def assemble_post(hook: str) -> str:
     return f"{hook.strip()}\n\n{DISCLAIMER}"
 
 
+def assemble_signal_post(hook: str, signal) -> str:
+    """Хук (от LLM) + блок сетапа (вход/стоп/тейк/RSI/score - собран
+    КОДОМ, не LLM, чтобы цифры были гарантированно точными) + дисклеймер.
+
+    signal - RsiSignal из signal_parser.
+    """
+    direction_emoji = "🟢" if "лонг" in signal.direction.lower() else "🔴"
+
+    setup_lines = [
+        f"{direction_emoji} {signal.direction} | {signal.strategy}",
+        f"Вход: {signal.entry_low} - {signal.entry_high}",
+        f"Стоп: {signal.invalidation}",
+        f"Тейк: {signal.target}",
+        f"RSI: {signal.rsi_now} | Score: {signal.score}/100",
+    ]
+    setup_block = "\n".join(setup_lines)
+
+    return f"{hook.strip()}\n\n{setup_block}\n\n{DISCLAIMER}"
+
+
 # --- Режимы тона хука - для разнообразия постов ---
 # Каждый режим - короткая инструкция, которую добавляем к системному
 # промпту LLM. Сама ротация (какой режим выбрать сейчас) реализована

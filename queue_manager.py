@@ -16,7 +16,7 @@ from typing import Optional
 
 import config
 from image_analyzer import ImageInsight
-from signal_parser import Signal, FollowUpEntry
+from signal_parser import RsiSignal
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS state (
@@ -109,15 +109,15 @@ def roll_new_jitter(post_type: str, max_jitter_seconds: float) -> float:
 _HISTORY_MAX_AGE_SECONDS = 9 * 24 * 3600  # держим чуть больше недели "на всякий"
 
 
-def log_digest_history(entry: FollowUpEntry, digest_title: str) -> None:
+def log_signal_history(signal: RsiSignal) -> None:
     history = _get("digest_history", [])
     history.append({
-        "ticker": entry.ticker,
-        "timeframe": entry.timeframe,
-        "result": entry.result,
-        "change_pct": entry.change_pct,
-        "score": entry.score,
-        "digest_title": digest_title,
+        "ticker": signal.ticker,
+        "timeframe": signal.timeframe,
+        "direction": signal.direction,
+        "strategy": signal.strategy,
+        "change_pct": signal.change_24h,
+        "score": signal.score,
         "ts": time.time(),
     })
     cutoff = time.time() - _HISTORY_MAX_AGE_SECONDS
@@ -181,17 +181,16 @@ def get_pending_post() -> Optional[tuple[str, object]]:
     kind = data["kind"]
     payload = data["payload"]
 
-    if kind == "digest":
-        entries = [FollowUpEntry(**e) for e in payload["entries"]]
-        return kind, Signal(title=payload["title"], entries=entries, raw_text=payload["raw_text"])
+    if kind == "signal":
+        return kind, RsiSignal(**payload)
     if kind == "image":
         return kind, ImageInsight(**payload)
 
     return None
 
 
-def set_pending_digest(signal: Signal) -> None:
-    _set("pending_post", {"kind": "digest", "payload": asdict(signal)})
+def set_pending_signal(signal: RsiSignal) -> None:
+    _set("pending_post", {"kind": "signal", "payload": asdict(signal)})
 
 
 def set_pending_image(insight: ImageInsight) -> None:

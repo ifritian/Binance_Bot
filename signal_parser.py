@@ -1,21 +1,39 @@
 """
-Парсинг постов канала @resultrsi (дайджест "Follow-up").
+Парсинг постов канала @resultrsi, которые на самом деле приходят от
+бота @syndicateproobot (RSI/Bollinger/Divergence алерты с полным
+сетапом: вход, инвалидация (стоп), цель (тейк), RSI, score).
 
-Формат поста (пример):
+Пример реального поста (упрощённо):
 
-Top follow-up winners by 18:00 EEST
+BEATUSDT • 15m
+[Свежий] [RSI + Bollinger Touch] [Шорт]
+RSI stayed above 70 while price tagged the upper Bollinger Band...
+Сетап
+Стратегия: RSI + Bollinger Touch
+Сейчас: 2.225
+Направление: Шорт
+RSI / Score сейчас: 81.74 / 89/100
+RSI / Score на сигнале: 81.74 / 89/100
+Качество: Conservative
+Фоллоу-ап: Включён
+Уровни
+Вход: 2.205 - 2.2178
+Инвалидация: 2.2371
+Цель: 2.1729
+Окно RSI: 30.00 / 70.00
+Контекст
+24h: +35.67%
+Объем: 57.67M
+Режим: Directional
+RSI live: 82.64
+Создан: 2026-06-23 22:44:59 EEST
+...
 
-Best results that kept moving in the original thesis direction today:
+Один пост Telegram может содержать НЕСКОЛЬКО таких блоков подряд
+(бот шлёт пачкой) - parse_signals возвращает все найденные.
 
-1. HEIUSDT | 8h | favorable +7.32% | score 100
-2. ALTUSDT | 4h | favorable +3.10% | score 91
-
-This digest is based on completed follow-up checks, not raw alerts.
-
-В отличие от прежнего формата (вход/цель/стоп), здесь нет торгового
-сигнала на вход - это статистика по уже отработавшим сигналам.
-Поэтому числа, которые нельзя искажать - это % изменения и score,
-а не уровни цены.
+Числа, которые нельзя искажать в финальном тексте поста: цена входа
+(диапазон), инвалидация (стоп), цель (тейк), RSI и score.
 """
 import re
 from dataclasses import dataclass
@@ -23,77 +41,136 @@ from typing import Optional
 
 
 @dataclass
-class FollowUpEntry:
-    ticker: str             # HEI
-    timeframe: str           # 8h
-    result: str               # favorable / unfavorable
-    change_pct: str          # +7.32%
-    score: int
+class RsiSignal:
+    ticker: str            # BEAT (без USDT)
+    timeframe: str          # 15m
+    strategy: str            # "RSI + Bollinger Touch"
+    direction: str            # "Шорт" / "Лонг" / "Шорт (перекупленность)" и т.п. (как в посте)
+    current_price: str         # "2.225"
+    rsi_now: str                 # "81.74"
+    score: str                    # "89"
+    quality: str                    # "Conservative"
+    entry_low: str                    # "2.205"
+    entry_high: str                     # "2.2178"
+    invalidation: str                     # "2.2371"  (стоп-лосс)
+    target: str                             # "2.1729"  (тейк-профит)
+    change_24h: str                           # "+35.67%"
+    volume: str                                 # "57.67M"
+    rsi_live: str                                 # "82.64"
+    created_at: str                                 # "2026-06-23 22:44:59 EEST"
+    description: str                                  # короткое описание сетапа (для контекста LLM)
+    raw_text: str                                       # исходный блок целиком
 
 
-@dataclass
-class Signal:
-    title: str                       # "Top follow-up winners by 18:00 EEST"
-    entries: list[FollowUpEntry]
-    raw_text: str
+# Заголовок одного блока: "BEATUSDT • 15m" (разделитель может быть
+# обычным "•" или похожим символом - на всякий случай матчим широко).
+_HEADER_RE = re.compile(
+    r"([A-Z0-9]+)USDT\s*[•·]\s*(\w+)\s*\n", re.MULTILINE
+)
 
-    @property
-    def top(self) -> FollowUpEntry:
-        """Первая (лучшая/первая по списку) запись дайджеста."""
-        return self.entries[0]
+_FIELD_PATTERNS = {
+    "strategy": r"Стратегия:\s*(.+)",
+    "current_price": r"Сейчас:\s*([\d.,]+)",
+    "direction": r"Направление:\s*(.+)",
+    "rsi_score_now": r"RSI\s*/\s*Score\s*сейчас:\s*([\d.,]+)\s*/\s*(\d+)\s*/\s*100",
+    "quality": r"Качество:\s*(.+)",
+    "entry": r"Вход:\s*([\d.,]+)\s*-\s*([\d.,]+)",
+    "invalidation": r"Инвалидация:\s*([\d.,]+)",
+    "target": r"Цель:\s*([\d.,]+)",
+    "change_24h": r"24h:\s*([+-]?[\d.,]+%)",
+    "volume": r"Объем:\s*([\d.,]+\w*)",
+    "rsi_live": r"RSI live:\s*([\d.,]+)",
+    "created_at": r"Создан:\s*(.+)",
+}
 
-
-_TITLE_RE = re.compile(r"^(Top follow-up \w+ by .+?)$", re.MULTILINE)
-_ENTRY_RE = re.compile(
-    r"\d+\.\s*([A-Z0-9]+)USDT\s*\|\s*(\d+\w+)\s*\|\s*(favorable|unfavorable)\s*"
-    r"([+-]?[\d.]+%)\s*\|\s*score\s*(\d+)",
-    re.IGNORECASE,
+_DESCRIPTION_RE = re.compile(
+    r"\]\s*\n(.+?)\nСетап", re.DOTALL
 )
 
 
+def _extract(pattern: str, block: str):
+    return re.search(pattern, block)
+
+
+def _parse_block(ticker: str, timeframe: str, block: str) -> Optional[RsiSignal]:
+    strategy_m = _extract(_FIELD_PATTERNS["strategy"], block)
+    price_m = _extract(_FIELD_PATTERNS["current_price"], block)
+    direction_m = _extract(_FIELD_PATTERNS["direction"], block)
+    rsi_score_m = _extract(_FIELD_PATTERNS["rsi_score_now"], block)
+    quality_m = _extract(_FIELD_PATTERNS["quality"], block)
+    entry_m = _extract(_FIELD_PATTERNS["entry"], block)
+    invalidation_m = _extract(_FIELD_PATTERNS["invalidation"], block)
+    target_m = _extract(_FIELD_PATTERNS["target"], block)
+    change_m = _extract(_FIELD_PATTERNS["change_24h"], block)
+    volume_m = _extract(_FIELD_PATTERNS["volume"], block)
+    rsi_live_m = _extract(_FIELD_PATTERNS["rsi_live"], block)
+    created_m = _extract(_FIELD_PATTERNS["created_at"], block)
+    desc_m = _DESCRIPTION_RE.search(block)
+
+    # Минимально необходимые поля, без которых пост не считаем валидным
+    # сигналом (лучше пропустить, чем опубликовать с дырами).
+    required = [strategy_m, price_m, direction_m, rsi_score_m, entry_m,
+                invalidation_m, target_m]
+    if not all(required):
+        return None
+
+    return RsiSignal(
+        ticker=ticker,
+        timeframe=timeframe,
+        strategy=strategy_m.group(1).strip(),
+        direction=direction_m.group(1).strip(),
+        current_price=price_m.group(1).strip(),
+        rsi_now=rsi_score_m.group(1).strip(),
+        score=rsi_score_m.group(2).strip(),
+        quality=quality_m.group(1).strip() if quality_m else "",
+        entry_low=entry_m.group(1).strip(),
+        entry_high=entry_m.group(2).strip(),
+        invalidation=invalidation_m.group(1).strip(),
+        target=target_m.group(1).strip(),
+        change_24h=change_m.group(1).strip() if change_m else "",
+        volume=volume_m.group(1).strip() if volume_m else "",
+        rsi_live=rsi_live_m.group(1).strip() if rsi_live_m else "",
+        created_at=created_m.group(1).strip() if created_m else "",
+        description=desc_m.group(1).strip() if desc_m else "",
+        raw_text=block.strip(),
+    )
+
+
 def is_signal_message(text: str) -> bool:
-    """Похож ли текст на дайджест follow-up (а не просто картинка без подписи)."""
-    return bool(_ENTRY_RE.search(text))
+    return bool(_HEADER_RE.search(text))
 
 
-def parse_signal(text: str) -> Optional[Signal]:
-    if not is_signal_message(text):
-        return None
+def parse_signals(text: str) -> list[RsiSignal]:
+    """Один пост в Telegram может содержать несколько блоков сигналов
+    подряд (бот шлёт пачкой) - возвращаем все, которые удалось
+    распарсить."""
+    headers = list(_HEADER_RE.finditer(text))
+    if not headers:
+        return []
 
-    title_match = _TITLE_RE.search(text)
-    title = title_match.group(1).strip() if title_match else "Follow-up digest"
-
-    entries = []
-    for m in _ENTRY_RE.finditer(text):
-        entries.append(
-            FollowUpEntry(
-                ticker=m.group(1),
-                timeframe=m.group(2),
-                result=m.group(3).lower(),
-                change_pct=m.group(4),
-                score=int(m.group(5)),
-            )
-        )
-
-    if not entries:
-        return None
-
-    return Signal(title=title, entries=entries, raw_text=text)
+    results = []
+    for i, h in enumerate(headers):
+        start = h.start()
+        end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
+        block = text[start:end]
+        signal = _parse_block(h.group(1), h.group(2), block)
+        if signal is not None:
+            results.append(signal)
+    return results
 
 
-def pick_entry(entries: list[FollowUpEntry], recent_tickers: list[str]) -> FollowUpEntry:
-    """
-    Выбирает запись из дайджеста для публикации, стараясь не повторять
-    тикеры, которые публиковались недавно (recent_tickers - последние
-    N опубликованных тикеров, самый свежий последним).
+def parse_signal(text: str) -> Optional[RsiSignal]:
+    """Совместимость с местами, где раньше ожидался один сигнал -
+    возвращает первый найденный блок или None."""
+    signals = parse_signals(text)
+    return signals[0] if signals else None
 
-    Приоритет:
-    1. Первая запись, тикер которой НЕ встречается в recent_tickers.
-    2. Если все тикеры дайджеста недавно публиковались - берём первую
-       запись как раньше (лучше повтор, чем совсем пропустить пост).
-    """
+
+def pick_entry(signals: list[RsiSignal], recent_tickers: list[str]) -> RsiSignal:
+    """Выбирает сигнал из пачки, стараясь не повторять тикеры, которые
+    публиковались недавно (recent_tickers - последние N тикеров)."""
     recent_set = {t.upper() for t in recent_tickers}
-    for entry in entries:
-        if entry.ticker.upper() not in recent_set:
-            return entry
-    return entries[0]
+    for s in signals:
+        if s.ticker.upper() not in recent_set:
+            return s
+    return signals[0]

@@ -23,8 +23,8 @@ import requests
 
 import config
 from image_analyzer import ImageInsight
-from post_format import HOOK_MODES, assemble_post
-from signal_parser import FollowUpEntry
+from post_format import HOOK_MODES, assemble_post, assemble_signal_post
+from signal_parser import RsiSignal
 
 logger = logging.getLogger(__name__)
 
@@ -41,21 +41,21 @@ $TRUMP little by little it grows, I wonder how far it will go🤔
 #TRUMP
 """
 
-_BASE_SYSTEM_PROMPT = f"""Ты пишешь короткий ХУК для поста на Binance Square в фирменном стиле автора.
+_BASE_SIGNAL_SYSTEM_PROMPT = f"""Ты пишешь короткий ХУК для поста на Binance Square в фирменном стиле автора.
 Стиль: 1-3 коротких предложения, тикер как $CASHTAG в начале, разговорный тон,
 уместный эмодзи (не более 1-2). Без воды.
 
 Примеры стиля автора:
 {_STYLE_EXAMPLES}
 
-Контекст постов: это разбор того, как отработал предыдущий сигнал
-(не призыв входить в позицию сейчас). Передай суть - актив двигался
-в ожидаемом направлении и насколько именно.
+Контекст: тебе дан реальный торговый сетап (вход/стоп/тейк/RSI/score) -
+ниже твоего хука код добавит точный структурированный блок с этими
+уровнями отдельно, поэтому НЕ дублируй конкретные цифры цены/уровней
+в самом хуке - просто передай идею сетапа (направление, причину сигнала)
+живым языком, как личную реакцию на сигнал.
 
-КРИТИЧЕСКИ ВАЖНОЕ ПРАВИЛО: если в задании указаны конкретные числа
-(% изменения, score) - вставляй их в текст ТОЧНО как есть, без
-округления и без изменений. Не придумывай и не пересчитывай числа.
-Не упоминай чисел, которых не было в задании.
+Можно упомянуть RSI и score словами ("RSI зашкаливает", "score почти
+максимальный"), но НЕ называй сами числа - они уже будут в блоке ниже.
 
 НЕ добавляй сам никакой дисклеймер и никакие фразы про "не финансовая
 рекомендация" - это будет добавлено отдельно после твоего текста.
@@ -102,23 +102,23 @@ def _call_groq(system_prompt: str, user_prompt: str) -> str:
     return data["choices"][0]["message"]["content"].strip()
 
 
-def generate_post_text(entry: FollowUpEntry, digest_title: str, hook_mode: str) -> str:
-    result_ru = "сработал в плюс" if entry.result == "favorable" else "не оправдал ожиданий"
-    system_prompt = f"{_BASE_SYSTEM_PROMPT}\n\n{HOOK_MODES[hook_mode]}"
+def generate_post_text(signal: RsiSignal, hook_mode: str) -> str:
+    system_prompt = f"{_BASE_SIGNAL_SYSTEM_PROMPT}\n\n{HOOK_MODES[hook_mode]}"
 
-    user_prompt = f"""Заголовок дайджеста: {digest_title}
-Тикер: ${entry.ticker}
-Таймфрейм отслеживания: {entry.timeframe}
-Результат: {result_ru}
-Изменение: {entry.change_pct}
-Score: {entry.score}
+    user_prompt = f"""Тикер: ${signal.ticker}
+Таймфрейм: {signal.timeframe}
+Стратегия: {signal.strategy}
+Направление: {signal.direction}
+Причина сигнала: {signal.description}
+24ч изменение цены: {signal.change_24h}
 
-Напиши хук в стиле автора, обязательно включив изменение в % и score
-ровно такими, как указаны выше."""
+Напиши хук в стиле автора - живая реакция на этот сетап, без упоминания
+конкретных цифр уровней входа/стопа/тейка/RSI/score (они будут добавлены
+отдельно)."""
 
     hook = _call_groq(system_prompt, user_prompt)
-    text = assemble_post(hook)
-    logger.info("Сгенерирован текст поста для %s (режим %s): %s", entry.ticker, hook_mode, text)
+    text = assemble_signal_post(hook, signal)
+    logger.info("Сгенерирован текст поста для %s (режим %s): %s", signal.ticker, hook_mode, text)
     return text
 
 

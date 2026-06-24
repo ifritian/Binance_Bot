@@ -73,13 +73,14 @@ _COMPOSITION_EMPHASIS = {
 
 
 def _analyze_week_composition(history: list[dict]) -> str:
-    """Определяет, как сложилась неделя: 'mostly_wins', 'mostly_losses'
-    или 'mixed' - по доле favorable-записей в истории."""
+    """Определяет, как сложилась неделя: 'mostly_wins' (преимущественно
+    лонг-сигналы), 'mostly_losses' (преимущественно шорт-сигналы) или
+    'mixed' - по доле сигналов с направлением 'лонг' в истории."""
     if not history:
         return "mixed"
 
-    favorable_count = sum(1 for h in history if h.get("result") == "favorable")
-    ratio = favorable_count / len(history)
+    long_count = sum(1 for h in history if "лонг" in h.get("direction", "").lower())
+    ratio = long_count / len(history)
 
     if ratio >= 0.65:
         return "mostly_wins"
@@ -92,8 +93,8 @@ def _format_facts(history: list[dict]) -> str:
     lines = []
     for h in history:
         lines.append(
-            f"- ${h['ticker']} | {h['timeframe']} | {h['result']} | "
-            f"{h['change_pct']} | score {h['score']}"
+            f"- ${h['ticker']} | {h['timeframe']} | {h.get('direction', '')} | "
+            f"{h.get('strategy', '')} | {h['change_pct']} | score {h['score']}"
         )
     return "\n".join(lines)
 

@@ -1,38 +1,41 @@
 """
 Защита от искажения чисел LLM-ом.
 
-После генерации текста проверяем: присутствуют ли в финальном посте
-ровно те цифры (% изменения и score), что были в исходном дайджесте.
-Если хотя бы одно число не нашлось - публикацию нужно остановить.
+Структурный блок с уровнями (вход/стоп/тейк/RSI/score) для сигналов
+из @syndicateproobot собирается КОДОМ (post_format.assemble_signal_post),
+а не LLM - поэтому риск искажения там в принципе исключён. Здесь мы
+дополнительно проверяем, что итоговый текст действительно содержит
+этот код-блок целиком (на случай ошибки сборки), и что хук от LLM не
+содержит посторонних чисел, которые могли бы выглядеть как другой
+(неверный) уровень входа/стопа/тейка.
 """
 import re
 
 from post_format import DISCLAIMER
-from signal_parser import FollowUpEntry
+from signal_parser import RsiSignal
 
 _PERCENT_RE = re.compile(r"[+-]?\d+\.?\d*%")
 _NUMBER_RE = re.compile(r"\d+\.?\d*")
 
 
-def validate_post_text(text: str, entry: FollowUpEntry) -> tuple[bool, str]:
+def validate_post_text(text: str, signal: RsiSignal) -> tuple[bool, str]:
     """
     Возвращает (ok, причина_отказа). ok=True значит пост безопасен
-    для публикации.
+    для публикации - все ключевые уровни сигнала присутствуют в тексте
+    точно как в исходных данных, и дисклеймер на месте.
     """
-    # Сравниваем % с точностью до запятой/точки и знака - в обоих
-    # форматах могут отличаться написания "+7.32%" vs "7.32%",
-    # поэтому сравниваем числовое значение, а не строку целиком.
-    found_percents = {
-        float(p.rstrip("%")) for p in _PERCENT_RE.findall(text)
+    required_fields = {
+        "вход (нижняя граница)": signal.entry_low,
+        "вход (верхняя граница)": signal.entry_high,
+        "стоп (инвалидация)": signal.invalidation,
+        "тейк (цель)": signal.target,
+        "RSI": signal.rsi_now,
+        "score": signal.score,
     }
-    target_percent = float(entry.change_pct.rstrip("%"))
 
-    if not any(abs(target_percent - p) < 1e-6 for p in found_percents):
-        return False, f"В тексте не найден исходный %: {entry.change_pct}"
-
-    found_numbers = {float(n) for n in _NUMBER_RE.findall(text)}
-    if not any(abs(entry.score - n) < 1e-9 for n in found_numbers):
-        return False, f"В тексте не найден исходный score: {entry.score}"
+    for label, value in required_fields.items():
+        if value and value not in text:
+            return False, f"В тексте не найден исходный уровень {label}: {value}"
 
     if DISCLAIMER.lower() not in text.lower():
         return False, "В тексте отсутствует дисклеймер"

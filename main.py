@@ -52,23 +52,21 @@ def check_for_new_signals() -> None:
 
     for post in posts:
         if post.text:
-            signal = signal_parser.parse_signal(post.text)
-            if signal is not None:
-                # выбираем запись из дайджеста, избегая повтора недавних тикеров,
-                # вместо того чтобы всегда брать первую (для разнообразия постов)
+            signals = signal_parser.parse_signals(post.text)
+            if signals:
+                # выбираем сигнал из пачки, избегая повтора недавних тикеров,
+                # вместо того чтобы всегда брать первый (для разнообразия постов)
                 recent = queue_manager.get_recent_tickers()
-                chosen = signal_parser.pick_entry(signal.entries, recent)
+                chosen = signal_parser.pick_entry(signals, recent)
                 logger.info(
-                    "Новый дайджест: %s %s score %s (недавние тикеры: %s)",
-                    chosen.ticker, chosen.change_pct, chosen.score, recent,
+                    "Новый сигнал: %s %s, вход %s-%s, стоп %s, тейк %s, score %s "
+                    "(недавние тикеры: %s)",
+                    chosen.ticker, chosen.direction, chosen.entry_low, chosen.entry_high,
+                    chosen.invalidation, chosen.target, chosen.score, recent,
                 )
-                # сохраняем только выбранную запись - дальше публикуется именно она
-                signal_to_store = signal_parser.Signal(
-                    title=signal.title, entries=[chosen], raw_text=signal.raw_text
-                )
-                queue_manager.set_pending_digest(signal_to_store)
-                queue_manager.log_digest_history(chosen, signal.title)  # для еженедельной статьи
-                continue  # текст распознан как дайджест - картинку (если есть) не трогаем
+                queue_manager.set_pending_signal(chosen)
+                queue_manager.log_signal_history(chosen)  # для еженедельной статьи
+                continue  # текст распознан как сигнал - картинку (если есть) не трогаем
 
         if post.image_url:
             insight = image_analyzer.analyze_chart_image(post.image_url)
@@ -77,33 +75,32 @@ def check_for_new_signals() -> None:
                 queue_manager.set_pending_image(insight)
 
 
-def _publish_digest(signal) -> bool:
-    top = signal.top
-    logger.info("Публикуем дайджест %s", top.ticker)
+def _publish_signal(signal) -> bool:
+    logger.info("Публикуем сигнал %s", signal.ticker)
 
     hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
 
     try:
-        post_text = text_generator.generate_post_text(top, signal.title, hook_mode)
+        post_text = text_generator.generate_post_text(signal, hook_mode)
     except Exception as e:
         logger.error("Ошибка генерации текста: %s", e)
         return False
 
-    ok, reason = validator.validate_post_text(post_text, top)
+    ok, reason = validator.validate_post_text(post_text, signal)
     if not ok:
         logger.error("Пост не прошёл проверку чисел, публикация отменена: %s", reason)
         return False
 
     try:
-        chart_path = chart_generator.generate_chart_image(top.ticker, interval="1h", limit=48)
+        chart_path = chart_generator.generate_chart_image(signal.ticker, interval="1h", limit=48)
     except Exception as e:
-        logger.warning("Не удалось сгенерировать график для %s: %s", top.ticker, e)
+        logger.warning("Не удалось сгенерировать график для %s: %s", signal.ticker, e)
         chart_path = None
 
     if chart_path is None:
         logger.warning(
             "Нет графика для %s - публикация пропущена, пост остаётся в очереди "
-            "до появления следующего подходящего поста.", top.ticker
+            "до появления следующего подходящего поста.", signal.ticker
         )
         return False
 
@@ -173,8 +170,8 @@ def try_publish_currency_post() -> None:
     kind, payload = pending
     logger.info("Окно публикации (валюта) открыто, тип отложенного поста: %s", kind)
 
-    if kind == "digest":
-        published = _publish_digest(payload)
+    if kind == "signal":
+        published = _publish_signal(payload)
     elif kind == "image":
         published = _publish_image_insight(payload)
     else:
@@ -182,7 +179,7 @@ def try_publish_currency_post() -> None:
         return
 
     if published:
-        ticker = payload.top.ticker if kind == "digest" else payload.ticker
+        ticker = payload.ticker
         queue_manager.log_posted_ticker(ticker)
         queue_manager.set_last_post_time("currency")
         queue_manager.roll_new_jitter("currency", config.CURRENCY_JITTER_MINUTES * 60)
@@ -322,46 +319,6 @@ def main() -> None:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Бот остановлен.")
-
-
-import argparse
-import sys
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Telegram to Binance Bot")
-    parser.add_argument("--once", action="store_true", help="Run one tick and exit")
-    args = parser.parse_args()
-    
-    missing = config.validate_config()
-    if missing:
-        logger.error(
-            "Не заполнены обязательные переменные в .env: %s. "
-            "Заполни их и перезапусти бота.",
-            ", ".join(missing),
-        )
-        return
-
-    logger.info(
-        "Бот запущен. Интервал проверки: %sс. Окна публикации - валюта: %sч, мнение: %sч, статья: %sч",
-        config.POLL_INTERVAL_SECONDS, config.MIN_POST_INTERVAL_HOURS,
-        config.OPINION_INTERVAL_HOURS, config.ARTICLE_INTERVAL_HOURS,
-    )
-
-    if args.once:
-        # Режим --once: один тик и выход
-        logger.info("Режим --once: запуск одного тика")
-        tick()
-        logger.info("Тик завершён, выход")
-        sys.exit(0)
-    else:
-        # Обычный режим: бесконечный цикл со шедулером
-        scheduler = BlockingScheduler()
-        scheduler.add_job(tick, "interval", seconds=config.POLL_INTERVAL_SECONDS, next_run_time=None)
-        tick()  # сразу один проход при старте
-        try:
-            scheduler.start()
-        except (KeyboardInterrupt, SystemExit):
-            logger.info("Бот остановлен.")
 
 
 if __name__ == "__main__":
