@@ -55,6 +55,77 @@ def _get_file_url(file_id: str) -> Optional[str]:
     return f"https://api.telegram.org/file/bot{config.TELEGRAM_BOT_TOKEN}/{file_path}"
 
 
+def _delete_webhook() -> None:
+    """Удаляет webhook, если он каким-то образом установлен - webhook и
+    getUpdates (long polling) не могут работать одновременно с одним
+    токеном, это одна из частых причин 409 Conflict."""
+    try:
+        resp = requests.get(f"{_API_BASE}/deleteWebhook", timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("ok"):
+            logger.info("Webhook удалён (на случай, если был установлен)")
+        else:
+            logger.warning("deleteWebhook вернул ошибку: %s", data)
+    except requests.RequestException as e:
+        logger.warning("Не удалось вызвать deleteWebhook: %s", e)
+
+
+def _call_get_updates(offset: int) -> Optional[dict]:
+    params = {
+        "offset": offset + 1,
+        # Короткий timeout вместо длинного long-poll: при разовом запуске
+        # (--once, GitHub Actions) нам не нужно держать соединение 10с
+        # в ожидании - это только увеличивает окно, в которое может
+        # попасть конкурентный запрос и вызвать 409 Conflict.
+        "timeout": 0,
+        "allowed_updates": '["channel_post"]',
+    }
+    try:
+        resp = requests.get(f"{_API_BASE}/getUpdates", params=params, timeout=15)
+    except requests.RequestException as e:
+        logger.warning("Не удалось получить обновления Telegram: %s", e)
+        return None
+
+    if resp.status_code == 409:
+        # Кто-то ещё держит активное long-poll подключение этим же
+        # токеном (другой запущенный процесс) или установлен webhook.
+        # Пробуем снять webhook (если он есть) и повторить один раз -
+        # если конфликт из-за другого активного процесса, повтор не
+        # поможет, и это нормально, попробуем на следующем тике.
+        logger.info(
+            "getUpdates: 409 Conflict (обычно значит, что этим же токеном "
+            "сейчас пользуется другой процесс, или висит webhook) - "
+            "пробую снять webhook и повторить один раз"
+        )
+        _delete_webhook()
+        try:
+            resp = requests.get(f"{_API_BASE}/getUpdates", params=params, timeout=15)
+        except requests.RequestException as e:
+            logger.warning("Повтор getUpdates не удался: %s", e)
+            return None
+        if resp.status_code == 409:
+            logger.info(
+                "getUpdates: конфликт повторился - похоже, другой процесс "
+                "активно использует этот токен прямо сейчас. Пропускаю "
+                "проверку канала до следующего запуска."
+            )
+            return None
+
+    try:
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning("Не удалось разобрать ответ Telegram: %s", e)
+        return None
+
+    if not data.get("ok"):
+        logger.warning("Telegram API (getUpdates) вернул ошибку: %s", data)
+        return None
+
+    return data
+
+
 def fetch_new_channel_posts() -> list[ChannelPost]:
     """
     Возвращает новые посты канала с момента последнего вызова.
@@ -63,21 +134,8 @@ def fetch_new_channel_posts() -> list[ChannelPost]:
     offset = queue_manager.get_telegram_update_offset()
     logger.info("Проверяем обновления Telegram (offset: %s)", offset)
 
-    params = {
-        "offset": offset + 1,
-        "timeout": 10,
-        "allowed_updates": '["channel_post"]',
-    }
-    try:
-        resp = requests.get(f"{_API_BASE}/getUpdates", params=params, timeout=20)
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException as e:
-        logger.warning("Не удалось получить обновления Telegram: %s", e)
-        return []
-
-    if not data.get("ok"):
-        logger.warning("Telegram API (getUpdates) вернул ошибку: %s", data)
+    data = _call_get_updates(offset)
+    if data is None:
         return []
 
     posts: list[ChannelPost] = []
