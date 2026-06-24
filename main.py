@@ -16,6 +16,7 @@ main.py - точка входа.
 в момент публикации, без отдельной очереди.
 """
 import logging
+import sys
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -306,11 +307,23 @@ def main() -> None:
         )
         return
 
+    once = "--once" in sys.argv
+
     logger.info(
         "Бот запущен. Интервал проверки: %sс. Окна публикации - валюта: %sч, мнение: %sч, статья: %sч",
         config.POLL_INTERVAL_SECONDS, config.MIN_POST_INTERVAL_HOURS,
         config.OPINION_INTERVAL_HOURS, config.ARTICLE_INTERVAL_HOURS,
     )
+
+    if once:
+        # Режим разового запуска (GitHub Actions: python main.py --once) -
+        # делаем ровно один проход и выходим, НЕ запускаем планировщик,
+        # иначе процесс зависнет навсегда (BlockingScheduler.start()
+        # никогда не возвращает управление).
+        logger.info("Режим --once: запуск одного тика")
+        tick()
+        logger.info("Тик завершён, выход")
+        return
 
     scheduler = BlockingScheduler()
     scheduler.add_job(tick, "interval", seconds=config.POLL_INTERVAL_SECONDS, next_run_time=None)
