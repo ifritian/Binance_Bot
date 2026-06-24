@@ -79,7 +79,8 @@ def _call_get_updates(offset: int) -> Optional[dict]:
         # в ожидании - это только увеличивает окно, в которое может
         # попасть конкурентный запрос и вызвать 409 Conflict.
         "timeout": 0,
-        "allowed_updates": '["channel_post"]',
+        # Слушаем оба: посты из канала И личные сообщения от пользователя
+        "allowed_updates": '["channel_post", "message"]',
     }
     try:
         resp = requests.get(f"{_API_BASE}/getUpdates", params=params, timeout=15)
@@ -128,8 +129,12 @@ def _call_get_updates(offset: int) -> Optional[dict]:
 
 def fetch_new_channel_posts() -> list[ChannelPost]:
     """
-    Возвращает новые посты канала с момента последнего вызова.
+    Возвращает новые посты канала ИЛИ личные сообщения с момента последнего вызова.
     Обновляет сохранённый offset сам.
+    
+    Поддерживает оба источника:
+    - Посты из канала @resultrsi (если включены)
+    - Личные сообщения от пользователя (YOUR_USER_ID из config)
     """
     offset = queue_manager.get_telegram_update_offset()
     logger.info("Проверяем обновления Telegram (offset: %s)", offset)
@@ -144,30 +149,50 @@ def fetch_new_channel_posts() -> list[ChannelPost]:
     for update in data.get("result", []):
         max_update_id = max(max_update_id, update["update_id"])
 
+        # === Вариант 1: Пост из канала ===
         post = update.get("channel_post")
-        if not post:
-            continue  # нас интересуют только посты канала
+        if post:
+            chat_username = (post.get("chat", {}).get("username") or "").lower()
+            if chat_username == config.FOLLOWUP_CHANNEL_USERNAME.lower():
+                text = post.get("text") or post.get("caption") or ""
 
-        chat_username = (post.get("chat", {}).get("username") or "").lower()
-        if chat_username != config.FOLLOWUP_CHANNEL_USERNAME.lower():
-            continue  # пост из другого канала/чата - игнорируем
+                image_url = None
+                photos = post.get("photo")
+                if photos:
+                    biggest = photos[-1]
+                    image_url = _get_file_url(biggest["file_id"])
 
-        text = post.get("text") or post.get("caption") or ""
+                if image_url:
+                    logger.info("📸 Пост канала %s: получено фото через Bot API", post["message_id"])
+                elif text:
+                    logger.info("Пост канала %s: есть текст, картинки нет", post["message_id"])
 
-        image_url = None
-        photos = post.get("photo")
-        if photos:
-            # photo - список размеров одного и того же фото, последний
-            # элемент - самое большое разрешение
-            biggest = photos[-1]
-            image_url = _get_file_url(biggest["file_id"])
+                posts.append(ChannelPost(post_id=post["message_id"], text=text, image_url=image_url))
+            continue
 
-        if image_url:
-            logger.info("📸 Пост %s: получено настоящее фото через Bot API", post["message_id"])
-        elif text:
-            logger.info("Пост %s: есть текст, картинки нет", post["message_id"])
+        # === Вариант 2: Личное сообщение от пользователя ===
+        message = update.get("message")
+        if message:
+            chat = message.get("chat", {})
+            # Проверяем, что это личное сообщение И оно от конфигурированного пользователя
+            if (chat.get("type") == "private" and 
+                config.YOUR_USER_ID and 
+                chat.get("id") == config.YOUR_USER_ID):
+                
+                text = message.get("text") or message.get("caption") or ""
 
-        posts.append(ChannelPost(post_id=post["message_id"], text=text, image_url=image_url))
+                image_url = None
+                photos = message.get("photo")
+                if photos:
+                    biggest = photos[-1]
+                    image_url = _get_file_url(biggest["file_id"])
+
+                if image_url:
+                    logger.info("💌 Личное сообщение %s: получено фото через Bot API", message["message_id"])
+                elif text:
+                    logger.info("💌 Личное сообщение %s: есть текст, картинки нет", message["message_id"])
+
+                posts.append(ChannelPost(post_id=message["message_id"], text=text, image_url=image_url))
 
     if max_update_id > offset:
         queue_manager.set_telegram_update_offset(max_update_id)

@@ -416,3 +416,10 @@
 2026-06-21 14:20:44,615 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
 2026-06-21 14:20:44,626 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
 2026-06-21 14:20:44,626 [INFO] apscheduler.scheduler: Scheduler started
+2026-06-24 05:26:32,896 [INFO] main: Бот запущен. Интервал проверки: 60с. Окна публикации - валюта: 4.0ч, мнение: 48.0ч, статья: 168.0ч
+2026-06-24 05:26:32,906 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-24 05:26:32,915 [INFO] telegram_listener: Проверяем обновления Telegram (offset: 0)
+2026-06-24 05:26:33,498 [INFO] telegram_listener: 💌 Личное сообщение 22: есть текст, картинки нет
+2026-06-24 05:26:33,513 [INFO] telegram_listener: После фильтрации: 1 постов с текстом или картинкой
+2026-06-24 05:26:33,527 [INFO] apscheduler.scheduler: Added job "tick" to job store "default"
+2026-06-24 05:26:33,527 [INFO] apscheduler.scheduler: Scheduler started

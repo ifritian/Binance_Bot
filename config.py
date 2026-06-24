@@ -16,6 +16,12 @@ BASE_DIR = Path(__file__).parent
 FOLLOWUP_CHANNEL_USERNAME = os.environ.get("FOLLOWUP_CHANNEL_USERNAME", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
+# Твой Telegram USER_ID для слушания личных сообщений (опционально)
+# Если заполнено - бот будет принимать сигналы и из личных сообщений от тебя
+YOUR_USER_ID = os.environ.get("YOUR_USER_ID")
+if YOUR_USER_ID:
+    YOUR_USER_ID = int(YOUR_USER_ID)
+
 # --- Binance Square ---
 BINANCE_SQUARE_API_KEY = os.environ.get("BINANCE_SQUARE_API_KEY", "")
 BINANCE_SQUARE_BASE_V1 = "https://www.binance.com/bapi/composite/v1/public/pgc/openApi"
