@@ -33,12 +33,14 @@ _API_BASE = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}"
 @dataclass
 class ChannelPost:
     post_id: int
-    text: str                    # пустая строка, если подписи нет
-    image_url: Optional[str]     # None, если картинки нет
+    text: str
+    image_url: Optional[str] = None
+    photo_file_id: Optional[str] = None  # 💾 НОВОЕ: вечный ID файла в Telegram
 
 
-def _get_file_url(file_id: str) -> Optional[str]:
-    """Получает прямую ссылку на файл по file_id через Bot API."""
+def get_file_url(file_id: str) -> Optional[str]:
+    """Получает прямую ссылку на файл по file_id через Bot API (public версия).
+    Используется как для первого запроса URL, так и для обновления перед публикацией."""
     try:
         resp = requests.get(f"{_API_BASE}/getFile", params={"file_id": file_id}, timeout=15)
         resp.raise_for_status()
@@ -157,17 +159,25 @@ def fetch_new_channel_posts() -> list[ChannelPost]:
                 text = post.get("text") or post.get("caption") or ""
 
                 image_url = None
+                photo_file_id = None  # 💾 НОВОЕ: переменная для file_id
                 photos = post.get("photo")
                 if photos:
                     biggest = photos[-1]
-                    image_url = _get_file_url(biggest["file_id"])
+                    photo_file_id = biggest["file_id"]  # 💾 НОВОЕ: сохраняем file_id
+                    image_url = get_file_url(photo_file_id)  # Используем public функцию
 
                 if image_url:
                     logger.info("📸 Пост канала %s: получено фото через Bot API", post["message_id"])
                 elif text:
                     logger.info("Пост канала %s: есть текст, картинки нет", post["message_id"])
 
-                posts.append(ChannelPost(post_id=post["message_id"], text=text, image_url=image_url))
+                # 💾 НОВОЕ: передаём photo_file_id в ChannelPost
+                posts.append(ChannelPost(
+                    post_id=post["message_id"],
+                    text=text,
+                    image_url=image_url,
+                    photo_file_id=photo_file_id  # ✨ ЗДЕСЬ!
+                ))
             continue
 
         # === Вариант 2: Личное сообщение от пользователя ===
@@ -182,17 +192,25 @@ def fetch_new_channel_posts() -> list[ChannelPost]:
                 text = message.get("text") or message.get("caption") or ""
 
                 image_url = None
+                photo_file_id = None  # 💾 НОВОЕ: переменная для file_id
                 photos = message.get("photo")
                 if photos:
                     biggest = photos[-1]
-                    image_url = _get_file_url(biggest["file_id"])
+                    photo_file_id = biggest["file_id"]  # 💾 НОВОЕ: сохраняем file_id
+                    image_url = get_file_url(photo_file_id)  # Используем public функцию
 
                 if image_url:
                     logger.info("💌 Личное сообщение %s: получено фото через Bot API", message["message_id"])
                 elif text:
                     logger.info("💌 Личное сообщение %s: есть текст, картинки нет", message["message_id"])
 
-                posts.append(ChannelPost(post_id=message["message_id"], text=text, image_url=image_url))
+                # 💾 НОВОЕ: передаём photo_file_id в ChannelPost
+                posts.append(ChannelPost(
+                    post_id=message["message_id"],
+                    text=text,
+                    image_url=image_url,
+                    photo_file_id=photo_file_id  # ✨ ЗДЕСЬ!
+                ))
 
     if max_update_id > offset:
         queue_manager.set_telegram_update_offset(max_update_id)

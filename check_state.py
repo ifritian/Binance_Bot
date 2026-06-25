@@ -9,7 +9,6 @@ check_state.py - диагностика без побочных эффектов
 
 Запуск: python check_state.py
 """
-import time
 
 import config
 import queue_manager

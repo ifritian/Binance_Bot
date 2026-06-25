@@ -93,7 +93,7 @@ def _publish_signal(signal) -> bool:
         return False
 
     try:
-        chart_path = chart_generator.generate_chart_image(signal.ticker, interval="1h", limit=48)
+        chart_path = chart_generator.generate_chart_image(signal.ticker, days=2)
     except Exception as e:
         logger.warning("Не удалось сгенерировать график для %s: %s", signal.ticker, e)
         chart_path = None
@@ -111,7 +111,12 @@ def _publish_signal(signal) -> bool:
     return published
 
 
+"""
+Фрагменты main.py - функция _publish_image_insight с логикой обновления image_url
+"""
+
 def _publish_image_insight(insight) -> bool:
+    """Публикуем пост по картинке - с обновлением URL перед скачиванием если есть file_id"""
     logger.info("Публикуем пост по картинке %s", insight.ticker)
 
     hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
@@ -127,11 +132,21 @@ def _publish_image_insight(insight) -> bool:
         logger.error("Пост по картинке не прошёл проверку, публикация отменена: %s", reason)
         return False
 
+    # 🔄 НОВОЕ: Обновляем URL если есть file_id (защита от протухших ссылок)
+    image_url = insight.image_url
+    if hasattr(insight, 'photo_file_id') and insight.photo_file_id:
+        fresh_url = telegram_listener.get_file_url(insight.photo_file_id)
+        if fresh_url:
+            image_url = fresh_url
+            logger.info("Обновлена ссылка на картинку (получена свежая через file_id)")
+        else:
+            logger.warning("Не удалось получить свежую ссылку через file_id, используем старую")
+
     image_path = None
     try:
-        image_path = image_analyzer.download_to_tempfile(insight.image_url)
+        image_path = image_analyzer.download_to_tempfile(image_url)
     except Exception as e:
-        logger.warning("Не удалось скачать оригинальную картинку %s: %s", insight.image_url, e)
+        logger.warning("Не удалось скачать картинку %s: %s", image_url, e)
 
     if image_path is None:
         logger.warning(

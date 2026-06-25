@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 _GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 _WEEK_SECONDS = 7 * 24 * 3600
 
-_SYSTEM_PROMPT = f"""Ты пишешь еженедельную статью-сводку для Binance Square
+_SYSTEM_PROMPT = """Ты пишешь еженедельную статью-сводку для Binance Square
 в фирменном стиле автора - живо, без канцелярита, но информативно.
 Статья подводит итог по сигналам за неделю: что сработало, что не
 оправдало ожиданий, общая картина.
