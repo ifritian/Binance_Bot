@@ -148,6 +148,18 @@ def log_posted_ticker(ticker: str) -> None:
     _set("recent_tickers", history)
 
 
+# --- Кэш сопоставления тикер -> CoinGecko id ---
+# Чтобы не дёргать /search на CoinGecko повторно для уже встречавшихся
+# тикеров - результат поиска сохраняется один раз и переживает перезапуски.
+
+def get_cached_coingecko_id(ticker: str) -> Optional[str]:
+    return _get(f"coingecko_id:{ticker.upper()}", None)
+
+
+def set_cached_coingecko_id(ticker: str, coingecko_id: str) -> None:
+    _set(f"coingecko_id:{ticker.upper()}", coingecko_id)
+
+
 # --- Отложенный пост, ждущий своего окна публикации ---
 # Может быть двух видов: "digest" (текстовый дайджест с числами)
 # или "image" (качественный инсайт по картинке, без чисел).

@@ -70,7 +70,7 @@ def check_for_new_signals() -> None:
                 continue  # текст распознан как сигнал - картинку (если есть) не трогаем
 
         if post.image_url:
-            insight = image_analyzer.analyze_chart_image(post.image_url)
+            insight = image_analyzer.analyze_chart_image(post.image_url, post.photo_file_id)
             if insight is not None:
                 logger.info("Новая картинка распознана: %s, направление %s", insight.ticker, insight.direction)
                 queue_manager.set_pending_image(insight)
@@ -111,12 +111,7 @@ def _publish_signal(signal) -> bool:
     return published
 
 
-"""
-Фрагменты main.py - функция _publish_image_insight с логикой обновления image_url
-"""
-
 def _publish_image_insight(insight) -> bool:
-    """Публикуем пост по картинке - с обновлением URL перед скачиванием если есть file_id"""
     logger.info("Публикуем пост по картинке %s", insight.ticker)
 
     hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
@@ -132,21 +127,24 @@ def _publish_image_insight(insight) -> bool:
         logger.error("Пост по картинке не прошёл проверку, публикация отменена: %s", reason)
         return False
 
-    # 🔄 НОВОЕ: Обновляем URL если есть file_id (защита от протухших ссылок)
-    image_url = insight.image_url
-    if hasattr(insight, 'photo_file_id') and insight.photo_file_id:
+    image_path = None
+    download_url = insight.image_url
+    if insight.photo_file_id:
+        # Ссылка из момента анализа (insight.image_url) могла протухнуть -
+        # запрашиваем свежую прямо перед скачиванием.
         fresh_url = telegram_listener.get_file_url(insight.photo_file_id)
         if fresh_url:
-            image_url = fresh_url
-            logger.info("Обновлена ссылка на картинку (получена свежая через file_id)")
+            download_url = fresh_url
         else:
-            logger.warning("Не удалось получить свежую ссылку через file_id, используем старую")
+            logger.warning(
+                "Не удалось получить свежую ссылку на файл %s, пробую старую (может быть протухшей)",
+                insight.photo_file_id,
+            )
 
-    image_path = None
     try:
-        image_path = image_analyzer.download_to_tempfile(image_url)
+        image_path = image_analyzer.download_to_tempfile(download_url)
     except Exception as e:
-        logger.warning("Не удалось скачать картинку %s: %s", image_url, e)
+        logger.warning("Не удалось скачать оригинальную картинку %s: %s", download_url, e)
 
     if image_path is None:
         logger.warning(

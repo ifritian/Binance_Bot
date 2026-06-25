@@ -1,8 +1,6 @@
 """
 Генерация графика цены для тикера через CoinGecko API (без геоблокировки).
-Поддерживает любые монеты через динамический кэш ID.
 """
-import json
 import logging
 from pathlib import Path
 
@@ -12,14 +10,16 @@ import matplotlib.pyplot as plt
 import requests
 
 import config
+import queue_manager
 
 logger = logging.getLogger(__name__)
 
 _COINGECKO_URL = "https://api.coingecko.com/api/v3"
 _CHARTS_DIR = config.BASE_DIR / "charts"
-_CACHE_FILE = config.BASE_DIR / "coins_cache.json"
 
-# Статический маппинг для топовых монет (ускорение)
+# Маппинг тикеров на CoinGecko ID - быстрый путь для самых частых монет,
+# без обращения к /search. Для всего остального ID ищется через API
+# (см. _resolve_coingecko_id) и результат кэшируется в bot_state.db.
 _TICKER_TO_COINGECKO = {
     "BTC": "bitcoin",
     "ETH": "ethereum",
@@ -38,106 +38,60 @@ _TICKER_TO_COINGECKO = {
     "FTM": "fantom",
 }
 
-# Кэш для динамически найденных монет
-_COINS_CACHE = None
 
-
-def _load_or_create_cache() -> dict:
-    """Загружает кэш из файла или инициализирует пустой."""
-    global _COINS_CACHE
-    
-    if _COINS_CACHE is not None:
-        return _COINS_CACHE
-    
-    if _CACHE_FILE.exists():
-        try:
-            with open(_CACHE_FILE, "r", encoding="utf-8") as f:
-                _COINS_CACHE = json.load(f)
-                logger.info("Загружен кэш монет (%d записей)", len(_COINS_CACHE))
-                return _COINS_CACHE
-        except Exception as e:
-            logger.warning("Не удалось загрузить кэш: %s, начинаю с пустого", e)
-    
-    _COINS_CACHE = {}
-    return _COINS_CACHE
-
-
-def _save_cache() -> None:
-    """Сохраняет кэш на диск."""
-    if _COINS_CACHE is None:
-        return
-    
+def _search_coingecko_id(clean_ticker: str) -> str | None:
+    """Ищет CoinGecko id через /search - возвращает первую монету, у
+    которой symbol совпадает с тикером (без учёта регистра). CoinGecko
+    отдаёт результаты /search уже отсортированными по market cap, так
+    что первое совпадение по symbol - почти всегда то, что нужно
+    (старшая монета с таким тикером, а не случайный шиткоин-омоним)."""
     try:
-        _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(_COINS_CACHE, f, indent=2, ensure_ascii=False)
-        logger.debug("Кэш монет сохранён (%d записей)", len(_COINS_CACHE))
-    except Exception as e:
-        logger.warning("Не удалось сохранить кэш: %s", e)
-
-
-def _search_coingecko_by_symbol(ticker: str) -> str | None:
-    """Ищет монету на CoinGecko по тикеру через API поиска."""
-    try:
-        url = f"{_COINGECKO_URL}/search"
-        params = {"query": ticker}
-        resp = requests.get(url, params=params, timeout=10)
+        resp = requests.get(
+            f"{_COINGECKO_URL}/search", params={"query": clean_ticker}, timeout=15
+        )
         resp.raise_for_status()
-        data = resp.json()
-        
-        # CoinGecko возвращает список coins с ID
-        coins = data.get("coins", [])
-        if coins:
-            # Берём первый результат (обычно самый релевантный)
-            coingecko_id = coins[0].get("id")
-            if coingecko_id:
-                logger.info("Найдена монета %s → %s через CoinGecko поиск", ticker, coingecko_id)
-                return coingecko_id
+        coins = resp.json().get("coins", [])
     except requests.RequestException as e:
-        logger.warning("Ошибка при поиске %s на CoinGecko: %s", ticker, e)
-    
-    return None
+        logger.warning("Не удалось найти CoinGecko id для %s: %s", clean_ticker, e)
+        return None
+
+    for coin in coins:
+        if coin.get("symbol", "").upper() == clean_ticker:
+            return coin["id"]
+
+    # Точного совпадения по symbol нет - берём первый результат как
+    # лучшее доступное приближение, если он вообще есть.
+    return coins[0]["id"] if coins else None
 
 
 def _get_coingecko_id(ticker: str) -> str | None:
-    """
-    Преобразует тикер в CoinGecko ID:
-    1. Проверяет статический маппинг
-    2. Проверяет динамический кэш
-    3. Ищет через CoinGecko API и сохраняет в кэш
-    """
+    """Преобразует тикер в CoinGecko ID: сперва статичный маппинг
+    топ-монет, потом кэш уже найденных раньше тикеров, и только если
+    ничего нет - живой поиск через /search (с сохранением в кэш)."""
     clean_ticker = ticker.replace("USDT", "").upper()
-    
-    # 1️⃣ Проверяем статический маппинг
+
     if clean_ticker in _TICKER_TO_COINGECKO:
         return _TICKER_TO_COINGECKO[clean_ticker]
-    
-    # 2️⃣ Проверяем динамический кэш
-    cache = _load_or_create_cache()
-    if clean_ticker in cache:
-        logger.debug("Найден %s в кэше → %s", clean_ticker, cache[clean_ticker])
-        return cache[clean_ticker]
-    
-    # 3️⃣ Ищем через API и добавляем в кэш
-    coingecko_id = _search_coingecko_by_symbol(clean_ticker)
-    if coingecko_id:
-        cache[clean_ticker] = coingecko_id
-        _save_cache()
-        return coingecko_id
-    
-    # Если не найдено - логируем, возвращаем None (не гадаем)
-    logger.warning("Не найдена монета %s ни в маппинге, ни на CoinGecko", clean_ticker)
+
+    cached = queue_manager.get_cached_coingecko_id(clean_ticker)
+    if cached:
+        return cached
+
+    found = _search_coingecko_id(clean_ticker)
+    if found:
+        queue_manager.set_cached_coingecko_id(clean_ticker, found)
+        return found
+
+    logger.warning("Не удалось определить CoinGecko id для тикера %s", clean_ticker)
     return None
 
 
 def fetch_klines(symbol: str, days: int = 2) -> list:
     """Получает данные цены с CoinGecko за последние N дней."""
     coingecko_id = _get_coingecko_id(symbol)
-    
-    if not coingecko_id:
-        logger.warning("Не удалось определить CoinGecko ID для %s", symbol)
+    if coingecko_id is None:
         return []
-    
+
     try:
         url = f"{_COINGECKO_URL}/coins/{coingecko_id}/market_chart"
         params = {
@@ -152,8 +106,7 @@ def fetch_klines(symbol: str, days: int = 2) -> list:
         # CoinGecko возвращает [[timestamp, price], ...]
         return data.get("prices", [])
     except requests.RequestException as e:
-        logger.warning("Не удалось получить данные CoinGecko для %s (%s): %s", 
-                      symbol, coingecko_id, e)
+        logger.warning("Не удалось получить данные CoinGecko для %s: %s", symbol, e)
         return []
 
 

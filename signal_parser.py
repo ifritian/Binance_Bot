@@ -158,6 +158,7 @@ def parse_signals(text: str) -> list[RsiSignal]:
             results.append(signal)
     return results
 
+
 def pick_entry(signals: list[RsiSignal], recent_tickers: list[str]) -> RsiSignal:
     """Выбирает сигнал из пачки, стараясь не повторять тикеры, которые
     публиковались недавно (recent_tickers - последние N тикеров)."""
