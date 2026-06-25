@@ -144,7 +144,7 @@ def generate_weekly_article(history: list[dict]) -> Optional[tuple[str, str, lis
 
 def generate_cover_image() -> Optional[Path]:
     """Обложка статьи - график BTC за последнюю неделю."""
-    return generate_chart_image("BTC", interval="4h", limit=42)  # 42 * 4ч = 7 дней
+    return generate_chart_image("BTC", days=7) 
 
 
 def validate_article_text(title: str, body: str, history: list[dict]) -> tuple[bool, str]:
