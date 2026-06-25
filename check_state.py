@@ -54,13 +54,16 @@ def main() -> None:
               "публиковать нечего, пока не придёт новый сигнал из канала.")
     else:
         kind, payload = pending
-        if kind == "digest":
-            top = payload.top
-            print(f"\nОтложенный пост (валюта): ДА, тип=digest, "
-                  f"тикер={top.ticker}, изменение={top.change_pct}%, score={top.score}")
-        else:
+        if kind == "signal":
+            print(f"\nОтложенный пост (валюта): ДА, тип=signal, "
+                  f"тикер={payload.ticker}, направление={payload.direction}, "
+                  f"вход={payload.entry_low}-{payload.entry_high}, "
+                  f"стоп={payload.invalidation}, тейк={payload.target}")
+        elif kind == "image":
             print(f"\nОтложенный пост (валюта): ДА, тип=image, "
                   f"тикер={payload.ticker}, направление={payload.direction}")
+        else:
+            print(f"\nОтложенный пост (валюта): ДА, неизвестный тип={kind}")
         print("  -> если окно публикации (currency) открыто, бот опубликует "
               "это на следующем тике (если пройдёт генерацию текста, "
               "проверку чисел и получится сделать график/скачать картинку).")
