@@ -7,6 +7,8 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch: {}  # позволяет запустить вручную кнопкой "Run workflow" на GitHub
+  push:
+    branches: [main]  # запуск при любом коммите в main - удобно как замена кнопке "Run workflow" с телефона
 
 # Нужно явно разрешить workflow коммитить изменения обратно в репозиторий
 permissions:
@@ -48,6 +50,10 @@ jobs:
           OPINION_INTERVAL_HOURS: ${{ secrets.OPINION_INTERVAL_HOURS }}
           ARTICLE_INTERVAL_HOURS: ${{ secrets.ARTICLE_INTERVAL_HOURS }}
         run: python main.py --once
+
+      - name: Show queue state (diagnostics)
+        if: always()
+        run: python check_state.py
 
       - name: Save bot state back to the repository
         run: |
