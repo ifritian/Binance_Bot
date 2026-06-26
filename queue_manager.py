@@ -243,47 +243,88 @@ def pending_queue_summary() -> list[str]:
     return out
 
 
-def get_pending_post() -> Optional[tuple[str, object]]:
-    """Возвращает (kind, payload) самого старого поста в очереди, или
-    None, если очередь пуста. Запись НЕ удаляется - удаление делает
-    clear_pending_post() после успешной публикации."""
+def get_pending_post(min_score: int = 0) -> Optional[tuple[int, str, object]]:
+    """Возвращает (индекс_в_очереди, kind, payload) ЛУЧШЕГО подходящего
+    поста, или None, если ничего не подходит.
+
+    "Лучший" = сигнал (kind=signal) с максимальным score СРЕДИ ТЕХ, у
+    кого score > min_score. Если ни один сигнал не проходит порог -
+    рассматривается самый старый пост типа "image" (для картинок score
+    не считается, порог на них не действует - это отдельный, более
+    редкий путь публикации).
+
+    Если ничего не подходит вообще - очередь НЕ трогаем, просто ждём
+    следующего тика (новый сигнал может появиться, либо существующий
+    станет неактуальным и выпадет по лимиту попыток/переполнению)."""
     queue = _get_queue()
     if not queue:
         return None
 
-    item = queue[0]
+    best_idx, best_score = None, None
+    fallback_image_idx = None
+
+    for idx, item in enumerate(queue):
+        if item["kind"] == "signal":
+            try:
+                score = int(item["payload"].get("score", 0))
+            except (TypeError, ValueError):
+                score = 0
+            if score > min_score and (best_score is None or score > best_score):
+                best_idx, best_score = idx, score
+        elif item["kind"] == "image" and fallback_image_idx is None:
+            fallback_image_idx = idx
+
+    chosen_idx = best_idx if best_idx is not None else fallback_image_idx
+    if chosen_idx is None:
+        return None
+
+    item = queue[chosen_idx]
     kind = item["kind"]
     payload = item["payload"]
 
     if kind == "signal":
-        return kind, RsiSignal(**payload)
-    if kind == "image":
-        return kind, ImageInsight(**payload)
-
-    return None
+        return chosen_idx, kind, RsiSignal(**payload)
+    return chosen_idx, kind, ImageInsight(**payload)
 
 
-def clear_pending_post() -> None:
-    """Убирает самый старый пост из очереди - вызывать после успешной публикации."""
+def clear_pending_post(index: int) -> None:
+    """Убирает конкретный пост из очереди (по индексу) - вызывать после успешной публикации."""
     queue = _get_queue()
-    if queue:
-        queue.pop(0)
+    if 0 <= index < len(queue):
+        queue.pop(index)
         _set_queue(queue)
 
 
-def register_failed_attempt() -> bool:
-    """Увеличивает счётчик попыток у самого старого поста в очереди.
-    Если попыток стало больше лимита - выбрасывает его из очереди
-    (чтобы не блокировать всё, что скопилось за ним) и возвращает True
-    (запись была выброшена). Иначе возвращает False (попробуем снова
+def register_failed_attempt(index: int) -> bool:
+    """Увеличивает счётчик попыток у конкретного поста в очереди (по
+    индексу). Если попыток стало больше лимита - выбрасывает его из
+    очереди и возвращает True. Иначе возвращает False (попробуем снова
     на следующем тике)."""
     queue = _get_queue()
-    if not queue:
+    if not (0 <= index < len(queue)):
         return False
 
-    queue[0]["attempts"] += 1
-    dropped = queue[0]["attempts"] > MAX_PUBLISH_ATTEMPTS
+    queue[index]["attempts"] += 1
+    dropped = queue[index]["attempts"] > MAX_PUBLISH_ATTEMPTS
     if dropped:
-        queue.pop(0)
+        queue.pop(index)
     _set_queue(queue)
     return dropped
+
+
+# --- Cooldown для собственного сканера сигналов (scanner.py) ---
+# Без этого, пока RSI пары держится за пределами 70/30 (а это может
+# длиться часами), сканер заносил бы в очередь практически идентичный
+# сигнал на каждом тике (раз в 10 минут).
+
+def was_recently_alerted(ticker: str, direction_key: str, cooldown_hours: float) -> bool:
+    key = f"scanner_alert:{ticker.upper()}:{direction_key}"
+    last_ts = _get(key, None)
+    if last_ts is None:
+        return False
+    return (time.time() - last_ts) < cooldown_hours * 3600
+
+
+def mark_alerted(ticker: str, direction_key: str) -> None:
+    key = f"scanner_alert:{ticker.upper()}:{direction_key}"
+    _set(key, time.time())

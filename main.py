@@ -28,6 +28,7 @@ import image_analyzer
 import opinion_generator
 import post_format
 import queue_manager
+import scanner
 import signal_parser
 import telegram_listener
 import text_generator
@@ -177,11 +178,15 @@ def try_publish_currency_post() -> None:
     if seconds_elapsed < min_seconds:
         return  # окно публикации ещё не открылось
 
-    pending = queue_manager.get_pending_post()
+    pending = queue_manager.get_pending_post(min_score=config.MIN_SIGNAL_SCORE_TO_PUBLISH)
     if pending is None:
-        return  # нет накопленного поста - публиковать нечего
+        logger.info(
+            "Окно публикации (валюта) открыто, но в очереди нет сигнала со score > %d - жду следующего тика.",
+            config.MIN_SIGNAL_SCORE_TO_PUBLISH,
+        )
+        return  # нет сигнала, проходящего порог качества - публиковать нечего
 
-    kind, payload = pending
+    queue_index, kind, payload = pending
     logger.info("Окно публикации (валюта) открыто, тип отложенного поста: %s", kind)
 
     if kind == "signal":
@@ -197,16 +202,16 @@ def try_publish_currency_post() -> None:
         queue_manager.log_posted_ticker(ticker)
         queue_manager.set_last_post_time("currency")
         queue_manager.roll_new_jitter("currency", config.CURRENCY_JITTER_MINUTES * 60)
-        queue_manager.clear_pending_post()
+        queue_manager.clear_pending_post(queue_index)
     else:
-        dropped = queue_manager.register_failed_attempt()
+        dropped = queue_manager.register_failed_attempt(queue_index)
         if dropped:
             logger.warning(
                 "Пост (%s, %s) не опубликовался %d раза подряд - выброшен из очереди, "
                 "чтобы не блокировать остальное.",
                 kind, payload.ticker, queue_manager.MAX_PUBLISH_ATTEMPTS,
             )
-        # иначе пост остаётся первым в очереди, попробуем снова на следующем тике
+        # иначе пост остаётся в очереди, попробуем снова на следующем тике
 
 
 # ============================================================
@@ -311,6 +316,10 @@ def try_publish_article_post() -> None:
 def tick() -> None:
     try:
         check_for_new_signals()
+        try:
+            scanner.run_scan()
+        except Exception:
+            logger.exception("Ошибка в собственном сканере сигналов - пропускаю до следующего тика")
         try_publish_currency_post()
         try_publish_opinion_post()
         try_publish_article_post()
