@@ -9,7 +9,6 @@ check_state.py - диагностика без побочных эффектов
 
 Запуск: python check_state.py
 """
-
 import config
 import queue_manager
 
@@ -50,21 +49,30 @@ def main() -> None:
     print(f"\nTelegram update offset: {offset}")
 
     pending = queue_manager.get_pending_post()
+    queue_len = queue_manager.pending_queue_length()
     if pending is None:
-        print("\nОтложенный пост (валюта): НЕТ — даже если откроется окно, "
+        print("\nОчередь на публикацию (валюта): ПУСТА — даже если откроется окно, "
               "публиковать нечего, пока не придёт новый сигнал из канала.")
     else:
         kind, payload = pending
-        if kind == "digest":
-            top = payload.top
-            print(f"\nОтложенный пост (валюта): ДА, тип=digest, "
-                  f"тикер={top.ticker}, изменение={top.change_pct}%, score={top.score}")
-        else:
-            print(f"\nОтложенный пост (валюта): ДА, тип=image, "
+        print(f"\nОчередь на публикацию (валюта): {queue_len} поста(ов) ожидают.")
+        if kind == "signal":
+            print(f"  Следующий к публикации: тип=signal, "
+                  f"тикер={payload.ticker}, направление={payload.direction}, "
+                  f"вход={payload.entry_low}-{payload.entry_high}, "
+                  f"стоп={payload.invalidation}, тейк={payload.target}")
+        elif kind == "image":
+            print(f"  Следующий к публикации: тип=image, "
                   f"тикер={payload.ticker}, направление={payload.direction}")
+        else:
+            print(f"  Следующий к публикации: неизвестный тип={kind}")
+        if queue_len > 1:
+            print("  Вся очередь (от старого к новому):")
+            for line in queue_manager.pending_queue_summary():
+                print(f"    - {line}")
         print("  -> если окно публикации (currency) открыто, бот опубликует "
-              "это на следующем тике (если пройдёт генерацию текста, "
-              "проверку чисел и получится сделать график/скачать картинку).")
+              "САМЫЙ СТАРЫЙ из них на следующем тике (если пройдёт генерацию "
+              "текста, проверку чисел и получится сделать график/скачать картинку).")
 
     report_window("currency", config.MIN_POST_INTERVAL_HOURS)
     report_window("opinion", config.OPINION_INTERVAL_HOURS)

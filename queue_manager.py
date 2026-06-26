@@ -148,6 +148,18 @@ def log_posted_ticker(ticker: str) -> None:
     _set("recent_tickers", history)
 
 
+# --- Кэш сопоставления тикер -> CoinGecko id ---
+# Чтобы не дёргать /search на CoinGecko повторно для уже встречавшихся
+# тикеров - результат поиска сохраняется один раз и переживает перезапуски.
+
+def get_cached_coingecko_id(ticker: str) -> Optional[str]:
+    return _get(f"coingecko_id:{ticker.upper()}", None)
+
+
+def set_cached_coingecko_id(ticker: str, coingecko_id: str) -> None:
+    _set(f"coingecko_id:{ticker.upper()}", coingecko_id)
+
+
 # --- Отложенный пост, ждущий своего окна публикации ---
 # Может быть двух видов: "digest" (текстовый дайджест с числами)
 # или "image" (качественный инсайт по картинке, без чисел).
@@ -172,14 +184,76 @@ def set_last_hook_mode(mode: str) -> None:
     _set("last_hook_mode", mode)
 
 
+# --- Очередь отложенных постов, ждущих своего окна публикации ---
+# ВАЖНО: это настоящая FIFO-очередь, а не одно перезаписываемое
+# значение. Раньше "отложенный пост" был ОДНИМ слотом - если за тик
+# в канале набегало несколько сигналов, каждый следующий просто
+# перетирал предыдущий, и публиковался только последний из пачки,
+# а остальные терялись безо всякого лога. Теперь каждый новый сигнал
+# или картинка добавляется в конец списка и ждёт своей очереди.
+#
+# У каждой записи есть счётчик попыток публикации (attempts) - если
+# конкретный пост не публикуется несколько раз подряд (например,
+# для тикера так и не нашёлся график), он сбрасывается из очереди,
+# чтобы не блокировать навечно всё, что скопилось за ним.
+
+_MAX_QUEUE_LENGTH = 30   # на случай аномального наплыва сигналов
+MAX_PUBLISH_ATTEMPTS = 3
+
+
+def _get_queue() -> list[dict]:
+    return _get("post_queue", [])
+
+
+def _set_queue(queue: list[dict]) -> None:
+    _set("post_queue", queue)
+
+
+def _push_pending(kind: str, payload: dict) -> None:
+    queue = _get_queue()
+    queue.append({"kind": kind, "payload": payload, "attempts": 0})
+    if len(queue) > _MAX_QUEUE_LENGTH:
+        dropped = queue.pop(0)
+        import logging
+        logging.getLogger("queue_manager").warning(
+            "Очередь переполнена (>%d) - старейшая запись (%s) выброшена без публикации",
+            _MAX_QUEUE_LENGTH, dropped.get("kind"),
+        )
+    _set_queue(queue)
+
+
+def push_pending_signal(signal: RsiSignal) -> None:
+    _push_pending("signal", asdict(signal))
+
+
+def push_pending_image(insight: ImageInsight) -> None:
+    _push_pending("image", asdict(insight))
+
+
+def pending_queue_length() -> int:
+    return len(_get_queue())
+
+
+def pending_queue_summary() -> list[str]:
+    """Короткое описание очереди для диагностики (check_state.py)."""
+    out = []
+    for item in _get_queue():
+        ticker = item["payload"].get("ticker", "?")
+        out.append(f"{item['kind']}:{ticker} (попыток={item['attempts']})")
+    return out
+
+
 def get_pending_post() -> Optional[tuple[str, object]]:
-    """Возвращает (kind, payload) или None, если очередь пуста."""
-    data = _get("pending_post", None)
-    if not data:
+    """Возвращает (kind, payload) самого старого поста в очереди, или
+    None, если очередь пуста. Запись НЕ удаляется - удаление делает
+    clear_pending_post() после успешной публикации."""
+    queue = _get_queue()
+    if not queue:
         return None
 
-    kind = data["kind"]
-    payload = data["payload"]
+    item = queue[0]
+    kind = item["kind"]
+    payload = item["payload"]
 
     if kind == "signal":
         return kind, RsiSignal(**payload)
@@ -189,13 +263,27 @@ def get_pending_post() -> Optional[tuple[str, object]]:
     return None
 
 
-def set_pending_signal(signal: RsiSignal) -> None:
-    _set("pending_post", {"kind": "signal", "payload": asdict(signal)})
-
-
-def set_pending_image(insight: ImageInsight) -> None:
-    _set("pending_post", {"kind": "image", "payload": asdict(insight)})
-
-
 def clear_pending_post() -> None:
-    _set("pending_post", None)
+    """Убирает самый старый пост из очереди - вызывать после успешной публикации."""
+    queue = _get_queue()
+    if queue:
+        queue.pop(0)
+        _set_queue(queue)
+
+
+def register_failed_attempt() -> bool:
+    """Увеличивает счётчик попыток у самого старого поста в очереди.
+    Если попыток стало больше лимита - выбрасывает его из очереди
+    (чтобы не блокировать всё, что скопилось за ним) и возвращает True
+    (запись была выброшена). Иначе возвращает False (попробуем снова
+    на следующем тике)."""
+    queue = _get_queue()
+    if not queue:
+        return False
+
+    queue[0]["attempts"] += 1
+    dropped = queue[0]["attempts"] > MAX_PUBLISH_ATTEMPTS
+    if dropped:
+        queue.pop(0)
+    _set_queue(queue)
+    return dropped

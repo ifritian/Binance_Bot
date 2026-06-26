@@ -65,15 +65,15 @@ def check_for_new_signals() -> None:
                     chosen.ticker, chosen.direction, chosen.entry_low, chosen.entry_high,
                     chosen.invalidation, chosen.target, chosen.score, recent,
                 )
-                queue_manager.set_pending_signal(chosen)
+                queue_manager.push_pending_signal(chosen)
                 queue_manager.log_signal_history(chosen)  # для еженедельной статьи
                 continue  # текст распознан как сигнал - картинку (если есть) не трогаем
 
         if post.image_url:
-            insight = image_analyzer.analyze_chart_image(post.image_url)
+            insight = image_analyzer.analyze_chart_image(post.image_url, post.photo_file_id)
             if insight is not None:
                 logger.info("Новая картинка распознана: %s, направление %s", insight.ticker, insight.direction)
-                queue_manager.set_pending_image(insight)
+                queue_manager.push_pending_image(insight)
 
 
 def _publish_signal(signal) -> bool:
@@ -111,12 +111,7 @@ def _publish_signal(signal) -> bool:
     return published
 
 
-"""
-Фрагменты main.py - функция _publish_image_insight с логикой обновления image_url
-"""
-
 def _publish_image_insight(insight) -> bool:
-    """Публикуем пост по картинке - с обновлением URL перед скачиванием если есть file_id"""
     logger.info("Публикуем пост по картинке %s", insight.ticker)
 
     hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
@@ -132,21 +127,24 @@ def _publish_image_insight(insight) -> bool:
         logger.error("Пост по картинке не прошёл проверку, публикация отменена: %s", reason)
         return False
 
-    # 🔄 НОВОЕ: Обновляем URL если есть file_id (защита от протухших ссылок)
-    image_url = insight.image_url
-    if hasattr(insight, 'photo_file_id') and insight.photo_file_id:
+    image_path = None
+    download_url = insight.image_url
+    if insight.photo_file_id:
+        # Ссылка из момента анализа (insight.image_url) могла протухнуть -
+        # запрашиваем свежую прямо перед скачиванием.
         fresh_url = telegram_listener.get_file_url(insight.photo_file_id)
         if fresh_url:
-            image_url = fresh_url
-            logger.info("Обновлена ссылка на картинку (получена свежая через file_id)")
+            download_url = fresh_url
         else:
-            logger.warning("Не удалось получить свежую ссылку через file_id, используем старую")
+            logger.warning(
+                "Не удалось получить свежую ссылку на файл %s, пробую старую (может быть протухшей)",
+                insight.photo_file_id,
+            )
 
-    image_path = None
     try:
-        image_path = image_analyzer.download_to_tempfile(image_url)
+        image_path = image_analyzer.download_to_tempfile(download_url)
     except Exception as e:
-        logger.warning("Не удалось скачать картинку %s: %s", image_url, e)
+        logger.warning("Не удалось скачать оригинальную картинку %s: %s", download_url, e)
 
     if image_path is None:
         logger.warning(
@@ -200,7 +198,15 @@ def try_publish_currency_post() -> None:
         queue_manager.set_last_post_time("currency")
         queue_manager.roll_new_jitter("currency", config.CURRENCY_JITTER_MINUTES * 60)
         queue_manager.clear_pending_post()
-    # если не опубликовано - пост остаётся в очереди, попробуем на следующем тике
+    else:
+        dropped = queue_manager.register_failed_attempt()
+        if dropped:
+            logger.warning(
+                "Пост (%s, %s) не опубликовался %d раза подряд - выброшен из очереди, "
+                "чтобы не блокировать остальное.",
+                kind, payload.ticker, queue_manager.MAX_PUBLISH_ATTEMPTS,
+            )
+        # иначе пост остаётся первым в очереди, попробуем снова на следующем тике
 
 
 # ============================================================
