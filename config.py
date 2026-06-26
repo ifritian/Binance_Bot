@@ -35,6 +35,11 @@ GROQ_VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "meta-llama/llama-4-scou
 
 # --- Поведение бота ---
 MIN_POST_INTERVAL_HOURS = float(os.environ.get("MIN_POST_INTERVAL_HOURS", "4"))
+# Публикуем только сигналы (от сканера или канала) со score СТРОГО
+# БОЛЬШЕ этого значения. Если в очереди нет ни одного такого -
+# просто не публикуем в это окно и ждём следующего тика. На посты
+# типа "image" (без числового score) порог не действует.
+MIN_SIGNAL_SCORE_TO_PUBLISH = int(os.environ.get("MIN_SIGNAL_SCORE_TO_PUBLISH", "90"))
 OPINION_INTERVAL_HOURS = float(os.environ.get("OPINION_INTERVAL_HOURS", "48"))
 ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))

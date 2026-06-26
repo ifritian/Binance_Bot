@@ -48,30 +48,34 @@ def main() -> None:
     offset = queue_manager.get_telegram_update_offset()
     print(f"\nTelegram update offset: {offset}")
 
-    pending = queue_manager.get_pending_post()
     queue_len = queue_manager.pending_queue_length()
-    if pending is None:
+    pending = queue_manager.get_pending_post(min_score=config.MIN_SIGNAL_SCORE_TO_PUBLISH)
+    if queue_len == 0:
         print("\nОчередь на публикацию (валюта): ПУСТА — даже если откроется окно, "
-              "публиковать нечего, пока не придёт новый сигнал из канала.")
+              "публиковать нечего, пока не придёт новый сигнал.")
     else:
-        kind, payload = pending
-        print(f"\nОчередь на публикацию (валюта): {queue_len} поста(ов) ожидают.")
-        if kind == "signal":
-            print(f"  Следующий к публикации: тип=signal, "
-                  f"тикер={payload.ticker}, направление={payload.direction}, "
-                  f"вход={payload.entry_low}-{payload.entry_high}, "
-                  f"стоп={payload.invalidation}, тейк={payload.target}")
-        elif kind == "image":
-            print(f"  Следующий к публикации: тип=image, "
-                  f"тикер={payload.ticker}, направление={payload.direction}")
+        print(f"\nОчередь на публикацию (валюта): {queue_len} поста(ов) лежат, "
+              f"порог публикации: score > {config.MIN_SIGNAL_SCORE_TO_PUBLISH}.")
+        if pending is None:
+            print("  Ни один из них не проходит порог по score - бот НЕ будет "
+                  "публиковать, даже если окно открыто. Ждём сигнал получше "
+                  "или истечения лимита попыток/переполнения очереди.")
         else:
-            print(f"  Следующий к публикации: неизвестный тип={kind}")
+            _, kind, payload = pending
+            if kind == "signal":
+                print(f"  Лучший подходящий: тип=signal, "
+                      f"тикер={payload.ticker}, score={payload.score}, направление={payload.direction}, "
+                      f"вход={payload.entry_low}-{payload.entry_high}, "
+                      f"стоп={payload.invalidation}, тейк={payload.target}")
+            elif kind == "image":
+                print(f"  Лучший подходящий: тип=image (без score), "
+                      f"тикер={payload.ticker}, направление={payload.direction}")
         if queue_len > 1:
-            print("  Вся очередь (от старого к новому):")
+            print("  Вся очередь:")
             for line in queue_manager.pending_queue_summary():
                 print(f"    - {line}")
-        print("  -> если окно публикации (currency) открыто, бот опубликует "
-              "САМЫЙ СТАРЫЙ из них на следующем тике (если пройдёт генерацию "
+        print("  -> если окно публикации (currency) открыто и есть подходящий пост выше - "
+              "бот опубликует именно его на следующем тике (если пройдёт генерацию "
               "текста, проверку чисел и получится сделать график/скачать картинку).")
 
     report_window("currency", config.MIN_POST_INTERVAL_HOURS)
