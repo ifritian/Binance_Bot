@@ -287,3 +287,21 @@ def register_failed_attempt() -> bool:
         queue.pop(0)
     _set_queue(queue)
     return dropped
+
+
+# --- Cooldown для собственного сканера сигналов (scanner.py) ---
+# Без этого, пока RSI пары держится за пределами 70/30 (а это может
+# длиться часами), сканер заносил бы в очередь практически идентичный
+# сигнал на каждом тике (раз в 10 минут).
+
+def was_recently_alerted(ticker: str, direction_key: str, cooldown_hours: float) -> bool:
+    key = f"scanner_alert:{ticker.upper()}:{direction_key}"
+    last_ts = _get(key, None)
+    if last_ts is None:
+        return False
+    return (time.time() - last_ts) < cooldown_hours * 3600
+
+
+def mark_alerted(ticker: str, direction_key: str) -> None:
+    key = f"scanner_alert:{ticker.upper()}:{direction_key}"
+    _set(key, time.time())

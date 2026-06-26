@@ -28,6 +28,7 @@ import image_analyzer
 import opinion_generator
 import post_format
 import queue_manager
+import scanner
 import signal_parser
 import telegram_listener
 import text_generator
@@ -311,6 +312,10 @@ def try_publish_article_post() -> None:
 def tick() -> None:
     try:
         check_for_new_signals()
+        try:
+            scanner.run_scan()
+        except Exception:
+            logger.exception("Ошибка в собственном сканере сигналов - пропускаю до следующего тика")
         try_publish_currency_post()
         try_publish_opinion_post()
         try_publish_article_post()
