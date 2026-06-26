@@ -32,15 +32,23 @@ THEMES: dict[str, dict] = {
     "market": {"label": "крипторынок в целом (по корзине BTC/ETH/SOL/BNB)", "tickers": ["BTC", "ETH", "SOL", "BNB"]},
 }
 
-_SYSTEM_PROMPT = """Ты пишешь короткий личный пост-мнение для Binance Square,
-в разговорном фирменном стиле автора - не сухая аналитика, а живая
-реакция человека, который следит за рынком. 2-4 предложения, можно
-с риторическим вопросом, эмодзи (1-2), без воды.
+_SYSTEM_PROMPT = """Ты пишешь личный пост-мнение для Binance Square, в
+разговорном фирменном стиле автора - живая реакция человека, который
+следит за рынком, а не сухая аналитика. 4-6 предложений, можно с
+риторическим вопросом, эмодзи (1-2), без воды - но за счёт длины дай
+больше контекста и личной рефлексии, чем просто констатация факта.
 
-Тебе дано ОДНО реальное число - % изменения за последние 2 дня по теме,
-указанной в задании. Используй его ТОЧНО как дано, не округляй и не
-придумывай других чисел. Это единственная цифра, которая должна быть
-в тексте - не упоминай других активов или процентов сверх заданного.
+Тебе дан НАБОР реальных чисел (см. задание) - используй их ТОЧНО как
+дано, не округляй и не придумывай других чисел. Можно использовать не
+все числа из набора, если не нужно для текста, но НЕЛЬЗЯ упоминать
+числа, которых там нет.
+
+Структура (свободно, не как шаблон):
+- зацепка с конкретной цифрой
+- что это может значить / на фоне чего это произошло (без выдумывания
+  новостей - просто рыночная рефлексия, "похоже на...", "не первый раз
+  когда...")
+- лёгкий вопрос к читателю или личный вывод
 
 НЕ добавляй сам никакой дисклеймер - это будет добавлено отдельно
 после твоего текста.
@@ -56,8 +64,10 @@ def pick_theme(last_theme: Optional[str]) -> str:
     return random.choice(themes)
 
 
-def _calc_change_pct(ticker: str) -> Optional[float]:
-    """% изменения цены тикера за последние 2 дня."""
+def _calc_ticker_stats(ticker: str) -> Optional[dict]:
+    """Реальные числа по тикеру за последние 2 дня: % изменения,
+    амплитуда (high-low в % от открытия) и текущая цена. Всё считаем
+    сами по тем же данным CoinGecko, без участия LLM."""
     try:
         klines = fetch_klines(ticker, days=2)
     except requests.RequestException as e:
@@ -67,39 +77,75 @@ def _calc_change_pct(ticker: str) -> Optional[float]:
     if len(klines) < 2:
         return None
 
-    open_price = float(klines[0][1])
-    close_price = float(klines[-1][1])
+    prices = [float(p[1]) for p in klines]
+    open_price, close_price = prices[0], prices[-1]
     if open_price == 0:
         return None
 
-    return (close_price - open_price) / open_price * 100
+    pct = round((close_price - open_price) / open_price * 100, 2)
+    amplitude_pct = round((max(prices) - min(prices)) / open_price * 100, 2)
+    return {"pct": pct, "amplitude_pct": amplitude_pct, "current_price": close_price}
 
 
-def _calc_theme_change_pct(theme: str) -> Optional[float]:
-    """% изменения для выбранной темы - один тикер или среднее по корзине."""
+def _calc_theme_stats(theme: str) -> Optional[dict]:
+    """Для одного тикера (BTC/ETH) - полный набор (pct/амплитуда/цена).
+    Для 'market' - % по каждому активу корзины + средний % по корзине
+    (амплитуду и цену для разнородной корзины не считаем - бессмысленно
+    усреднять цену BTC и SOL)."""
     tickers = THEMES[theme]["tickers"]
-    changes = [c for c in (_calc_change_pct(t) for t in tickers) if c is not None]
 
-    if not changes:
+    if len(tickers) == 1:
+        stats = _calc_ticker_stats(tickers[0])
+        if stats is None:
+            return None
+        return {"single": stats}
+
+    breakdown = {}
+    for t in tickers:
+        stats = _calc_ticker_stats(t)
+        if stats is not None:
+            breakdown[t] = stats["pct"]
+
+    if not breakdown:
         return None
 
-    return round(sum(changes) / len(changes), 2)
+    avg_pct = round(sum(breakdown.values()) / len(breakdown), 2)
+    return {"breakdown": breakdown, "avg_pct": avg_pct}
 
 
-def generate_opinion_post(theme: str) -> Optional[tuple[str, float]]:
-    """Возвращает (готовый текст поста, % изменения), либо None, если
-    не удалось получить данные."""
-    pct = _calc_theme_change_pct(theme)
-    if pct is None:
+def generate_opinion_post(theme: str) -> Optional[tuple[str, set[float]]]:
+    """Возвращает (готовый текст поста, набор разрешённых чисел для
+    проверки), либо None, если не удалось получить данные."""
+    stats = _calc_theme_stats(theme)
+    if stats is None:
         return None
 
-    sign = "+" if pct >= 0 else ""
     label = THEMES[theme]["label"]
-    user_prompt = (
-        f"Тема: {label}\n"
-        f"Изменение за последние 2 дня: {sign}{pct}%.\n\n"
-        f"Напиши личное мнение/наблюдение об этом движении рынка."
-    )
+
+    if "single" in stats:
+        s = stats["single"]
+        sign = "+" if s["pct"] >= 0 else ""
+        user_prompt = (
+            f"Тема: {label}\n"
+            f"Изменение цены за последние 2 дня: {sign}{s['pct']}%.\n"
+            f"Амплитуда колебаний за это время (high-low в % от начальной цены): {s['amplitude_pct']}%.\n"
+            f"Текущая цена: ${s['current_price']:.2f} (пиши без разделителей тысяч, как дано).\n\n"
+            f"Напиши личное мнение/наблюдение об этом движении рынка."
+        )
+        allowed_numbers = {s["pct"], s["amplitude_pct"], round(s["current_price"], 2)}
+    else:
+        breakdown_lines = "\n".join(
+            f"  ${t}: {'+' if pct >= 0 else ''}{pct}%" for t, pct in stats["breakdown"].items()
+        )
+        avg = stats["avg_pct"]
+        user_prompt = (
+            f"Тема: {label}\n"
+            f"Изменение по каждому активу за последние 2 дня:\n{breakdown_lines}\n"
+            f"Средний % по корзине: {'+' if avg >= 0 else ''}{avg}%.\n\n"
+            f"Напиши личное мнение/наблюдение об этом движении рынка - можно "
+            f"упомянуть как отдельные активы, так и общую картину."
+        )
+        allowed_numbers = set(stats["breakdown"].values()) | {avg}
 
     payload = {
         "model": config.GROQ_MODEL,
@@ -108,7 +154,7 @@ def generate_opinion_post(theme: str) -> Optional[tuple[str, float]]:
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.9,
-        "max_tokens": 250,
+        "max_tokens": 400,
     }
     headers = {"Authorization": f"Bearer {config.GROQ_API_KEY}"}
 
@@ -118,18 +164,21 @@ def generate_opinion_post(theme: str) -> Optional[tuple[str, float]]:
     hook = data["choices"][0]["message"]["content"].strip()
 
     text = assemble_post(hook)
-    logger.info("Сгенерирован пост-мнение (тема %s, %s%%): %s", theme, f"{sign}{pct}", text)
-    return text, pct
+    logger.info("Сгенерирован пост-мнение (тема %s, числа: %s): %s", theme, allowed_numbers, text)
+    return text, allowed_numbers
 
 
-def validate_opinion_post_text(text: str, expected_pct: float) -> tuple[bool, str]:
-    """Проверяем, что в тексте есть именно то число, которое мы
-    посчитали сами, и что дисклеймер на месте."""
+def validate_opinion_post_text(text: str, allowed_numbers: set[float]) -> tuple[bool, str]:
+    """Проверяем, что числа в тексте - подмножество тех, что мы сами
+    посчитали (allowed_numbers), и что дисклеймер на месте. Текст не
+    обязан использовать ВСЕ числа из набора, но не может содержать
+    числа, которых там нет."""
     import re
 
-    numbers = {float(n) for n in re.findall(r"[+-]?\d+\.?\d*", text)}
-    if not any(abs(expected_pct - n) < 1e-6 for n in numbers):
-        return False, f"В тексте не найден исходный %: {expected_pct}"
+    numbers = {float(n) for n in re.findall(r"[+-]?\d+\.?\d*", text.replace(",", ""))}
+    unknown = [n for n in numbers if not any(abs(n - a) < 0.05 for a in allowed_numbers)]
+    if unknown:
+        return False, f"В тексте есть числа, не из посчитанных данных: {unknown}"
 
     if DISCLAIMER.lower() not in text.lower():
         return False, "В тексте отсутствует дисклеймер"

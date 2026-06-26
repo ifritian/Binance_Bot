@@ -234,8 +234,8 @@ def try_publish_opinion_post() -> None:
         logger.warning("Не удалось получить данные для темы %s - пропускаю до следующего окна", theme)
         return
 
-    post_text, pct = result
-    ok, reason = opinion_generator.validate_opinion_post_text(post_text, pct)
+    post_text, allowed_numbers = result
+    ok, reason = opinion_generator.validate_opinion_post_text(post_text, allowed_numbers)
     if not ok:
         logger.error("Пост-мнение не прошёл проверку, публикация отменена: %s", reason)
         return
