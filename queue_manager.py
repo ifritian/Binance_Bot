@@ -350,3 +350,13 @@ def should_retry_now(post_type: str) -> bool:
 
 def set_retry_backoff(post_type: str, hours: float) -> None:
     _set(f"retry_after:{post_type}", time.time() + hours * 3600)
+
+
+def get_retry_backoff_remaining_seconds(post_type: str) -> Optional[float]:
+    """Сколько секунд осталось до конца паузы после сбоя, или None,
+    если бэкофф не активен (можно пробовать сейчас)."""
+    retry_after = _get(f"retry_after:{post_type}", None)
+    if retry_after is None:
+        return None
+    remaining = retry_after - time.time()
+    return remaining if remaining > 0 else None

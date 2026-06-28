@@ -41,6 +41,12 @@ def report_window(post_type: str, interval_hours: float) -> None:
             mins = remaining / 60
             print(f"  -> окно откроется через ~{remaining/3600:.1f}ч ({mins:.0f} мин)")
 
+    if post_type in ("opinion", "article"):
+        remaining_backoff = queue_manager.get_retry_backoff_remaining_seconds(post_type)
+        if remaining_backoff is not None:
+            print(f"  !! БЭКОФФ ПОСЛЕ СБОЯ АКТИВЕН: попыток не будет ещё ~{remaining_backoff/60:.0f} мин, "
+                  f"даже если окно выше открыто (см. лог последнего сбоя в Run one bot check).")
+
 
 def main() -> None:
     print("=== Состояние бота (только чтение, без запросов к API) ===")
