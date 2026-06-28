@@ -334,3 +334,19 @@ def was_recently_alerted(ticker: str, direction_key: str, cooldown_hours: float)
 def mark_alerted(ticker: str, direction_key: str) -> None:
     key = f"scanner_alert:{ticker.upper()}:{direction_key}"
     _set(key, time.time())
+
+
+# --- Отступ при сбое генерации/публикации (opinion, article) ---
+# Без этого временный сбой (например, 429 от Groq) приводил бы к
+# попытке заново на КАЖДОМ тике (раз в ~10 минут) до победного конца,
+# без всякой паузы - это и не экономично для лимитов API, и просто
+# бессмысленный busy-loop. should_retry_now() проверяется в начале
+# попытки публикации, set_retry_backoff() выставляется на любом сбое.
+
+def should_retry_now(post_type: str) -> bool:
+    retry_after = _get(f"retry_after:{post_type}", None)
+    return retry_after is None or time.time() >= retry_after
+
+
+def set_retry_backoff(post_type: str, hours: float) -> None:
+    _set(f"retry_after:{post_type}", time.time() + hours * 3600)

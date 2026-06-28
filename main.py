@@ -225,6 +225,8 @@ def try_publish_opinion_post() -> None:
 
     if seconds_elapsed < min_seconds:
         return
+    if not queue_manager.should_retry_now("opinion"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
 
     logger.info("Окно публикации (мнение) открыто - генерирую пост")
 
@@ -234,22 +236,26 @@ def try_publish_opinion_post() -> None:
         result = opinion_generator.generate_opinion_post(theme)
     except Exception as e:
         logger.error("Ошибка генерации поста-мнения: %s", e)
+        queue_manager.set_retry_backoff("opinion", 1)
         return
 
     if result is None:
         logger.warning("Не удалось получить данные для темы %s - пропускаю до следующего окна", theme)
+        queue_manager.set_retry_backoff("opinion", 1)
         return
 
     post_text, allowed_numbers = result
     ok, reason = opinion_generator.validate_opinion_post_text(post_text, allowed_numbers)
     if not ok:
         logger.error("Пост-мнение не прошёл проверку, публикация отменена: %s", reason)
+        queue_manager.set_retry_backoff("opinion", 1)
         return
 
     try:
         published_result = binance_publisher.publish_post(post_text)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации поста-мнения: %s", e)
+        queue_manager.set_retry_backoff("opinion", 1)
         return
 
     queue_manager.set_last_opinion_theme(theme)
@@ -269,6 +275,8 @@ def try_publish_article_post() -> None:
 
     if seconds_elapsed < min_seconds:
         return
+    if not queue_manager.should_retry_now("article"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
 
     logger.info("Окно публикации (статья) открыто - собираю историю за неделю")
 
@@ -277,6 +285,7 @@ def try_publish_article_post() -> None:
         result = article_generator.generate_weekly_article(history)
     except Exception as e:
         logger.error("Ошибка генерации статьи: %s", e)
+        queue_manager.set_retry_backoff("article", 2)
         return
 
     if result is None:
@@ -291,6 +300,7 @@ def try_publish_article_post() -> None:
     ok, reason = article_generator.validate_article_text(title, body, history)
     if not ok:
         logger.error("Статья не прошла проверку, публикация отменена: %s", reason)
+        queue_manager.set_retry_backoff("article", 2)
         return
 
     try:
@@ -303,6 +313,7 @@ def try_publish_article_post() -> None:
         published_result = binance_publisher.publish_article(title, body, cover_path)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации статьи: %s", e)
+        queue_manager.set_retry_backoff("article", 2)
         return
 
     logger.info("Опубликовано (статья): %s", published_result)
