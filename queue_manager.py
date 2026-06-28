@@ -107,6 +107,7 @@ def roll_new_jitter(post_type: str, max_jitter_seconds: float) -> float:
 # подвести итог за неделю.
 
 _HISTORY_MAX_AGE_SECONDS = 9 * 24 * 3600  # держим чуть больше недели "на всякий"
+_HISTORY_MAX_ENTRIES = 200  # защитный потолок - не даём промпту статьи разрастись, что бы ни писало в историю
 
 
 def log_signal_history(signal: RsiSignal) -> None:
@@ -122,14 +123,19 @@ def log_signal_history(signal: RsiSignal) -> None:
     })
     cutoff = time.time() - _HISTORY_MAX_AGE_SECONDS
     history = [h for h in history if h["ts"] >= cutoff]
+    if len(history) > _HISTORY_MAX_ENTRIES:
+        history = history[-_HISTORY_MAX_ENTRIES:]
     _set("digest_history", history)
 
 
 def get_digest_history(since_seconds_ago: float) -> list[dict]:
-    """Возвращает записи истории не старше since_seconds_ago секунд назад."""
+    """Возвращает записи истории не старше since_seconds_ago секунд назад,
+    не больше _HISTORY_MAX_ENTRIES штук (на случай, если в базе уже
+    накопилось больше из-за прошлых версий кода)."""
     history = _get("digest_history", [])
     cutoff = time.time() - since_seconds_ago
-    return [h for h in history if h["ts"] >= cutoff]
+    recent = [h for h in history if h["ts"] >= cutoff]
+    return recent[-_HISTORY_MAX_ENTRIES:]
 
 
 # --- Недавно опубликованные тикеры - для разнообразия (избегаем повторов) ---

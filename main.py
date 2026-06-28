@@ -67,7 +67,6 @@ def check_for_new_signals() -> None:
                     chosen.invalidation, chosen.target, chosen.score, recent,
                 )
                 queue_manager.push_pending_signal(chosen)
-                queue_manager.log_signal_history(chosen)  # для еженедельной статьи
                 continue  # текст распознан как сигнал - картинку (если есть) не трогаем
 
         if post.image_url:
@@ -199,6 +198,8 @@ def try_publish_currency_post() -> None:
 
     if published:
         ticker = payload.ticker
+        if kind == "signal":
+            queue_manager.log_signal_history(payload)  # для еженедельной статьи - только реально опубликованное
         queue_manager.log_posted_ticker(ticker)
         queue_manager.set_last_post_time("currency")
         queue_manager.roll_new_jitter("currency", config.CURRENCY_JITTER_MINUTES * 60)

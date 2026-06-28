@@ -168,39 +168,17 @@ def _detect_divergence(closes: list[float], rsi_series: list[float]) -> str | No
 
 def _score_and_quality(rsi: float, direction_overbought: bool, bb_touch: bool,
                         divergence_match: bool, quote_volume: float) -> tuple[int, str]:
-    """Переделанная формула score (июнь 2026).
-    
-    Ранее максимум был 100, но реально достижимым было только 65-75.
-    Чтобы дойти до 90, нужны были ВСЕ условия (почти невозможно).
-    
-    Новая логика:
-    - RSI extremity: 35-78 (в зависимости от силы)
-    - Bollinger Touch: +15
-    - Дивергенция: +12  
-    - Объём >5M: +3
-    - Max: 100
-    
-    Результат: score 70-90 достижимо для реальных strong setups,
-    score 90+ остаётся редким (нужны все условия + экстремальный RSI).
-    """
+    """Собственная (не претендующая на чужую формулу) прозрачная оценка
+    0-100: насколько RSI ушёл за пределы 70/30, плюс бонусы за
+    подтверждение Боллинджером, дивергенцией и ликвидностью."""
     extremity = (rsi - RSI_OVERBOUGHT) if direction_overbought else (RSI_OVERSOLD - rsi)
-    
-    # Гибридная функция: линейный рост до extremity=10, потом квадратичный
-    if extremity <= 10:
-        rsi_score = 35 + extremity * 2.5  # 35-60 для extremity 0-10
-    else:
-        # Для более экстремальных значений (>10) быстрее растёт
-        rsi_score = 60 + (extremity - 10) * 3.5  # 60-78+ для extremity 10-15+
-    
-    score = min(rsi_score, 78)  # cap на 78, чтобы комбинации могли дойти до 90+
-    
+    score = 40 + min(max(extremity, 0) * 1.5, 25)  # 40-65 от чистого RSI
     if bb_touch:
-        score += 15
+        score += 20
     if divergence_match:
-        score += 12
+        score += 10
     if quote_volume >= 5_000_000:
-        score += 3
-    
+        score += 5
     score = round(min(score, 100))
 
     if score >= 85:
@@ -322,7 +300,6 @@ def run_scan() -> int:
             continue
 
         queue_manager.push_pending_signal(signal)
-        queue_manager.log_signal_history(signal)
         queue_manager.mark_alerted(ticker, direction_key)
         added += 1
         logger.info(
