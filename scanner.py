@@ -169,19 +169,21 @@ def _detect_divergence(closes: list[float], rsi_series: list[float]) -> str | No
 def _score_and_quality(rsi: float, direction_overbought: bool, bb_touch: bool,
                         divergence_match: bool, quote_volume: float) -> tuple[int, str]:
     """Собственная (не претендующая на чужую формулу) прозрачная оценка
-    0-100: насколько RSI ушёл за пределы 70/30, плюс бонусы за
-    подтверждение Боллинджером, дивергенцией и ликвидностью."""
+    0-100. Откалибровано так, чтобы 90+ получали только сетапы с
+    настоящим совпадением нескольких факторов сразу (а не просто
+    RSI чуть за 70/30, как было раньше - с той формулой 90+ было
+    практически недостижимо математически)."""
     extremity = (rsi - RSI_OVERBOUGHT) if direction_overbought else (RSI_OVERSOLD - rsi)
-    score = 40 + min(max(extremity, 0) * 1.5, 25)  # 40-65 от чистого RSI
+    score = 30 + min(max(extremity, 0) * 3, 50)  # 30 (на грани 70/30) .. 80 (RSI экстремальнее ~87/13)
     if bb_touch:
-        score += 20
+        score += 15
     if divergence_match:
         score += 10
     if quote_volume >= 5_000_000:
         score += 5
     score = round(min(score, 100))
 
-    if score >= 85:
+    if score >= 90:
         quality = "Conservative"
     elif score >= 70:
         quality = "Moderate"
