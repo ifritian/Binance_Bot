@@ -25,6 +25,7 @@ import binance_publisher
 import chart_generator
 import config
 import image_analyzer
+import groq_client
 import opinion_generator
 import post_format
 import queue_manager
@@ -285,6 +286,16 @@ def try_publish_article_post() -> None:
     history = queue_manager.get_digest_history(min_seconds)
     try:
         result = article_generator.generate_weekly_article(history)
+    except groq_client.GroqRateLimited as e:
+        # Groq сам сказал, сколько ждать (Retry-After) - используем это,
+        # а не фиксированные 2 часа на глазок. Минимум 5 минут, чтобы не
+        # долбить API почти сразу же, если Retry-After окажется крошечным.
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning(
+            "Groq rate limit на статье - жду %.1fч перед следующей попыткой", backoff_hours,
+        )
+        queue_manager.set_retry_backoff("article", backoff_hours)
+        return
     except Exception as e:
         logger.error("Ошибка генерации статьи: %s", e)
         queue_manager.set_retry_backoff("article", 2)

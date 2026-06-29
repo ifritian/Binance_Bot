@@ -15,15 +15,12 @@ import re
 from pathlib import Path
 from typing import Optional
 
-import requests
-
-import config
 from chart_generator import generate_chart_image
+from groq_client import GroqRateLimited, call_groq
 from post_format import DISCLAIMER, assemble_post
 
 logger = logging.getLogger(__name__)
 
-_GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 _WEEK_SECONDS = 7 * 24 * 3600
 
 _SYSTEM_PROMPT = """Ты пишешь еженедельную статью-сводку для Binance Square
@@ -42,12 +39,12 @@ _SYSTEM_PROMPT = """Ты пишешь еженедельную статью-св
 
 НЕ добавляй сам дисклеймер - он будет добавлен отдельно после текста.
 
-Отвечай только текстом статьи (без заголовка - заголовок придумаешь
-отдельно), без пояснений и без кавычек."""
+Ответ дай СТРОГО в таком формате (две секции, без дополнительных пояснений
+и без кавычек вокруг заголовка):
 
-_TITLE_PROMPT = """Придумай короткий цепляющий заголовок для статьи-сводки
-по итогам недели в крипте (на основе тех же фактов). Без кавычек,
-одна строка, не длиннее 70 символов."""
+ЗАГОЛОВОК: <короткий цепляющий заголовок, одна строка, не длиннее 70 символов>
+СТАТЬЯ:
+<текст статьи без заголовка>"""
 
 # Дополнительный акцент в зависимости от того, как сложилась неделя -
 # добавляется к базовому промпту, чтобы статья не звучала одинаково
@@ -70,6 +67,9 @@ _COMPOSITION_EMPHASIS = {
         "только успехов или только неудач."
     ),
 }
+
+_TITLE_RE = re.compile(r"ЗАГОЛОВОК:\s*(.+?)\s*(?:\n|$)")
+_BODY_RE = re.compile(r"СТАТЬЯ:\s*(.+)", re.DOTALL)
 
 
 def _analyze_week_composition(history: list[dict]) -> str:
@@ -99,21 +99,23 @@ def _format_facts(history: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _call_groq(system_prompt: str, user_prompt: str, max_tokens: int = 600) -> str:
-    payload = {
-        "model": config.GROQ_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.8,
-        "max_tokens": max_tokens,
-    }
-    headers = {"Authorization": f"Bearer {config.GROQ_API_KEY}"}
-    resp = requests.post(_GROQ_ENDPOINT, json=payload, headers=headers, timeout=45)
-    resp.raise_for_status()
-    data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+def _parse_title_and_body(raw: str) -> tuple[str, str]:
+    """Разбирает один ответ Groq по формату 'ЗАГОЛОВОК: ...\\nСТАТЬЯ:\\n...'
+    (раньше заголовок и текст генерировались ДВУМЯ отдельными запросами -
+    объединили в один, чтобы расходовать вдвое меньше квоты Groq на
+    статью). Если модель не выдержала формат (бывает) - запасной план:
+    первая строка считается заголовком, всё остальное - телом статьи."""
+    title_match = _TITLE_RE.search(raw)
+    body_match = _BODY_RE.search(raw)
+    if title_match and body_match:
+        title = title_match.group(1).strip().strip('"').strip("«»")
+        body_hook = body_match.group(1).strip()
+        return title[:70], body_hook
+
+    lines = raw.strip().splitlines()
+    title = lines[0].strip().strip('"').strip("«»") if lines else "Итоги недели"
+    body_hook = "\n".join(lines[1:]).strip() or raw.strip()
+    return title[:70], body_hook
 
 
 def generate_weekly_article(history: list[dict]) -> Optional[tuple[str, str, list[dict]]]:
@@ -121,6 +123,10 @@ def generate_weekly_article(history: list[dict]) -> Optional[tuple[str, str, lis
     Возвращает (title, body_text, history) или None, если истории
     недостаточно для статьи (например, бот только что запущен и
     данных за неделю ещё не накопилось).
+
+    Поднимает groq_client.GroqRateLimited при 429 от Groq - вызывающий
+    код (main.py) ловит это отдельно от прочих ошибок, чтобы выставить
+    backoff по Retry-After, а не на глазок.
     """
     if len(history) < 3:
         logger.info("Недостаточно данных для статьи (%d записей за неделю) - пропускаю", len(history))
@@ -130,9 +136,8 @@ def generate_weekly_article(history: list[dict]) -> Optional[tuple[str, str, lis
     composition = _analyze_week_composition(history)
     system_prompt = f"{_SYSTEM_PROMPT}\n\n{_COMPOSITION_EMPHASIS[composition]}"
 
-    body_hook = _call_groq(system_prompt, f"Факты за неделю:\n{facts}")
-    title = _call_groq(_TITLE_PROMPT, f"Факты за неделю:\n{facts}", max_tokens=50)
-    title = title.strip().strip('"').strip("«»")[:70]
+    raw = call_groq(system_prompt, f"Факты за неделю:\n{facts}", max_tokens=700)
+    title, body_hook = _parse_title_and_body(raw)
 
     body = assemble_post(body_hook)
     logger.info(
