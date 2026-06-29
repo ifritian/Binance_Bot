@@ -71,6 +71,25 @@ _COMPOSITION_EMPHASIS = {
 _TITLE_RE = re.compile(r"ЗАГОЛОВОК:\s*(.+?)\s*(?:\n|$)")
 _BODY_RE = re.compile(r"СТАТЬЯ:\s*(.+)", re.DOTALL)
 
+# Сколько фактов максимум отправляем в промпт. История (queue_manager)
+# может накопить до _HISTORY_MAX_ENTRIES=200 записей за неделю активного
+# бота - присылать все 200 в Groq бессмысленно (статье нужно только
+# 3-5 самых заметных, см. _SYSTEM_PROMPT) и опасно: это легко даёт
+# несколько тысяч input-токенов ОДНИМ запросом и пробивает TPM-лимит
+# Groq за раз (см. скрин с пиком токенов прямо на линии Rate Limit).
+# Полная история всё равно используется отдельно в validate_article_text -
+# усечение касается только того, что видит LLM.
+_MAX_FACTS_IN_PROMPT = 20
+
+
+def _select_facts_for_prompt(history: list[dict]) -> list[dict]:
+    """Берёт самые заметные записи (по score), не больше _MAX_FACTS_IN_PROMPT -
+    остальные не теряются (полная история всё равно используется при
+    валидации и при анализе композиции недели), просто не едут в промпт."""
+    if len(history) <= _MAX_FACTS_IN_PROMPT:
+        return history
+    return sorted(history, key=lambda h: float(h.get("score", 0)), reverse=True)[:_MAX_FACTS_IN_PROMPT]
+
 
 def _analyze_week_composition(history: list[dict]) -> str:
     """Определяет, как сложилась неделя: 'mostly_wins' (преимущественно
@@ -132,7 +151,7 @@ def generate_weekly_article(history: list[dict]) -> Optional[tuple[str, str, lis
         logger.info("Недостаточно данных для статьи (%d записей за неделю) - пропускаю", len(history))
         return None
 
-    facts = _format_facts(history)
+    facts = _format_facts(_select_facts_for_prompt(history))
     composition = _analyze_week_composition(history)
     system_prompt = f"{_SYSTEM_PROMPT}\n\n{_COMPOSITION_EMPHASIS[composition]}"
 
