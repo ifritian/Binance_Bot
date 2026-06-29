@@ -34,12 +34,24 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
 # --- Поведение бота ---
-MIN_POST_INTERVAL_HOURS = float(os.environ.get("MIN_POST_INTERVAL_HOURS", "4"))
-# Публикуем только сигналы (от сканера или канала) со score СТРОГО
-# БОЛЬШЕ этого значения. Если в очереди нет ни одного такого -
-# просто не публикуем в это окно и ждём следующего тика. На посты
-# типа "image" (без числового score) порог не действует.
-MIN_SIGNAL_SCORE_TO_PUBLISH = int(os.environ.get("MIN_SIGNAL_SCORE_TO_PUBLISH", "90"))
+MIN_POST_INTERVAL_HOURS = float(os.environ.get("MIN_POST_INTERVAL_HOURS", "2"))
+# Публикуем (и кладём в очередь сканера - см. scanner.py) только сигналы
+# со score СТРОГО БОЛЬШЕ этого значения. Если в очереди нет ни одного
+# такого - просто не публикуем в это окно и ждём следующего тика. На
+# посты типа "image" (без числового score) порог не действует.
+# 70 = нижняя граница качества "Moderate" в scanner._score_and_quality -
+# раньше было 90 ("Conservative"), при текущей формуле почти недостижимо.
+MIN_SIGNAL_SCORE_TO_PUBLISH = int(os.environ.get("MIN_SIGNAL_SCORE_TO_PUBLISH", "70"))
+
+# За сколько минут до открытия окна публикации "валюта" (и пока оно уже
+# открыто) бот переходит в "активный" режим: на каждом тике дёргает
+# сканер и проверяет канал. До этого момента - тик почти ничего не
+# делает (без сетевых запросов к Binance/Telegram), чтобы не плодить
+# в очереди сигналы, которые устареют до публикации, и не жечь лимиты
+# впустую. Сам тик всё равно вызывается с частотой из cron (workflow) -
+# здесь регулируется не частота запуска job'ы, а то, сколько РАБОТЫ она
+# делает внутри.
+ACTIVE_WINDOW_LOOKAHEAD_MINUTES = float(os.environ.get("ACTIVE_WINDOW_LOOKAHEAD_MINUTES", "30"))
 OPINION_INTERVAL_HOURS = float(os.environ.get("OPINION_INTERVAL_HOURS", "48"))
 ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))

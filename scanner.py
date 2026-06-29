@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 
 import requests
 
+import config
 import queue_manager
 from signal_parser import RsiSignal
 
@@ -299,6 +300,16 @@ def run_scan() -> int:
 
         direction_key = "short" if "перекуплен" in signal.direction else "long"
         if queue_manager.was_recently_alerted(ticker, direction_key, ALERT_COOLDOWN_HOURS):
+            continue
+
+        if int(signal.score) <= config.MIN_SIGNAL_SCORE_TO_PUBLISH:
+            # Сигнал есть, но он не пройдёт порог публикации (см.
+            # config.MIN_SIGNAL_SCORE_TO_PUBLISH) - не кладём его в
+            # очередь и НЕ ставим cooldown, чтобы на следующем тике, если
+            # RSI/Bollinger станут более выраженными, сигнал по этому же
+            # тикеру мог пройти порог и быть учтён. Раньше такие сигналы
+            # всё равно копились в очереди и просто вытесняли друг друга
+            # при переполнении (>30), никогда не доходя до публикации.
             continue
 
         queue_manager.push_pending_signal(signal)

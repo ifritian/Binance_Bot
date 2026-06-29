@@ -327,11 +327,29 @@ def try_publish_article_post() -> None:
 
 def tick() -> None:
     try:
-        check_for_new_signals()
-        try:
-            scanner.run_scan()
-        except Exception:
-            logger.exception("Ошибка в собственном сканере сигналов - пропускаю до следующего тика")
+        seconds_elapsed = queue_manager.seconds_since_last_post("currency")
+        min_seconds = config.MIN_POST_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("currency")
+        seconds_until_window = min_seconds - seconds_elapsed
+
+        # "Активный" режим: окно публикации уже открыто (seconds_until_window <= 0)
+        # или откроется в ближайшие ACTIVE_WINDOW_LOOKAHEAD_MINUTES. Только в этом
+        # режиме дёргаем сканер и канал - до этого момента нет смысла собирать
+        # сигналы, которые всё равно устареют за несколько часов ожидания.
+        window_active = seconds_until_window <= config.ACTIVE_WINDOW_LOOKAHEAD_MINUTES * 60
+
+        if window_active:
+            check_for_new_signals()
+            try:
+                scanner.run_scan()
+            except Exception:
+                logger.exception("Ошибка в собственном сканере сигналов - пропускаю до следующего тика")
+        else:
+            logger.info(
+                "Окно публикации (валюта) откроется через %.0f мин - сканирование "
+                "пропущено на этом тике (активный режим начнётся за %.0f мин до окна)",
+                seconds_until_window / 60, config.ACTIVE_WINDOW_LOOKAHEAD_MINUTES,
+            )
+
         try_publish_currency_post()
         try_publish_opinion_post()
         try_publish_article_post()

@@ -46,9 +46,11 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
           GROQ_VISION_MODEL: ${{ secrets.GROQ_VISION_MODEL }}
-          MIN_POST_INTERVAL_HOURS: ${{ secrets.MIN_POST_INTERVAL_HOURS }}
+          MIN_POST_INTERVAL_HOURS: ${{ secrets.MIN_POST_INTERVAL_HOURS || '2' }}
           OPINION_INTERVAL_HOURS: ${{ secrets.OPINION_INTERVAL_HOURS }}
           ARTICLE_INTERVAL_HOURS: ${{ secrets.ARTICLE_INTERVAL_HOURS }}
+          MIN_SIGNAL_SCORE_TO_PUBLISH: ${{ secrets.MIN_SIGNAL_SCORE_TO_PUBLISH || '70' }}
+          ACTIVE_WINDOW_LOOKAHEAD_MINUTES: ${{ secrets.ACTIVE_WINDOW_LOOKAHEAD_MINUTES || '30' }}
         run: python main.py --once
 
       - name: Show queue state (diagnostics)
