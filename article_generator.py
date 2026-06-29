@@ -70,6 +70,32 @@ _COMPOSITION_EMPHASIS = {
 
 _TITLE_RE = re.compile(r"ЗАГОЛОВОК:\s*(.+?)\s*(?:\n|$)")
 _BODY_RE = re.compile(r"СТАТЬЯ:\s*(.+)", re.DOTALL)
+_TICKER_TAG_RE = re.compile(r"\$([A-Za-z][A-Za-z0-9]{0,9})\b")
+
+# Binance Square сам парсит $TICKER в тексте как "монетный тег" и
+# у постов есть лимит на их количество ("Coin pair count exceeds the
+# allowed limit"). У статьи с разбором 3-5 сигналов это легко превышается,
+# если LLM упомянёт мимоходом ещё пару тикеров во вступлении/выводе.
+# Поэтому после генерации оставляем как "$TICKER" только первые
+# MAX_COIN_TAGS уникальных тикеров (по порядку первого появления в
+# тексте - это обычно и есть самые заметные сигналы недели), у всех
+# остальных упоминаний просто убираем "$", текст по смыслу не меняется.
+MAX_COIN_TAGS = 3
+
+
+def _limit_coin_tags(text: str, max_tags: int = MAX_COIN_TAGS) -> str:
+    kept: set[str] = set()
+
+    def _replace(match: re.Match) -> str:
+        ticker = match.group(1).upper()
+        if ticker in kept:
+            return match.group(0)
+        if len(kept) < max_tags:
+            kept.add(ticker)
+            return match.group(0)
+        return ticker  # убираем "$", чтобы Binance не считал это тегом монеты
+
+    return _TICKER_TAG_RE.sub(_replace, text)
 
 # Сколько фактов максимум отправляем в промпт. История (queue_manager)
 # может накопить до _HISTORY_MAX_ENTRIES=200 записей за неделю активного
@@ -159,6 +185,7 @@ def generate_weekly_article(history: list[dict]) -> Optional[tuple[str, str, lis
     title, body_hook = _parse_title_and_body(raw)
 
     body = assemble_post(body_hook)
+    body = _limit_coin_tags(body)
     logger.info(
         "Сгенерирована статья: %s (фактов: %d, композиция недели: %s)",
         title, len(history), composition,
