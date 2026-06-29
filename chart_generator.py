@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 _COINGECKO_URL = "https://api.coingecko.com/api/v3"
 _CHARTS_DIR = config.BASE_DIR / "charts"
 
+# Если последняя цена с CoinGecko отличается от цены сигнала с Binance
+# больше чем во столько раз - считаем, что _get_coingecko_id() подобрал
+# не ту монету (омоним тикера), и график не публикуем.
+MAX_PRICE_MISMATCH_RATIO = 3.0
+
 # Маппинг тикеров на CoinGecko ID - быстрый путь для самых частых монет,
 # без обращения к /search. Для всего остального ID ищется через API
 # (см. _resolve_coingecko_id) и результат кэшируется в bot_state.db.
@@ -110,9 +115,20 @@ def fetch_klines(symbol: str, days: int = 2) -> list:
         return []
 
 
-def generate_chart_image(ticker: str, days: int = 2) -> Path | None:
+def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None) -> Path | None:
     """
     Возвращает путь к PNG с графиком цены тикера, либо None.
+
+    expected_price - текущая цена тикера, посчитанная по данным Binance
+    (signal.current_price). CoinGecko используется ТОЛЬКО для картинки,
+    а тикеры на CoinGecko - не уникальны (несколько разных монет могут
+    делить один и тот же symbol, см. _search_coingecko_id). Если найден
+    "PHB" с CoinGecko - это не гарантия, что это тот же PHB, что торгуется
+    на Binance. Поэтому при наличии expected_price сверяем последнюю цену
+    из графика с реальной ценой сигнала: если они отличаются больше чем
+    в MAX_PRICE_MISMATCH_RATIO раз - значит подтянулась чужая монета с
+    совпавшим тикером, и публиковать такой график нельзя (числа на
+    картинке не будут соответствовать числам в тексте поста).
     """
     try:
         klines = fetch_klines(ticker, days)
@@ -125,6 +141,18 @@ def generate_chart_image(ticker: str, days: int = 2) -> Path | None:
         return None
 
     closes = [float(k[1]) for k in klines]
+
+    if expected_price is not None and expected_price > 0 and closes[-1] > 0:
+        ratio = max(closes[-1], expected_price) / min(closes[-1], expected_price)
+        if ratio > MAX_PRICE_MISMATCH_RATIO:
+            logger.warning(
+                "График %s отбракован: цена с CoinGecko (%.10g) отличается от цены сигнала "
+                "с Binance (%.10g) в %.1fx - вероятно, CoinGecko вернул другую монету с "
+                "совпадающим тикером. Публикация без графика.",
+                ticker, closes[-1], expected_price, ratio,
+            )
+            return None
+
     times = list(range(len(closes)))
 
     _CHARTS_DIR.mkdir(exist_ok=True)

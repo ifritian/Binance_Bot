@@ -93,7 +93,9 @@ def _publish_signal(signal) -> bool:
         return False
 
     try:
-        chart_path = chart_generator.generate_chart_image(signal.ticker, days=2)
+        chart_path = chart_generator.generate_chart_image(
+            signal.ticker, days=2, expected_price=float(signal.current_price)
+        )
     except Exception as e:
         logger.warning("Не удалось сгенерировать график для %s: %s", signal.ticker, e)
         chart_path = None
