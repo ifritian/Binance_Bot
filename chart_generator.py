@@ -1,33 +1,23 @@
 """
-Генерация графика цены для тикера.
+Генерация графика цены для тикера - японские свечи + объём снизу,
+в тёмной теме, похожей на сам Binance (а не просто линия цены).
 
-Раньше график рисовался через CoinGecko, потому что обычный
-api.binance.com геоблокирован - но у этого было два постоянных
-побочных эффекта:
-1. Тикеры на CoinGecko не уникальны - можно случайно подтянуть график
-   совсем другой монеты с тем же symbol (числа на картинке не совпадали
-   с числами в тексте поста).
-2. У многих мелких/новых пар, которые реально торгуются на Binance,
-   на CoinGecko просто нет данных - "Недостаточно данных для графика",
-   и пост с таким тикером навечно зависал в очереди, блокируя публикацию
-   всего остального (т.к. это был самый высокий score в очереди и его
-   продолжали выбирать снова и снова).
-
-Решение - рисовать график из ТОГО ЖЕ источника, по которому сканер
-(scanner.py) и нашёл сигнал: data-api.binance.vision. Это публичное
-зеркало рыночных данных Binance без авторизации и без гео-ограничений
-(в отличие от обычного api.binance.com). Раз сканер увидел этот тикер
-и посчитал по нему RSI/Bollinger - значит у Binance по определению
-есть свечи по этой паре, и обе проблемы выше отпадают сами собой:
-тикер не может "не найтись" или "оказаться другой монетой", потому
-что это буквально тот же символ (TICKERUSDT), что и в сигнале.
+Данные берутся из того же источника, по которому сканер (scanner.py)
+и нашёл сигнал: data-api.binance.vision - публичное зеркало рыночных
+данных Binance без авторизации и без гео-ограничений (в отличие от
+обычного api.binance.com). Раз сканер увидел этот тикер - значит у
+Binance по определению есть свечи по этой паре, так что тикер не
+может "не найтись" или внезапно оказаться другой монетой с тем же
+символом (раньше график рисовался через CoinGecko, где это бывало).
 """
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 import requests
 
 import config
@@ -37,25 +27,31 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://data-api.binance.vision/api/v3"
 _CHARTS_DIR = config.BASE_DIR / "charts"
 
+_UP_COLOR = "#0ECB81"
+_DOWN_COLOR = "#F6465D"
+_BG_COLOR = "#0B0E11"
+_GRID_COLOR = "#1E2329"
+_AXIS_TEXT_COLOR = "#848E9C"
+
 # Страховка на случай ошибок форматирования тикера и т.п. - на практике
-# не должна срабатывать, раз график и сигнал теперь берут данные из
-# одного и того же места и по одному и тому же символу.
+# не должна срабатывать, раз график и сигнал берут данные из одного и
+# того же места и по одному и тому же символу.
 MAX_PRICE_MISMATCH_RATIO = 3.0
 
-# (interval, limit) для каждого периода графика. Лимит klines у
-# Binance - 1000 свечей за запрос, так что запас большой.
+# (interval, limit, формат подписи времени по оси X) для каждого периода.
+# Лимит klines у Binance - 1000 свечей за запрос, так что запас большой.
 _INTERVAL_BY_DAYS = {
-    2: ("1h", 48),
-    7: ("4h", 42),
+    2: ("1h", 48, "%H:%M"),
+    7: ("4h", 42, "%d.%m"),
 }
 
 
-def fetch_klines(ticker: str, days: int = 2) -> list[float]:
-    """Возвращает цены закрытия по тикеру с Binance (data-api.binance.vision).
+def fetch_klines(ticker: str, days: int = 2) -> list[dict]:
+    """Возвращает свечи (open_time, open, high, low, close, volume) с Binance.
     ticker - без USDT (например, "PHB" или "BTC")."""
     clean_ticker = ticker.replace("USDT", "").upper()
     symbol = f"{clean_ticker}USDT"
-    interval, limit = _INTERVAL_BY_DAYS.get(days, ("1h", days * 24))
+    interval, limit, _ = _INTERVAL_BY_DAYS.get(days, ("1h", days * 24, "%H:%M"))
 
     try:
         resp = requests.get(
@@ -74,58 +70,134 @@ def fetch_klines(ticker: str, days: int = 2) -> list[float]:
         logger.warning("Binance вернул неожиданный ответ для графика %s: %s", symbol, rows)
         return []
 
-    # формат свечи: [open_time, open, high, low, close, volume, ...]
     try:
-        return [float(r[4]) for r in rows]
+        return [
+            {
+                "open_time": int(r[0]),
+                "open": float(r[1]),
+                "high": float(r[2]),
+                "low": float(r[3]),
+                "close": float(r[4]),
+                "volume": float(r[5]),
+            }
+            for r in rows
+        ]
     except (IndexError, ValueError, TypeError) as e:
         logger.warning("Не удалось разобрать свечи Binance для графика %s: %s", symbol, e)
         return []
 
 
+def _format_price(price: float) -> str:
+    if price >= 100:
+        return f"{price:,.2f}"
+    if price >= 1:
+        return f"{price:.4f}"
+    return f"{price:.6f}".rstrip("0").rstrip(".")
+
+
+def _draw_candles(ax, candles: list[dict]) -> None:
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    price_span = max(highs) - min(lows) or 1.0
+    min_body_height = price_span * 0.0015  # видимая тонкая линия вместо нулевой свечи-доджи
+
+    width = 0.6
+    for i, c in enumerate(candles):
+        color = _UP_COLOR if c["close"] >= c["open"] else _DOWN_COLOR
+        ax.plot([i, i], [c["low"], c["high"]], color=color, linewidth=1, solid_capstyle="round")
+        body_low = min(c["open"], c["close"])
+        body_height = max(abs(c["close"] - c["open"]), min_body_height)
+        ax.add_patch(Rectangle((i - width / 2, body_low), width, body_height, color=color, linewidth=0))
+
+
+def _draw_volume(ax, candles: list[dict]) -> None:
+    width = 0.6
+    for i, c in enumerate(candles):
+        color = _UP_COLOR if c["close"] >= c["open"] else _DOWN_COLOR
+        ax.add_patch(Rectangle((i - width / 2, 0), width, c["volume"], color=color, alpha=0.35, linewidth=0))
+
+
+def _style_axis(ax, show_xticks: bool = False) -> None:
+    ax.set_facecolor(_BG_COLOR)
+    ax.tick_params(colors=_AXIS_TEXT_COLOR, labelsize=8)
+    for spine in ax.spines.values():
+        spine.set_color(_GRID_COLOR)
+    ax.grid(color=_GRID_COLOR, linewidth=0.6, axis="y")
+    ax.yaxis.tick_right()
+    if not show_xticks:
+        ax.set_xticks([])
+
+
 def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None) -> Path | None:
     """
-    Возвращает путь к PNG с графиком цены тикера, либо None.
+    Возвращает путь к PNG со свечным графиком тикера (+ объём снизу,
+    в духе самого Binance), либо None.
     """
     try:
-        closes = fetch_klines(ticker, days)
+        candles = fetch_klines(ticker, days)
     except Exception as e:
         logger.warning("Ошибка при получении данных для графика %s: %s", ticker, e)
         return None
 
-    if not closes or len(closes) < 2:
+    if len(candles) < 2:
         logger.warning("Недостаточно данных для графика %s", ticker)
         return None
 
-    if expected_price is not None and expected_price > 0 and closes[-1] > 0:
-        ratio = max(closes[-1], expected_price) / min(closes[-1], expected_price)
+    last_close = candles[-1]["close"]
+
+    if expected_price is not None and expected_price > 0 and last_close > 0:
+        ratio = max(last_close, expected_price) / min(last_close, expected_price)
         if ratio > MAX_PRICE_MISMATCH_RATIO:
             logger.warning(
                 "График %s отбракован: последняя цена с Binance (%.10g) сильно "
                 "отличается от цены сигнала (%.10g) - %.1fx. Публикация без графика.",
-                ticker, closes[-1], expected_price, ratio,
+                ticker, last_close, expected_price, ratio,
             )
             return None
 
-    times = list(range(len(closes)))
+    first_open = candles[0]["open"]
+    change_pct = (last_close - first_open) / first_open * 100 if first_open else 0.0
+    header_color = _UP_COLOR if change_pct >= 0 else _DOWN_COLOR
+    arrow = "▲" if change_pct >= 0 else "▼"
+
+    _, _, time_fmt = _INTERVAL_BY_DAYS.get(days, ("1h", days * 24, "%H:%M"))
 
     _CHARTS_DIR.mkdir(exist_ok=True)
     out_path = _CHARTS_DIR / f"{ticker}_chart.png"
 
-    fig, ax = plt.subplots(figsize=(8, 4.5), dpi=150)
-    color = "#0ECB81" if closes[-1] >= closes[0] else "#F6465D"
-    ax.plot(times, closes, color=color, linewidth=2)
-    ax.fill_between(times, closes, min(closes), color=color, alpha=0.08)
+    fig = plt.figure(figsize=(8, 5), dpi=150)
+    fig.patch.set_facecolor(_BG_COLOR)
+    gs = fig.add_gridspec(2, 1, height_ratios=(3.2, 1), hspace=0.05, left=0.04, right=0.93, top=0.86, bottom=0.08)
+    ax_price = fig.add_subplot(gs[0])
+    ax_vol = fig.add_subplot(gs[1], sharex=ax_price)
 
-    ax.set_title(f"{ticker} • {days}d", color="white", fontsize=14, loc="left")
-    ax.set_facecolor("#0B0E11")
-    fig.patch.set_facecolor("#0B0E11")
-    ax.tick_params(colors="#848E9C")
-    for spine in ax.spines.values():
-        spine.set_color("#1E2329")
-    ax.grid(color="#1E2329", linewidth=0.5)
-    ax.set_xticks([])
+    _draw_candles(ax_price, candles)
+    _style_axis(ax_price, show_xticks=False)
+    ax_price.set_xlim(-1, len(candles))
 
-    fig.tight_layout()
+    _draw_volume(ax_vol, candles)
+    _style_axis(ax_vol, show_xticks=True)
+    ax_vol.set_xlim(-1, len(candles))
+    ax_vol.set_yticks([])
+
+    tick_count = min(5, len(candles))
+    tick_positions = [int(i * (len(candles) - 1) / (tick_count - 1)) for i in range(tick_count)] if tick_count > 1 else [0]
+    tick_labels = [
+        datetime.fromtimestamp(candles[i]["open_time"] / 1000, tz=timezone.utc).strftime(time_fmt)
+        for i in tick_positions
+    ]
+    ax_vol.set_xticks(tick_positions)
+    ax_vol.set_xticklabels(tick_labels)
+
+    # Заголовок в духе карточки монеты на Binance: тикер + текущая цена +
+    # изменение за период, цветом по направлению.
+    fig.text(0.04, 0.96, f"{ticker}/USDT", color="white", fontsize=15, fontweight="bold", va="top")
+    fig.text(
+        0.04, 0.915,
+        f"{_format_price(last_close)}  {arrow} {change_pct:+.2f}%  ·  {days}d",
+        color=header_color, fontsize=11, fontweight="bold", va="top",
+    )
+
     fig.savefig(out_path, facecolor=fig.get_facecolor())
     plt.close(fig)
 
