@@ -8,10 +8,23 @@
 DISCLAIMER = "Информационный пост, не финансовая рекомендация."
 
 
-def assemble_post(hook: str) -> str:
-    """Хук + пустая строка + дисклеймер - структура фиксирована кодом,
-    не оставлена на волю LLM."""
-    return f"{hook.strip()}\n\n{DISCLAIMER}"
+# Реферальная ссылка Binance - добавляется только в "мнение" и "статью"
+# (опционально, через assemble_post(..., include_referral=True)), НЕ в
+# частые валютные сигналы/картинки - там посты выходят по 6-12 раз в
+# день, и одна и та же ссылка в каждом выглядела бы как спам и могла бы
+# триггернуть модерацию Square.
+REFERRAL_LINK = "https://www.binance.com/register?ref=ES7YTYML"
+REFERRAL_LINE = f"Открыть аккаунт на Binance: {REFERRAL_LINK}"
+
+
+def assemble_post(hook: str, include_referral: bool = False) -> str:
+    """Хук + пустая строка + дисклеймер (+ опционально реферальная
+    ссылка отдельной строкой) - структура фиксирована кодом, не
+    оставлена на волю LLM."""
+    parts = [hook.strip(), DISCLAIMER]
+    if include_referral:
+        parts.append(REFERRAL_LINE)
+    return "\n\n".join(parts)
 
 
 def assemble_signal_post(hook: str, signal) -> str:
