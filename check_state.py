@@ -54,6 +54,11 @@ def main() -> None:
     offset = queue_manager.get_telegram_update_offset()
     print(f"\nTelegram update offset: {offset}")
 
+    if config.TELEGRAM_PUBLISH_CHANNEL:
+        print(f"Кросспостинг в Telegram: включён -> {config.TELEGRAM_PUBLISH_CHANNEL}")
+    else:
+        print("Кросспостинг в Telegram: ВЫКЛЮЧЕН (TELEGRAM_PUBLISH_CHANNEL не задан)")
+
     queue_len = queue_manager.pending_queue_length()
     pending = queue_manager.get_pending_post(min_score=config.MIN_SIGNAL_SCORE_TO_PUBLISH)
     if queue_len == 0:

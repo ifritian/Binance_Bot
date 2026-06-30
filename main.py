@@ -32,6 +32,7 @@ import queue_manager
 import scanner
 import signal_parser
 import telegram_listener
+import telegram_publisher
 import text_generator
 import validator
 
@@ -170,7 +171,25 @@ def _do_publish(post_text: str, image_paths) -> bool:
         return False
 
     logger.info("Опубликовано (валюта): %s", result)
+    _crosspost_to_telegram(post_text, image_paths[0] if image_paths else None)
     return True
+
+
+def _crosspost_to_telegram(text: str, image_path=None) -> None:
+    """Дублирует уже опубликованный (на Binance Square) пост в
+    собственный Telegram-канал (config.TELEGRAM_PUBLISH_CHANNEL).
+
+    Кросспостинг ОПЦИОНАЛЕН и НЕЗАВИСИМ от основной публикации - если
+    канал не настроен (telegram_publisher.is_configured() == False)
+    просто молча пропускаем, а если настроен, но запрос упал - логируем
+    предупреждение и идём дальше: неудачный кросспост НЕ должен
+    откатывать или блокировать уже состоявшуюся публикацию на Square."""
+    if not telegram_publisher.is_configured():
+        return
+    try:
+        telegram_publisher.publish_post(text, image_path)
+    except telegram_publisher.TelegramPublishError as e:
+        logger.warning("Кросспост в Telegram не удался: %s", e)
 
 
 def try_publish_currency_post() -> None:
@@ -264,6 +283,7 @@ def try_publish_opinion_post() -> None:
     queue_manager.set_last_opinion_theme(theme)
 
     logger.info("Опубликовано (мнение): %s", published_result)
+    _crosspost_to_telegram(post_text)
     queue_manager.set_last_post_time("opinion")
     queue_manager.roll_new_jitter("opinion", config.OPINION_JITTER_HOURS * 3600)
 
@@ -330,6 +350,7 @@ def try_publish_article_post() -> None:
         return
 
     logger.info("Опубликовано (статья): %s", published_result)
+    _crosspost_to_telegram(f"{title}\n\n{body}", cover_path)
     queue_manager.set_last_post_time("article")
     queue_manager.roll_new_jitter("article", config.ARTICLE_JITTER_HOURS * 3600)
 

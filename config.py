@@ -16,6 +16,15 @@ BASE_DIR = Path(__file__).parent
 FOLLOWUP_CHANNEL_USERNAME = os.environ.get("FOLLOWUP_CHANNEL_USERNAME", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
+# Канал для КРОССПОСТИНГА наших же постов (текст с Binance Square) -
+# ОТДЕЛЬНЫЙ от FOLLOWUP_CHANNEL_USERNAME выше: тот канал бот только
+# читает (источник дайджестов), а сюда сам ПУБЛИКУЕТ. Тот же бот
+# (тот же TELEGRAM_BOT_TOKEN) должен быть добавлен админом и в этот
+# канал тоже, с правом Post Messages.
+# Формат: "@my_channel" (с собакой, для публичных) либо числовой
+# chat_id вида "-1001234567890" (для приватных каналов).
+TELEGRAM_PUBLISH_CHANNEL = os.environ.get("TELEGRAM_PUBLISH_CHANNEL", "")
+
 # Твой Telegram USER_ID для слушания личных сообщений (опционально)
 # Если заполнено - бот будет принимать сигналы и из личных сообщений от тебя
 YOUR_USER_ID = os.environ.get("YOUR_USER_ID")
