@@ -51,6 +51,7 @@ jobs:
           ARTICLE_INTERVAL_HOURS: ${{ secrets.ARTICLE_INTERVAL_HOURS }}
           MIN_SIGNAL_SCORE_TO_PUBLISH: ${{ secrets.MIN_SIGNAL_SCORE_TO_PUBLISH || '70' }}
           ACTIVE_WINDOW_LOOKAHEAD_MINUTES: ${{ secrets.ACTIVE_WINDOW_LOOKAHEAD_MINUTES || '30' }}
+          TELEGRAM_PUBLISH_CHANNEL: ${{ secrets.TELEGRAM_PUBLISH_CHANNEL }}
         run: python main.py --once
 
       - name: Show queue state (diagnostics)
