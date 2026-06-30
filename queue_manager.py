@@ -140,7 +140,7 @@ def get_digest_history(since_seconds_ago: float) -> list[dict]:
 
 # --- Недавно опубликованные тикеры - для разнообразия (избегаем повторов) ---
 
-_RECENT_TICKERS_LIMIT = 3
+_RECENT_TICKERS_LIMIT = 5
 
 
 def get_recent_tickers() -> list[str]:
@@ -254,10 +254,18 @@ def get_pending_post(min_score: int = 0) -> Optional[tuple[int, str, object]]:
     поста, или None, если ничего не подходит.
 
     "Лучший" = сигнал (kind=signal) с максимальным score СРЕДИ ТЕХ, у
-    кого score > min_score. Если ни один сигнал не проходит порог -
-    рассматривается самый старый пост типа "image" (для картинок score
-    не считается, порог на них не действует - это отдельный, более
-    редкий путь публикации).
+    кого score > min_score И чей тикер не входит в get_recent_tickers()
+    (последние _RECENT_TICKERS_LIMIT опубликованных тикеров). Это нужно
+    для разнообразия: один и тот же тикер (например, PHB) может неделями
+    держать самый высокий score в очереди просто потому, что RSI там
+    стабильно экстремальный - без этой проверки бот публиковал бы по
+    нему пост за постом, игнорируя всё остальное. Если ничего, кроме
+    недавних тикеров, не проходит порог - публикуем недавний тикер
+    всё равно (лучше повтор, чем пропуск окна публикации целиком).
+
+    Если ни один сигнал не проходит порог - рассматривается самый старый
+    пост типа "image" (для картинок score не считается, порог на них не
+    действует - это отдельный, более редкий путь публикации).
 
     Если ничего не подходит вообще - очередь НЕ трогаем, просто ждём
     следующего тика (новый сигнал может появиться, либо существующий
@@ -266,7 +274,10 @@ def get_pending_post(min_score: int = 0) -> Optional[tuple[int, str, object]]:
     if not queue:
         return None
 
+    recent_tickers = {t.upper() for t in get_recent_tickers()}
+
     best_idx, best_score = None, None
+    best_recent_idx, best_recent_score = None, None  # запасной вариант среди недавних тикеров
     fallback_image_idx = None
 
     for idx, item in enumerate(queue):
@@ -275,12 +286,25 @@ def get_pending_post(min_score: int = 0) -> Optional[tuple[int, str, object]]:
                 score = int(item["payload"].get("score", 0))
             except (TypeError, ValueError):
                 score = 0
-            if score > min_score and (best_score is None or score > best_score):
-                best_idx, best_score = idx, score
+            if score <= min_score:
+                continue
+            ticker = str(item["payload"].get("ticker", "")).upper()
+            if ticker in recent_tickers:
+                if best_recent_score is None or score > best_recent_score:
+                    best_recent_idx, best_recent_score = idx, score
+            else:
+                if best_score is None or score > best_score:
+                    best_idx, best_score = idx, score
         elif item["kind"] == "image" and fallback_image_idx is None:
             fallback_image_idx = idx
 
-    chosen_idx = best_idx if best_idx is not None else fallback_image_idx
+    if best_idx is not None:
+        chosen_idx = best_idx
+    elif best_recent_idx is not None:
+        chosen_idx = best_recent_idx
+    else:
+        chosen_idx = fallback_image_idx
+
     if chosen_idx is None:
         return None
 

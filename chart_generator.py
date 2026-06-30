@@ -1,6 +1,7 @@
 """
-Генерация графика цены для тикера - японские свечи + объём снизу,
-в тёмной теме, похожей на сам Binance (а не просто линия цены).
+Генерация графика цены для тикера - японские свечи + MA-линии + объём
+снизу, в стиле, максимально похожем на сам Binance (карточка торговой
+пары + водяной знак-ромб + плашка с ценой справа).
 
 Данные берутся из того же источника, по которому сканер (scanner.py)
 и нашёл сигнал: data-api.binance.vision - публичное зеркало рыночных
@@ -17,7 +18,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Rectangle, FancyBboxPatch
 import requests
 
 import config
@@ -27,11 +28,19 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://data-api.binance.vision/api/v3"
 _CHARTS_DIR = config.BASE_DIR / "charts"
 
-_UP_COLOR = "#0ECB81"
-_DOWN_COLOR = "#F6465D"
+# Цветокоррекция: чуть более насыщенные/яркие зелёный и красный, чем
+# "сухие" официальные цвета Binance (#0ECB81/#F6465D) - так график
+# выглядит живее на скриншоте/в посте, как на примере с цветокором.
+_UP_COLOR = "#1FE08A"
+_DOWN_COLOR = "#FF4D5E"
 _BG_COLOR = "#0B0E11"
 _GRID_COLOR = "#1E2329"
 _AXIS_TEXT_COLOR = "#848E9C"
+_WATERMARK_COLOR = "#FFFFFF"
+
+# Цвета MA-линий - как на самом Binance (MA7 жёлтый, MA25 розовый/
+# маджента, MA99 фиолетовый).
+_MA_COLORS = {7: "#F0B90B", 25: "#E91E9C", 99: "#7B61FF"}
 
 # Страховка на случай ошибок форматирования тикера и т.п. - на практике
 # не должна срабатывать, раз график и сигнал берут данные из одного и
@@ -95,6 +104,18 @@ def _format_price(price: float) -> str:
     return f"{price:.6f}".rstrip("0").rstrip(".")
 
 
+def _moving_average(closes: list[float], period: int) -> list[float | None]:
+    """MA как на Binance: точка появляется только когда накопилось
+    достаточно свечей для периода (первые period-1 точек - None)."""
+    out: list[float | None] = []
+    for i in range(len(closes)):
+        if i + 1 < period:
+            out.append(None)
+        else:
+            out.append(sum(closes[i + 1 - period:i + 1]) / period)
+    return out
+
+
 def _draw_candles(ax, candles: list[dict]) -> None:
     highs = [c["high"] for c in candles]
     lows = [c["low"] for c in candles]
@@ -110,11 +131,49 @@ def _draw_candles(ax, candles: list[dict]) -> None:
         ax.add_patch(Rectangle((i - width / 2, body_low), width, body_height, color=color, linewidth=0))
 
 
+def _draw_moving_averages(ax, candles: list[dict]) -> None:
+    closes = [c["close"] for c in candles]
+    for period, color in _MA_COLORS.items():
+        if len(closes) < period:
+            continue  # недостаточно данных для этого периода - просто не рисуем линию
+        ma = _moving_average(closes, period)
+        xs = [i for i, v in enumerate(ma) if v is not None]
+        ys = [v for v in ma if v is not None]
+        ax.plot(xs, ys, color=color, linewidth=1.1, alpha=0.9, zorder=3)
+
+
 def _draw_volume(ax, candles: list[dict]) -> None:
     width = 0.6
     for i, c in enumerate(candles):
         color = _UP_COLOR if c["close"] >= c["open"] else _DOWN_COLOR
-        ax.add_patch(Rectangle((i - width / 2, 0), width, c["volume"], color=color, alpha=0.35, linewidth=0))
+        ax.add_patch(Rectangle((i - width / 2, 0), width, c["volume"], color=color, alpha=0.4, linewidth=0))
+
+
+def _draw_watermark(ax) -> None:
+    """Полупрозрачный ромб + надпись BINANCE по центру графика, как
+    водяной знак на скриншотах с самой площадки."""
+    ax.text(
+        0.5, 0.52, "◆", transform=ax.transAxes, ha="center", va="center",
+        fontsize=46, color=_WATERMARK_COLOR, alpha=0.05, zorder=0,
+    )
+    ax.text(
+        0.5, 0.46, "BINANCE", transform=ax.transAxes, ha="center", va="center",
+        fontsize=20, color=_WATERMARK_COLOR, alpha=0.05, fontweight="bold",
+        family="monospace", zorder=0,
+    )
+
+
+def _draw_price_tag(ax, price: float, color: str) -> None:
+    """Плашка с текущей ценой у правого края графика, на уровне
+    последнего закрытия - как "Last Price" бирка на самом Binance."""
+    ax.annotate(
+        _format_price(price),
+        xy=(1.0, price), xycoords=("axes fraction", "data"),
+        xytext=(8, 0), textcoords="offset points",
+        ha="left", va="center", fontsize=8.5, color="#0B0E11", fontweight="bold",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor=color, edgecolor="none"),
+        annotation_clip=False, zorder=5,
+    )
 
 
 def _style_axis(ax, show_xticks: bool = False) -> None:
@@ -130,8 +189,8 @@ def _style_axis(ax, show_xticks: bool = False) -> None:
 
 def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None) -> Path | None:
     """
-    Возвращает путь к PNG со свечным графиком тикера (+ объём снизу,
-    в духе самого Binance), либо None.
+    Возвращает путь к PNG со свечным графиком тикера (MA7/25/99 +
+    объём снизу + водяной знак, в стиле самого Binance), либо None.
     """
     try:
         candles = fetch_klines(ticker, days)
@@ -167,13 +226,16 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
 
     fig = plt.figure(figsize=(8, 5), dpi=150)
     fig.patch.set_facecolor(_BG_COLOR)
-    gs = fig.add_gridspec(2, 1, height_ratios=(3.2, 1), hspace=0.05, left=0.04, right=0.93, top=0.86, bottom=0.08)
+    gs = fig.add_gridspec(2, 1, height_ratios=(3.2, 1), hspace=0.05, left=0.04, right=0.90, top=0.83, bottom=0.08)
     ax_price = fig.add_subplot(gs[0])
     ax_vol = fig.add_subplot(gs[1], sharex=ax_price)
 
+    _draw_watermark(ax_price)
     _draw_candles(ax_price, candles)
+    _draw_moving_averages(ax_price, candles)
     _style_axis(ax_price, show_xticks=False)
     ax_price.set_xlim(-1, len(candles))
+    _draw_price_tag(ax_price, last_close, header_color)
 
     _draw_volume(ax_vol, candles)
     _style_axis(ax_vol, show_xticks=True)
@@ -194,9 +256,17 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
     fig.text(0.04, 0.96, f"{ticker}/USDT", color="white", fontsize=15, fontweight="bold", va="top")
     fig.text(
         0.04, 0.915,
-        f"{_format_price(last_close)}  {arrow} {change_pct:+.2f}%  ·  {days}d",
+        f"{_format_price(last_close)}  {arrow} {change_pct:+.2f}%",
         color=header_color, fontsize=11, fontweight="bold", va="top",
     )
+    # Легенда MA-линий, как в шапке графика на Binance.
+    last_ma7 = _moving_average([c["close"] for c in candles], 7)[-1] or last_close
+    fig.text(
+        0.40, 0.918,
+        f"MA(7) {_format_price(last_ma7)}",
+        color=_MA_COLORS[7], fontsize=8, va="top",
+    )
+    fig.text(0.04, 0.875, f"{days}d", color=_AXIS_TEXT_COLOR, fontsize=8, va="top")
 
     fig.savefig(out_path, facecolor=fig.get_facecolor())
     plt.close(fig)
