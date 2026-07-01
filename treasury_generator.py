@@ -13,7 +13,7 @@ import re
 from typing import Optional
 
 from groq_client import call_groq
-from post_format import DISCLAIMER
+import post_format
 from treasury_index import TreasuryIndexResult, compute_index, format_index_block, leading_tier
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,11 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, Tr
         logger.warning("Хук Treasury Index не прошёл проверку (%s) - публикую с нейтральным хуком", reason)
         hook = "📊 Свежий срез Treasury Index:"
 
-    text = f"{hook.strip()}\n\n{index_block}\n\n{DISCLAIMER}"
+    text_parts = [hook.strip(), index_block, post_format.DISCLAIMER]
+    telegram_line = post_format.telegram_channel_line()
+    if telegram_line:
+        text_parts.append(telegram_line)
+    text = "\n\n".join(text_parts)
     logger.info("Сгенерирован пост Treasury Index (%s%%, лидер %s): %s",
                 total_sign + str(result.total_pct), lt.key if lt else "нет", text[:150].replace("\n", " "))
     return text, result
