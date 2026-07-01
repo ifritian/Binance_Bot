@@ -77,13 +77,17 @@ def _calc_ticker_stats(ticker: str) -> Optional[dict]:
     if len(klines) < 2:
         return None
 
-    prices = [float(p[1]) for p in klines]
-    open_price, close_price = prices[0], prices[-1]
+    opens = [float(k["open"]) for k in klines]
+    highs = [float(k["high"]) for k in klines]
+    lows = [float(k["low"]) for k in klines]
+    closes = [float(k["close"]) for k in klines]
+
+    open_price, close_price = opens[0], closes[-1]
     if open_price == 0:
         return None
 
     pct = round((close_price - open_price) / open_price * 100, 2)
-    amplitude_pct = round((max(prices) - min(prices)) / open_price * 100, 2)
+    amplitude_pct = round((max(highs) - min(lows)) / open_price * 100, 2)
     return {"pct": pct, "amplitude_pct": amplitude_pct, "current_price": close_price}
 
 
