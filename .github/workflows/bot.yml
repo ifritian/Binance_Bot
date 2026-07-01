@@ -42,6 +42,7 @@ jobs:
       TREASURY_PERIOD_HOURS: ${{ secrets.TREASURY_PERIOD_HOURS || '12' }}
       TREASURY_INTERVAL_HOURS: ${{ secrets.TREASURY_INTERVAL_HOURS || '12' }}
       TREASURY_JITTER_HOURS: ${{ secrets.TREASURY_JITTER_HOURS || '1' }}
+      SIGNAL_MAX_AGE_HOURS: ${{ secrets.SIGNAL_MAX_AGE_HOURS || '1' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

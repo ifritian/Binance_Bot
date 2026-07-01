@@ -217,7 +217,7 @@ def _set_queue(queue: list[dict]) -> None:
 
 def _push_pending(kind: str, payload: dict) -> None:
     queue = _get_queue()
-    queue.append({"kind": kind, "payload": payload, "attempts": 0})
+    queue.append({"kind": kind, "payload": payload, "attempts": 0, "queued_at": time.time()})
     if len(queue) > _MAX_QUEUE_LENGTH:
         dropped = queue.pop(0)
         import logging
@@ -226,6 +226,39 @@ def _push_pending(kind: str, payload: dict) -> None:
             _MAX_QUEUE_LENGTH, dropped.get("kind"),
         )
     _set_queue(queue)
+
+
+def prune_expired_entries(max_age_hours: float) -> int:
+    """Удаляет из очереди записи старше max_age_hours - устаревший RSI-
+    сигнал (RSI мог уже давно выйти из зоны перекупленности/перепроданности
+    к моменту публикации) не должен ждать своей очереди часами только
+    потому, что у него был высокий score в момент обнаружения. Это
+    дополняет лимит по количеству (_MAX_QUEUE_LENGTH) - тот срабатывает
+    только когда очередь физически переполнена, а это чистит по времени
+    вне зависимости от текущей длины очереди.
+
+    Записи без queued_at (уже лежавшие в очереди до этого изменения)
+    считаются устаревшими сразу - их возраст всё равно неизвестен,
+    лучше почистить, чем оставить висеть бессрочно.
+
+    Возвращает число удалённых записей."""
+    queue = _get_queue()
+    if not queue:
+        return 0
+
+    cutoff = time.time() - max_age_hours * 3600
+    kept = [item for item in queue if item.get("queued_at", 0) >= cutoff]
+    dropped_count = len(queue) - len(kept)
+
+    if dropped_count:
+        import logging
+        logging.getLogger("queue_manager").info(
+            "Очистка очереди по возрасту (>%.1fч): удалено %d устаревших записей, осталось %d",
+            max_age_hours, dropped_count, len(kept),
+        )
+        _set_queue(kept)
+
+    return dropped_count
 
 
 def push_pending_signal(signal: RsiSignal) -> None:
