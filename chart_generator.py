@@ -55,6 +55,41 @@ _INTERVAL_BY_DAYS = {
 }
 
 
+def symbol_exists(ticker: str) -> bool:
+    """Быстрая проверка (без скачивания свечей - один короткий запрос
+    цены), торгуется ли SYMBOLUSDT на Binance вообще.
+
+    Нужна, чтобы отсеивать сигналы для тикеров НЕ с Binance ещё на
+    этапе парсинга (main.check_for_new_signals), а не только когда
+    generate_chart_image уже упадёт с 400 в момент публикации. Такие
+    сигналы иногда приходят от стороннего бота (@syndicateproobot) -
+    например, однобуквенный тикер вроде \"O\", который на самом деле
+    NYSE-акция, а не крипто-пара, и на Binance его, конечно, нет.
+
+    При сетевой ошибке ИЛИ неожиданном статусе - возвращает True (не
+    блокируем сигнал из-за временного сбоя самой проверки, а не
+    реального отсутствия пары); False - только при точном 400/404 от
+    Binance, означающем \"такого символа не существует\"."""
+    clean_ticker = ticker.replace("USDT", "").upper()
+    symbol = f"{clean_ticker}USDT"
+
+    try:
+        resp = requests.get(f"{_BASE_URL}/ticker/price", params={"symbol": symbol}, timeout=10)
+    except requests.RequestException as e:
+        logger.warning("Не удалось проверить существование пары %s: %s - пропускаю проверку, разрешаю", symbol, e)
+        return True
+
+    if resp.status_code in (400, 404):
+        logger.info("Пара %s не торгуется на Binance (статус %s) - тикер будет отсеян", symbol, resp.status_code)
+        return False
+
+    if not resp.ok:
+        logger.warning("Неожиданный статус %s при проверке пары %s - пропускаю проверку, разрешаю", resp.status_code, symbol)
+        return True
+
+    return True
+
+
 def fetch_klines(ticker: str, days: int = 2) -> list[dict]:
     """Возвращает свечи (open_time, open, high, low, close, volume) с Binance.
     ticker - без USDT (например, "PHB" или "BTC")."""

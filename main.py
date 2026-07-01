@@ -59,10 +59,23 @@ def check_for_new_signals() -> None:
         if post.text:
             signals = signal_parser.parse_signals(post.text)
             if signals:
+                # Отсеиваем тикеры, которых физически нет на Binance (сторонний
+                # бот-источник иногда шлёт пары не с Binance, например акции с
+                # похожим тикером) - лучше сразу пропустить весь такой сигнал,
+                # чем потратить 3-4 попытки публикации впустую и заблокировать
+                # им место в очереди перед реально валидными сигналами.
+                valid_signals = [s for s in signals if chart_generator.symbol_exists(s.ticker)]
+                skipped = [s.ticker for s in signals if s not in valid_signals]
+                if skipped:
+                    logger.warning("Отсеяны тикеры не с Binance (нет такой пары): %s", skipped)
+
+                if not valid_signals:
+                    continue
+
                 # выбираем сигнал из пачки, избегая повтора недавних тикеров,
                 # вместо того чтобы всегда брать первый (для разнообразия постов)
                 recent = queue_manager.get_recent_tickers()
-                chosen = signal_parser.pick_entry(signals, recent)
+                chosen = signal_parser.pick_entry(valid_signals, recent)
                 logger.info(
                     "Новый сигнал: %s %s, вход %s-%s, стоп %s, тейк %s, score %s "
                     "(недавние тикеры: %s)",
