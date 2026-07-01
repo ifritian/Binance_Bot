@@ -28,19 +28,21 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://data-api.binance.vision/api/v3"
 _CHARTS_DIR = config.BASE_DIR / "charts"
 
-# Цветокоррекция: чуть более насыщенные/яркие зелёный и красный, чем
-# "сухие" официальные цвета Binance (#0ECB81/#F6465D) - так график
-# выглядит живее на скриншоте/в посте, как на примере с цветокором.
-_UP_COLOR = "#1FE08A"
-_DOWN_COLOR = "#FF4D5E"
+# Неоновая палитра (по референсу пользователя - коктейль на тёмно-синем
+# фоне): циан для роста, маджента для падения - вместо стандартных
+# Binance-цветов (#0ECB81/#F6465D).
+_UP_COLOR = "#29ABE2"
+_DOWN_COLOR = "#E4007A"
 _BG_COLOR = "#0B0E11"
 _GRID_COLOR = "#1E2329"
 _AXIS_TEXT_COLOR = "#848E9C"
 _WATERMARK_COLOR = "#FFFFFF"
 
-# Цвета MA-линий - как на самом Binance (MA7 жёлтый, MA25 розовый/
-# маджента, MA99 фиолетовый).
-_MA_COLORS = {7: "#F0B90B", 25: "#E91E9C", 99: "#7B61FF"}
+# Цвета MA-линий. MA25 намеренно НЕ маджента/розовый (как раньше) -
+# на фоне такого же по тону down-цвета свечей (#E4007A) линия бы
+# сливалась с телами свечей и переставала читаться. Светлый
+# нейтральный цвет держит контраст с обоими цветами свечей сразу.
+_MA_COLORS = {7: "#F0B90B", 25: "#E8E8E8", 99: "#7B61FF"}
 
 # Страховка на случай ошибок форматирования тикера и т.п. - на практике
 # не должна срабатывать, раз график и сигнал берут данные из одного и
@@ -178,10 +180,27 @@ def _draw_moving_averages(ax, candles: list[dict]) -> None:
 
 
 def _draw_volume(ax, candles: list[dict]) -> None:
+    """Объём снизу - столбики цветом по свече (рост/падение), с отступом
+    сверху (чтобы самый высокий бар не упирался в границу панели) и
+    тонкой горизонтальной сеткой на паре уровней в цвет сетки основного
+    графика - без этого плоские полупрозрачные бруски выглядели как
+    отдельная, "приклеенная" диаграмма, а не органичное продолжение
+    свечного графика, как на настоящих биржевых терминалах."""
     width = 0.6
+    volumes = [c["volume"] for c in candles]
+    max_vol = max(volumes) if volumes else 1.0
+
     for i, c in enumerate(candles):
         color = _UP_COLOR if c["close"] >= c["open"] else _DOWN_COLOR
-        ax.add_patch(Rectangle((i - width / 2, 0), width, c["volume"], color=color, alpha=0.4, linewidth=0))
+        ax.add_patch(Rectangle((i - width / 2, 0), width, c["volume"], color=color, alpha=0.55, linewidth=0))
+
+    # Отступ сверху ~25% - бары "дышат", не упираются в край панели
+    ax.set_ylim(0, max_vol * 1.25)
+
+    # Лёгкая горизонтальная сетка на 2 уровнях - визуально связывает
+    # панель объёма с основным графиком (та же сетка, тот же цвет).
+    for frac in (0.25, 0.75):
+        ax.axhline(max_vol * frac, color=_GRID_COLOR, linewidth=0.5, zorder=0)
 
 
 def _draw_watermark(ax) -> None:
