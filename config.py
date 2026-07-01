@@ -65,6 +65,16 @@ OPINION_INTERVAL_HOURS = float(os.environ.get("OPINION_INTERVAL_HOURS", "48"))
 ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))
 
+# --- Treasury Index (собственный инфраструктурный индекс, см. treasury_index.py) ---
+# TREASURY_PERIOD_HOURS - за какой период считаем % изменения (окно свечей).
+# TREASURY_INTERVAL_HOURS - как часто публикуем пост. Разделены нарочно:
+# можно публиковать раз в 12ч, но при этом хотеть, чтобы период расчёта
+# был другим (например, 24ч для более сглаженной картины) - по умолчанию
+# совпадают, но это не обязано быть так.
+TREASURY_PERIOD_HOURS = float(os.environ.get("TREASURY_PERIOD_HOURS", "12"))
+TREASURY_INTERVAL_HOURS = float(os.environ.get("TREASURY_INTERVAL_HOURS", "12"))
+TREASURY_JITTER_HOURS = float(os.environ.get("TREASURY_JITTER_HOURS", "1"))
+
 # Случайный разброс окна публикации (+/-), чтобы интервалы не были
 # идеально механическими. Не меняет МИНИМАЛЬНЫЙ интервал в среднем -
 # просто сдвигает конкретное окно туда-сюда на случайную величину.

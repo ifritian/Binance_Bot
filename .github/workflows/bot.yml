@@ -39,6 +39,9 @@ jobs:
       ARTICLE_INTERVAL_HOURS: ${{ secrets.ARTICLE_INTERVAL_HOURS }}
       MIN_SIGNAL_SCORE_TO_PUBLISH: ${{ secrets.MIN_SIGNAL_SCORE_TO_PUBLISH || '70' }}
       ACTIVE_WINDOW_LOOKAHEAD_MINUTES: ${{ secrets.ACTIVE_WINDOW_LOOKAHEAD_MINUTES || '30' }}
+      TREASURY_PERIOD_HOURS: ${{ secrets.TREASURY_PERIOD_HOURS || '12' }}
+      TREASURY_INTERVAL_HOURS: ${{ secrets.TREASURY_INTERVAL_HOURS || '12' }}
+      TREASURY_JITTER_HOURS: ${{ secrets.TREASURY_JITTER_HOURS || '1' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -52,36 +55,6 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run one bot check
-        run: python main.py --once
-
-      - name: Show queue state (diagnostics)
-        if: always()
-        run: python check_state.py
-
-      - name: Save bot state back to the repository
-        run: |
-          git config user.name "square-signal-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add bot_state.db
-          git diff --quiet --cached || git commit -m "Обновление состояния бота [skip ci]"
-          git push
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run one bot check
-        env:
-          FOLLOWUP_CHANNEL_USERNAME: ${{ secrets.FOLLOWUP_CHANNEL_USERNAME }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          BINANCE_SQUARE_API_KEY: ${{ secrets.BINANCE_SQUARE_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
-          GROQ_VISION_MODEL: ${{ secrets.GROQ_VISION_MODEL }}
-          MIN_POST_INTERVAL_HOURS: ${{ secrets.MIN_POST_INTERVAL_HOURS || '2' }}
-          OPINION_INTERVAL_HOURS: ${{ secrets.OPINION_INTERVAL_HOURS }}
-          ARTICLE_INTERVAL_HOURS: ${{ secrets.ARTICLE_INTERVAL_HOURS }}
-          MIN_SIGNAL_SCORE_TO_PUBLISH: ${{ secrets.MIN_SIGNAL_SCORE_TO_PUBLISH || '70' }}
-          ACTIVE_WINDOW_LOOKAHEAD_MINUTES: ${{ secrets.ACTIVE_WINDOW_LOOKAHEAD_MINUTES || '30' }}
-          TELEGRAM_PUBLISH_CHANNEL: ${{ secrets.TELEGRAM_PUBLISH_CHANNEL }}
         run: python main.py --once
 
       - name: Show queue state (diagnostics)

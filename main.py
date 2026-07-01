@@ -34,6 +34,7 @@ import signal_parser
 import telegram_listener
 import telegram_publisher
 import text_generator
+import treasury_generator
 import validator
 
 logging.basicConfig(
@@ -289,6 +290,53 @@ def try_publish_opinion_post() -> None:
 
 
 # ============================================================
+# Формат 2.5: "treasury" - Treasury Index (собственный инфраструктурный индекс)
+# ============================================================
+
+def try_publish_treasury_post() -> None:
+    seconds_elapsed = queue_manager.seconds_since_last_post("treasury")
+    min_seconds = config.TREASURY_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("treasury")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("treasury"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+
+    logger.info("Окно публикации (Treasury Index) открыто - считаю индекс")
+
+    try:
+        result = treasury_generator.generate_treasury_post(config.TREASURY_PERIOD_HOURS)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на Treasury Index - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("treasury", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации Treasury Index: %s", e)
+        queue_manager.set_retry_backoff("treasury", 1)
+        return
+
+    if result is None:
+        logger.warning("Treasury Index не удалось посчитать (нет данных с Binance) - пропускаю до следующего окна")
+        queue_manager.set_retry_backoff("treasury", 1)
+        return
+
+    post_text, _index_result = result
+
+    try:
+        published_result = binance_publisher.publish_post(post_text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации Treasury Index: %s", e)
+        queue_manager.set_retry_backoff("treasury", 2)
+        return
+
+    logger.info("Опубликовано (Treasury Index): %s", published_result)
+    _crosspost_to_telegram(post_text)
+    queue_manager.set_last_post_time("treasury")
+    queue_manager.roll_new_jitter("treasury", config.TREASURY_JITTER_HOURS * 3600)
+
+
+# ============================================================
 # Формат 3: "article" - еженедельная статья-сводка
 # ============================================================
 
@@ -386,6 +434,7 @@ def tick() -> None:
 
         try_publish_currency_post()
         try_publish_opinion_post()
+        try_publish_treasury_post()
         try_publish_article_post()
     except Exception:
         logger.exception("Неожиданная ошибка в основном цикле")
@@ -404,9 +453,10 @@ def main() -> None:
     once = "--once" in sys.argv
 
     logger.info(
-        "Бот запущен. Интервал проверки: %sс. Окна публикации - валюта: %sч, мнение: %sч, статья: %sч",
+        "Бот запущен. Интервал проверки: %sс. Окна публикации - валюта: %sч, мнение: %sч, "
+        "treasury: %sч, статья: %sч",
         config.POLL_INTERVAL_SECONDS, config.MIN_POST_INTERVAL_HOURS,
-        config.OPINION_INTERVAL_HOURS, config.ARTICLE_INTERVAL_HOURS,
+        config.OPINION_INTERVAL_HOURS, config.TREASURY_INTERVAL_HOURS, config.ARTICLE_INTERVAL_HOURS,
     )
 
     if once:
