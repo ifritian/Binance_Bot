@@ -190,6 +190,34 @@ def set_last_hook_mode(mode: str) -> None:
     _set("last_hook_mode", mode)
 
 
+# --- Кумулятивная история Treasury Index (с момента первого запуска) ---
+# База 100 в момент первой публикации - и для индекса, и для BTC (для
+# честного сравнения "если бы вы просто держали BTC вместо этого").
+# Хранится здесь же, в bot_state.db, который и так коммитится обратно
+# в репозиторий каждым прогоном GitHub Actions - значит переживает
+# перезапуски точно так же, как очередь и остальное состояние.
+
+def get_treasury_history() -> Optional[dict]:
+    """{"launch_at": unix ts, "index_value": float, "btc_value": float} -
+    None, если Treasury Index ещё ни разу не публиковался успешно."""
+    return _get("treasury_history", None)
+
+
+def update_treasury_history(index_pct: float, btc_pct: float) -> dict:
+    """Применяет очередное изменение (% за период) к кумулятивным
+    значениям индекса и BTC и сохраняет. Первый вызов инициализирует
+    базу 100/100 и текущий момент как launch_at (запоминается один раз,
+    дальше не трогается). Возвращает обновлённое состояние."""
+    history = get_treasury_history()
+    if history is None:
+        history = {"launch_at": time.time(), "index_value": 100.0, "btc_value": 100.0}
+
+    history["index_value"] = round(history["index_value"] * (1 + index_pct / 100), 4)
+    history["btc_value"] = round(history["btc_value"] * (1 + btc_pct / 100), 4)
+    _set("treasury_history", history)
+    return history
+
+
 # --- Очередь отложенных постов, ждущих своего окна публикации ---
 # ВАЖНО: это настоящая FIFO-очередь, а не одно перезаписываемое
 # значение. Раньше "отложенный пост" был ОДНИМ слотом - если за тик

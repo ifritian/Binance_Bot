@@ -288,6 +288,15 @@ def format_index_block(result: TreasuryIndexResult) -> str:
     return "\n".join(lines)
 
 
+def fetch_reference_change_pct(symbol: str, period_hours: float) -> Optional[float]:
+    """Публичная обёртка над _fetch_symbol_change_pct - % изменения
+    произвольного актива (например 'BTCUSDT') за тот же период, что и
+    сам индекс. Нужна для сравнения "Treasury Index vs BTC" в посте -
+    расхождение с BTC интереснее и более "расшариваемо", чем голая
+    цифра индекса саму по себе."""
+    return _fetch_symbol_change_pct(symbol, period_hours)
+
+
 def leading_tier(result: TreasuryIndexResult) -> Optional[TierResult]:
     """Тир с наибольшим % изменения (по модулю роста, не волатильности) -
     пригодится для короткой рефлексии в духе 'риск-аппетит возвращается',
