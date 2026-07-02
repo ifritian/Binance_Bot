@@ -75,6 +75,12 @@ TREASURY_PERIOD_HOURS = float(os.environ.get("TREASURY_PERIOD_HOURS", "12"))
 TREASURY_INTERVAL_HOURS = float(os.environ.get("TREASURY_INTERVAL_HOURS", "12"))
 TREASURY_JITTER_HOURS = float(os.environ.get("TREASURY_JITTER_HOURS", "1"))
 
+# Сколько часов сигнал/картинка может пролежать в очереди публикации,
+# прежде чем считается устаревшим и удаляется без публикации - RSI
+# сигнал часовой давности уже мог выйти из зоны перекупленности/
+# перепроданности, публиковать его как "свежий" было бы нечестно.
+SIGNAL_MAX_AGE_HOURS = float(os.environ.get("SIGNAL_MAX_AGE_HOURS", "1"))
+
 # Случайный разброс окна публикации (+/-), чтобы интервалы не были
 # идеально механическими. Не меняет МИНИМАЛЬНЫЙ интервал в среднем -
 # просто сдвигает конкретное окно туда-сюда на случайную величину.
