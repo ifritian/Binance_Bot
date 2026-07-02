@@ -437,6 +437,52 @@ def set_retry_backoff(post_type: str, hours: float) -> None:
     _set(f"retry_after:{post_type}", time.time() + hours * 3600)
 
 
+# --- Трекинг результатов опубликованных сигналов (outcome_tracker.py) ---
+# Отдельно от post_queue (очередь на ПУБЛИКАЦИЮ) - здесь сигналы,
+# которые УЖЕ опубликованы и ждут, пока цена дойдёт до тейка/стопа.
+# open_outcomes - ещё не решённые (see outcome_tracker.check_open_outcomes),
+# closed_outcomes - решённые (win/loss/timeout), на них считается
+# статистика (outcome_tracker.get_accuracy_stats).
+
+_OPEN_OUTCOMES_MAX = 300     # защитный потолок, чтобы список не рос бесконечно при сбоях трекинга
+_CLOSED_OUTCOMES_MAX = 1000  # ~несколько месяцев истории для статистики - этого достаточно
+
+
+def get_open_outcomes() -> list[dict]:
+    return _get("open_outcomes", [])
+
+
+def add_open_outcome(record: dict) -> None:
+    items = get_open_outcomes()
+    items.append(record)
+    if len(items) > _OPEN_OUTCOMES_MAX:
+        import logging
+        logging.getLogger("queue_manager").warning(
+            "open_outcomes переполнен (>%d) - старейшие записи выброшены без результата",
+            _OPEN_OUTCOMES_MAX,
+        )
+        items = items[-_OPEN_OUTCOMES_MAX:]
+    _set("open_outcomes", items)
+
+
+def replace_open_outcomes(items: list[dict]) -> None:
+    """Перезаписывает open_outcomes целиком - вызывается после каждого
+    прохода check_open_outcomes() с тем, что осталось нерешённым."""
+    _set("open_outcomes", items)
+
+
+def get_closed_outcomes() -> list[dict]:
+    return _get("closed_outcomes", [])
+
+
+def append_closed_outcomes(new_items: list[dict]) -> None:
+    items = get_closed_outcomes()
+    items.extend(new_items)
+    if len(items) > _CLOSED_OUTCOMES_MAX:
+        items = items[-_CLOSED_OUTCOMES_MAX:]
+    _set("closed_outcomes", items)
+
+
 def get_retry_backoff_remaining_seconds(post_type: str) -> Optional[float]:
     """Сколько секунд осталось до конца паузы после сбоя, или None,
     если бэкофф не активен (можно пробовать сейчас)."""

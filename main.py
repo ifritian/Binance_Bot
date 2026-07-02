@@ -27,6 +27,7 @@ import config
 import image_analyzer
 import groq_client
 import opinion_generator
+import outcome_tracker
 import post_format
 import queue_manager
 import scanner
@@ -126,6 +127,12 @@ def _publish_signal(signal) -> bool:
     published = _do_publish(post_text, [chart_path])
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
+        # Ставим сигнал на трекинг результата ПОСЛЕ публикации - если
+        # пост не вышел, аудитория его не видела, трекать нечего.
+        try:
+            outcome_tracker.record_signal_outcome(signal)
+        except Exception:
+            logger.exception("Не удалось поставить сигнал %s на трекинг результата", signal.ticker)
     return published
 
 
@@ -423,6 +430,16 @@ def try_publish_article_post() -> None:
 def tick() -> None:
     try:
         queue_manager.prune_expired_entries(config.SIGNAL_MAX_AGE_HOURS)
+
+        try:
+            outcome_summary = outcome_tracker.check_open_outcomes()
+            if outcome_summary["closed"]:
+                logger.info(
+                    "Трекинг результатов: закрыто %d, ещё открыто %d",
+                    outcome_summary["closed"], outcome_summary["still_open"],
+                )
+        except Exception:
+            logger.exception("Ошибка проверки открытых результатов - пропускаю до следующего тика")
 
         seconds_elapsed = queue_manager.seconds_since_last_post("currency")
         min_seconds = config.MIN_POST_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("currency")
