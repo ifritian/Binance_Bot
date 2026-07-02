@@ -81,6 +81,9 @@ TREASURY_JITTER_HOURS = float(os.environ.get("TREASURY_JITTER_HOURS", "1"))
 # перепроданности, публиковать его как "свежий" было бы нечестно.
 SIGNAL_MAX_AGE_HOURS = float(os.environ.get("SIGNAL_MAX_AGE_HOURS", "1"))
 
+# --- Трекинг результатов опубликованных сигналов (outcome_tracker.py) ---
+OUTCOME_MAX_TRACK_HOURS = float(os.environ.get("OUTCOME_MAX_TRACK_HOURS", "48"))
+
 # Случайный разброс окна публикации (+/-), чтобы интервалы не были
 # идеально механическими. Не меняет МИНИМАЛЬНЫЙ интервал в среднем -
 # просто сдвигает конкретное окно туда-сюда на случайную величину.
