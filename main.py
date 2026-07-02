@@ -334,17 +334,17 @@ def try_publish_treasury_post() -> None:
         queue_manager.set_retry_backoff("treasury", 1)
         return
 
-    post_text, _index_result = result
+    binance_text, telegram_text, _index_result = result
 
     try:
-        published_result = binance_publisher.publish_post(post_text)
+        published_result = binance_publisher.publish_post(binance_text)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации Treasury Index: %s", e)
         queue_manager.set_retry_backoff("treasury", 2)
         return
 
     logger.info("Опубликовано (Treasury Index): %s", published_result)
-    _crosspost_to_telegram(post_text)
+    _crosspost_to_telegram(telegram_text)
     queue_manager.set_last_post_time("treasury")
     queue_manager.roll_new_jitter("treasury", config.TREASURY_JITTER_HOURS * 3600)
 
@@ -422,6 +422,8 @@ def try_publish_article_post() -> None:
 
 def tick() -> None:
     try:
+        queue_manager.prune_expired_entries(config.SIGNAL_MAX_AGE_HOURS)
+
         seconds_elapsed = queue_manager.seconds_since_last_post("currency")
         min_seconds = config.MIN_POST_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("currency")
         seconds_until_window = min_seconds - seconds_elapsed

@@ -44,10 +44,15 @@ def _extract_numbers(text: str) -> set[float]:
     return {round(float(n), 2) for n in re.findall(r"[+-]?\d+\.?\d*", text.replace(",", ""))}
 
 
-def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, TreasuryIndexResult]]:
-    """Возвращает (готовый текст поста, TreasuryIndexResult), либо None,
-    если индекс не удалось посчитать вообще (ни один тир не собрался -
-    например, полностью недоступен data-api.binance.vision).
+def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, str, TreasuryIndexResult]]:
+    """Возвращает (текст для Binance Square, текст для кросспоста в Telegram,
+    TreasuryIndexResult), либо None, если индекс не удалось посчитать
+    вообще (ни один тир не собрался - например, полностью недоступен
+    data-api.binance.vision).
+
+    Тексты отличаются только наличием ссылки на Telegram-канал - она
+    нужна на Binance Square (чтобы звать читателя в Telegram), но
+    бессмысленна при кросспосте того же поста обратно в тот же канал.
 
     Поднимает groq_client.GroqRateLimited при 429 от Groq - вызывающий
     код (main.py) уже умеет это ловить и выставлять backoff, как для
@@ -84,13 +89,20 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, Tr
         hook = "📊 Свежий срез Treasury Index:"
 
     text_parts = [hook.strip(), index_block, post_format.DISCLAIMER]
+    binance_text = "\n\n".join(text_parts)
+
+    # Ссылка на Telegram-канал имеет смысл только в посте на Binance Square
+    # (зовёт читателя перейти в Telegram) - при кросспосте ЭТОГО ЖЕ поста
+    # обратно в тот же Telegram-канал ссылка на самого себя бессмысленна,
+    # поэтому для кросспоста используется текст без неё.
     telegram_line = post_format.telegram_channel_line()
+    telegram_text = binance_text
     if telegram_line:
-        text_parts.append(telegram_line)
-    text = "\n\n".join(text_parts)
+        binance_text = binance_text + "\n\n" + telegram_line
+
     logger.info("Сгенерирован пост Treasury Index (%s%%, лидер %s): %s",
-                total_sign + str(result.total_pct), lt.key if lt else "нет", text[:150].replace("\n", " "))
-    return text, result
+                total_sign + str(result.total_pct), lt.key if lt else "нет", binance_text[:150].replace("\n", " "))
+    return binance_text, telegram_text, result
 
 
 def validate_treasury_hook(hook: str, allowed_numbers: set[float]) -> tuple[bool, str]:
