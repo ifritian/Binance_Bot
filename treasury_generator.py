@@ -50,9 +50,11 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, st
     вообще (ни один тир не собрался - например, полностью недоступен
     data-api.binance.vision).
 
-    Тексты отличаются только наличием ссылки на Telegram-канал - она
-    нужна на Binance Square (чтобы звать читателя в Telegram), но
-    бессмысленна при кросспосте того же поста обратно в тот же канал.
+    Сейчас оба текста идентичны - ссылка на Telegram-канал в пост для
+    Binance Square НЕ добавляется (площадка блокирует такие посты
+    модерацией, см. комментарий внутри функции), возврат двух отдельных
+    строк сохранён на будущее, если для одной из площадок понадобится
+    другое форматирование.
 
     Поднимает groq_client.GroqRateLimited при 429 от Groq - вызывающий
     код (main.py) уже умеет это ловить и выставлять backoff, как для
@@ -91,14 +93,14 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, st
     text_parts = [hook.strip(), index_block, post_format.DISCLAIMER]
     binance_text = "\n\n".join(text_parts)
 
-    # Ссылка на Telegram-канал имеет смысл только в посте на Binance Square
-    # (зовёт читателя перейти в Telegram) - при кросспосте ЭТОГО ЖЕ поста
-    # обратно в тот же Telegram-канал ссылка на самого себя бессмысленна,
-    # поэтому для кросспоста используется текст без неё.
-    telegram_line = post_format.telegram_channel_line()
+    # Ссылку на Telegram-канал в пост для Binance Square НЕ добавляем -
+    # площадка блокирует такие посты модерацией с причиной "promotes
+    # third-party channels" (проверено на практике - пост так и не
+    # опубликовался, завис в черновиках). post_format.telegram_channel_line()
+    # оставлена в кодовой базе на случай, если понадобится для других
+    # целей (например, для будущих постов ИСКЛЮЧИТЕЛЬНО в самом Telegram),
+    # но сюда, в текст для Binance, сознательно не подключается.
     telegram_text = binance_text
-    if telegram_line:
-        binance_text = binance_text + "\n\n" + telegram_line
 
     logger.info("Сгенерирован пост Treasury Index (%s%%, лидер %s): %s",
                 total_sign + str(result.total_pct), lt.key if lt else "нет", binance_text[:150].replace("\n", " "))
