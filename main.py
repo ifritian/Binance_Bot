@@ -21,12 +21,14 @@ import sys
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 import article_generator
+import alerting
 import binance_publisher
 import chart_generator
 import config
 import image_analyzer
 import groq_client
 import opinion_generator
+import outcome_tracker
 import post_format
 import queue_manager
 import scanner
@@ -126,6 +128,12 @@ def _publish_signal(signal) -> bool:
     published = _do_publish(post_text, [chart_path])
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
+        # Ставим сигнал на трекинг результата ПОСЛЕ публикации - если
+        # пост не вышел, аудитория его не видела, трекать нечего.
+        try:
+            outcome_tracker.record_signal_outcome(signal)
+        except Exception:
+            logger.exception("Не удалось поставить сигнал %s на трекинг результата", signal.ticker)
     return published
 
 
@@ -420,9 +428,44 @@ def try_publish_article_post() -> None:
 # Общий цикл
 # ============================================================
 
+def _check_dead_mans_switch() -> None:
+    """Если currency-формат не публиковался дольше config.DEAD_MANS_SWITCH_HOURS
+    часов - это, скорее всего, не штатное "нет хороших сигналов" (такое
+    бывает часами), а признак реальной поломки. Шлём алерт владельцу
+    (троттлится внутри alerting.send_owner_alert - не чаще раза в тот
+    же период, чтобы не долбить в личку каждые 10 минут)."""
+    elapsed_hours = queue_manager.seconds_since_last_post("currency") / 3600
+    if elapsed_hours == float("inf"):
+        return  # бот ни разу ещё не публиковал - это старт, а не сбой
+    if elapsed_hours >= config.DEAD_MANS_SWITCH_HOURS:
+        alerting.send_owner_alert(
+            "dead_mans_switch_currency",
+            f"Бот не публиковал сигналы уже {elapsed_hours:.1f}ч "
+            f"(порог: {config.DEAD_MANS_SWITCH_HOURS}ч). Возможно, сломался "
+            f"источник сигналов, протух API-ключ, или перестал запускаться workflow "
+            f"- стоит проверить Actions и check_state.py.",
+            min_repeat_hours=config.DEAD_MANS_SWITCH_HOURS,
+        )
+
+
 def tick() -> None:
     try:
         queue_manager.prune_expired_entries(config.SIGNAL_MAX_AGE_HOURS)
+
+        try:
+            outcome_summary = outcome_tracker.check_open_outcomes()
+            if outcome_summary["closed"]:
+                logger.info(
+                    "Трекинг результатов: закрыто %d, ещё открыто %d",
+                    outcome_summary["closed"], outcome_summary["still_open"],
+                )
+        except Exception:
+            logger.exception("Ошибка проверки открытых результатов - пропускаю до следующего тика")
+
+        try:
+            _check_dead_mans_switch()
+        except Exception:
+            logger.exception("Ошибка проверки dead man's switch - пропускаю до следующего тика")
 
         seconds_elapsed = queue_manager.seconds_since_last_post("currency")
         min_seconds = config.MIN_POST_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("currency")
@@ -451,8 +494,13 @@ def tick() -> None:
         try_publish_opinion_post()
         try_publish_treasury_post()
         try_publish_article_post()
-    except Exception:
+    except Exception as e:
         logger.exception("Неожиданная ошибка в основном цикле")
+        alerting.send_owner_alert(
+            "tick_unhandled_exception",
+            f"Необработанная ошибка в основном цикле бота: {type(e).__name__}: {e}\n"
+            f"Подробности - в логе запуска (Actions -> последний run -> Run one bot check).",
+        )
 
 
 def main() -> None:
