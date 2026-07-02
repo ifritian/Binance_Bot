@@ -30,6 +30,7 @@ jobs:
       FOLLOWUP_CHANNEL_USERNAME: ${{ secrets.FOLLOWUP_CHANNEL_USERNAME }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_PUBLISH_CHANNEL: ${{ secrets.TELEGRAM_PUBLISH_CHANNEL }}
+      YOUR_USER_ID: ${{ secrets.YOUR_USER_ID }}
       BINANCE_SQUARE_API_KEY: ${{ secrets.BINANCE_SQUARE_API_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
@@ -43,6 +44,8 @@ jobs:
       TREASURY_INTERVAL_HOURS: ${{ secrets.TREASURY_INTERVAL_HOURS || '12' }}
       TREASURY_JITTER_HOURS: ${{ secrets.TREASURY_JITTER_HOURS || '1' }}
       SIGNAL_MAX_AGE_HOURS: ${{ secrets.SIGNAL_MAX_AGE_HOURS || '1' }}
+      OUTCOME_MAX_TRACK_HOURS: ${{ secrets.OUTCOME_MAX_TRACK_HOURS || '48' }}
+      DEAD_MANS_SWITCH_HOURS: ${{ secrets.DEAD_MANS_SWITCH_HOURS || '24' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

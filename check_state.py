@@ -10,7 +10,9 @@ check_state.py - диагностика без побочных эффектов
 Запуск: python check_state.py
 """
 import config
+import outcome_tracker
 import queue_manager
+import alerting
 
 
 def fmt_seconds(s: float) -> str:
@@ -59,6 +61,15 @@ def main() -> None:
     else:
         print("Кросспостинг в Telegram: ВЫКЛЮЧЕН (TELEGRAM_PUBLISH_CHANNEL не задан)")
 
+    if alerting.is_configured():
+        print(f"Алертинг владельцу: включён -> личка Telegram (YOUR_USER_ID={config.YOUR_USER_ID})")
+        elapsed_hours = queue_manager.seconds_since_last_post("currency") / 3600
+        if elapsed_hours != float("inf"):
+            print(f"  Dead man's switch: порог {config.DEAD_MANS_SWITCH_HOURS}ч, "
+                  f"с последней публикации прошло {elapsed_hours:.1f}ч")
+    else:
+        print("Алертинг владельцу: ВЫКЛЮЧЕН (нужен YOUR_USER_ID в .env/secrets)")
+
     queue_len = queue_manager.pending_queue_length()
     pending = queue_manager.get_pending_post(min_score=config.MIN_SIGNAL_SCORE_TO_PUBLISH)
     if queue_len == 0:
@@ -92,6 +103,30 @@ def main() -> None:
     report_window("currency", config.MIN_POST_INTERVAL_HOURS)
     report_window("opinion", config.OPINION_INTERVAL_HOURS)
     report_window("article", config.ARTICLE_INTERVAL_HOURS)
+
+    open_outcomes = queue_manager.get_open_outcomes()
+    print(f"\n=== Трекинг результатов сигналов ===")
+    print(f"Открытых (ждут тейка/стопа/таймаута): {len(open_outcomes)}")
+
+    def _fmt_bucket(name: str, s: dict) -> str:
+        if s["count"] == 0:
+            return f"    {name}: нет данных"
+        wr = f"{s['win_rate']}%" if s["win_rate"] is not None else "н/д"
+        return f"    {name}: n={s['count']}, win-rate={wr}, средний результат={s['avg_pnl_pct']:+.2f}%"
+
+    for label, days in (("за всё время", None), ("за 30 дней", 30), ("за 7 дней", 7)):
+        stats = outcome_tracker.get_accuracy_stats(days=days)
+        overall = stats["overall"]
+        print(f"\n  [{label}]")
+        print(_fmt_bucket("итого", overall))
+        if overall["count"] and stats["by_strategy"]:
+            print("    по стратегии:")
+            for strat, s in sorted(stats["by_strategy"].items(), key=lambda kv: -kv[1]["count"]):
+                print("  " + _fmt_bucket(strat, s))
+        if overall["count"] and stats["by_quality"]:
+            print("    по качеству:")
+            for q, s in sorted(stats["by_quality"].items(), key=lambda kv: -kv[1]["count"]):
+                print("  " + _fmt_bucket(q, s))
 
     print(f"\nИнтервал тика бота: {config.POLL_INTERVAL_SECONDS}с "
           "(в GitHub Actions фактически раз в ~10 мин по расписанию cron, "
