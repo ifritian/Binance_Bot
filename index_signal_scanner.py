@@ -27,6 +27,7 @@ import requests
 
 import queue_manager
 import scanner
+import strategy_tuner
 import treasury_index
 
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ def run_index_scan() -> int:
                                                config.INDEX_SIGNAL_ALERT_COOLDOWN_HOURS):
             continue
 
-        if int(signal.score) <= config.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH:
+        if int(signal.score) <= strategy_tuner.get_effective_min_score(signal.strategy, config.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH):
             continue
 
         # Обогащаем описание контекстом индекса - пригодится генератору

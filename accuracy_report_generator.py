@@ -16,10 +16,14 @@ accuracy_report_generator.py - еженедельный пост со стати
 """
 import logging
 import re
+import time
 
 from groq_client import call_groq
+from loss_review_generator import classify_miss
 import outcome_tracker
 import post_format
+import queue_manager
+import strategy_tuner
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +55,7 @@ def _extract_numbers(text: str) -> set[float]:
     return {round(float(n), 2) for n in _NUMBER_RE.findall(text.replace(",", ""))}
 
 
-def _format_stats_block(stats: dict, days: float) -> str:
+def _format_stats_block(stats: dict, days: float, period_closed: list[dict] | None = None) -> str:
     overall = stats["overall"]
     lines = [f"📊 Точность сигналов за последние {days:g} дней"]
 
@@ -69,6 +73,28 @@ def _format_stats_block(stats: dict, days: float) -> str:
             savg = s["avg_pnl_pct"]
             savg_str = f"{'+' if savg is not None and savg >= 0 else ''}{savg}%" if savg is not None else "н/д"
             lines.append(f"  {strat}: n={s['count']}, win-rate={swr}, средний результат={savg_str}")
+
+    # Конкретный разбор худших случаев, а не только агрегаты - использует
+    # ту же классификацию по факту движения цены (MFE/время до стопа),
+    # что и loss_review_generator, без домыслов о внешних причинах.
+    if period_closed:
+        negative = [c for c in period_closed if c.get("pnl_pct", 0) < 0]
+        if negative:
+            worst = sorted(negative, key=lambda c: c["pnl_pct"])[:3]
+            lines.append("\nСамые заметные промахи периода:")
+            for c in worst:
+                direction_ru = "Лонг" if c.get("direction") == "long" else "Шорт"
+                lines.append(
+                    f"  ${c.get('ticker', '?')} | {direction_ru} | {c.get('strategy', '?')} | "
+                    f"результат {c['pnl_pct']:+.2f}% -> {classify_miss(c)}"
+                )
+
+    # Прозрачность автокоррекции (strategy_tuner) - если бот сам поднял
+    # порог публикации для какой-то стратегии из-за слабой статистики,
+    # аудитория должна это видеть, а не узнавать постфактум.
+    active_adjustments = queue_manager.get_strategy_adjustments()
+    if active_adjustments:
+        lines.append(f"\nАвтокоррекция: порог публикации временно повышен для {strategy_tuner.describe_active_adjustments()} - по статистике последних {strategy_tuner.TUNING_LOOKBACK_DAYS:g} дней.")
 
     return "\n".join(lines)
 
@@ -93,7 +119,10 @@ def generate_accuracy_report_post(days: float = 7.0) -> tuple[str, str] | None:
         )
         return None
 
-    stats_block = _format_stats_block(stats, days)
+    cutoff = time.time() - days * 24 * 3600
+    period_closed = [c for c in queue_manager.get_closed_outcomes() if c.get("closed_at", 0) >= cutoff]
+
+    stats_block = _format_stats_block(stats, days, period_closed)
     allowed_numbers = _extract_numbers(stats_block) | {days}
 
     user_prompt = (

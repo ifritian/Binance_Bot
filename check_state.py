@@ -12,6 +12,7 @@ check_state.py - диагностика без побочных эффектов
 import config
 import outcome_tracker
 import queue_manager
+import strategy_tuner
 import alerting
 
 
@@ -117,6 +118,10 @@ def main() -> None:
     open_outcomes = queue_manager.get_open_outcomes()
     print(f"\n=== Трекинг результатов сигналов ===")
     print(f"Открытых (ждут тейка/стопа/таймаута): {len(open_outcomes)}")
+    strategy_tuner.recompute_adjustments()  # только чтение статистики, пересчёт безопасен для diagnostics-скрипта
+    print(f"Автокоррекция тактики (окно {strategy_tuner.TUNING_LOOKBACK_DAYS:g}д, "
+          f"мин. {strategy_tuner.MIN_SAMPLES_FOR_TUNING} сигналов для срабатывания): "
+          f"{strategy_tuner.describe_active_adjustments()}")
 
     def _fmt_bucket(name: str, s: dict) -> str:
         if s["count"] == 0:
