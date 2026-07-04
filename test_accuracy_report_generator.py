@@ -38,6 +38,34 @@ def test_format_stats_block_handles_no_data():
     assert "н/д" in block
 
 
+def test_format_stats_block_includes_worst_losses(monkeypatch):
+    stats = _fake_stats(count=10, win_rate=60.0, avg_pnl=1.5)
+    period_closed = [
+        {"ticker": "BEAT", "direction": "short", "strategy": "RSI", "pnl_pct": -3.2, "entry": 2.2, "target": 2.1, "mfe_pct": 0.5, "hours_to_close": 1.0},
+        {"ticker": "PHB", "direction": "long", "strategy": "RSI", "pnl_pct": -0.5, "entry": 0.015, "target": 0.027, "mfe_pct": 0.1, "hours_to_close": 2.0},
+        {"ticker": "UNI", "direction": "short", "strategy": "RSI", "pnl_pct": 2.0, "entry": 3.1, "target": 2.9, "mfe_pct": 5.0, "hours_to_close": 3.0},
+    ]
+    block = arg._format_stats_block(stats, days=7, period_closed=period_closed)
+    assert "Самые заметные промахи периода" in block
+    assert "$BEAT" in block
+    assert "$UNI" not in block  # это не убыток (pnl положительный) - не должен попасть в разбор промахов
+
+
+def test_format_stats_block_no_worst_losses_section_when_all_wins():
+    stats = _fake_stats()
+    period_closed = [{"ticker": "UNI", "direction": "short", "strategy": "RSI", "pnl_pct": 2.0, "entry": 3.1, "target": 2.9}]
+    block = arg._format_stats_block(stats, days=7, period_closed=period_closed)
+    assert "Самые заметные промахи" not in block
+
+
+def test_format_stats_block_shows_active_tuning(monkeypatch):
+    stats = _fake_stats()
+    monkeypatch.setattr(arg.queue_manager, "get_strategy_adjustments", lambda: {"RSI": 6})
+    block = arg._format_stats_block(stats, days=7)
+    assert "Автокоррекция" in block
+    assert "RSI" in block
+
+
 def test_validate_accuracy_hook_ok_with_known_numbers():
     ok, reason = arg.validate_accuracy_hook("Win-rate за неделю 60.0%, неплохо", {60.0, 7})
     assert ok is True, reason

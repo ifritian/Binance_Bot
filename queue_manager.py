@@ -582,6 +582,15 @@ def set_last_alert_sent(alert_key: str) -> None:
     _set(f"alert_sent:{alert_key}", time.time())
 
 
+# --- Автокоррекция порога публикации по стратегиям (strategy_tuner.py) ---
+def get_strategy_adjustments() -> dict:
+    return _get("strategy_adjustments", {})
+
+
+def set_strategy_adjustments(adjustments: dict) -> None:
+    _set("strategy_adjustments", adjustments)
+
+
 def get_retry_backoff_remaining_seconds(post_type: str) -> Optional[float]:
     """Сколько секунд осталось до конца паузы после сбоя, или None,
     если бэкофф не активен (можно пробовать сейчас)."""

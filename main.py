@@ -37,6 +37,7 @@ import post_format
 import queue_manager
 import scanner
 import signal_parser
+import strategy_tuner
 import telegram_listener
 import telegram_publisher
 import text_generator
@@ -616,6 +617,13 @@ def tick() -> None:
                 )
         except Exception:
             logger.exception("Ошибка проверки открытых результатов - пропускаю до следующего тика")
+
+        try:
+            # Дёшево (без сети, работает по уже посчитанным closed_outcomes) -
+            # можно пересчитывать каждый тик, не только по расписанию.
+            strategy_tuner.recompute_adjustments()
+        except Exception:
+            logger.exception("Ошибка автокоррекции тактики - пропускаю до следующего тика")
 
         try:
             _check_dead_mans_switch()
