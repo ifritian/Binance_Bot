@@ -21,12 +21,16 @@ import sys
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 import article_generator
+import accuracy_report_generator
 import alerting
 import binance_publisher
 import chart_generator
 import config
 import image_analyzer
 import groq_client
+import index_signal_generator
+import index_signal_scanner
+import loss_review_generator
 import opinion_generator
 import outcome_tracker
 import post_format
@@ -358,6 +362,59 @@ def try_publish_treasury_post() -> None:
 
 
 # ============================================================
+# Формат "index_signal" - удобный момент купить/продать монету
+# из Treasury Index (умный менеджмент по индексу)
+# ============================================================
+
+def try_publish_index_signal_post() -> None:
+    seconds_elapsed = queue_manager.seconds_since_last_post("index_signal")
+    min_seconds = config.INDEX_SIGNAL_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("index_signal")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("index_signal"):
+        return
+
+    picked = queue_manager.get_pending_index_signal(config.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH)
+    if picked is None:
+        # Нет подходящего сигнала прямо сейчас - это нормально (вселенная
+        # всего 15 монет), не двигаем таймер, просто ждём следующего окна.
+        return
+    idx, signal = picked
+
+    logger.info("Окно публикации (index_signal) открыто - генерирую текст для %s", signal.ticker)
+
+    try:
+        binance_text = index_signal_generator.generate_index_signal_post(signal)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на index_signal - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("index_signal", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации index_signal для %s: %s", signal.ticker, e)
+        if queue_manager.register_failed_index_attempt(idx):
+            logger.warning("Сигнал %s выброшен из очереди индекса по лимиту попыток", signal.ticker)
+        queue_manager.set_retry_backoff("index_signal", 1)
+        return
+
+    try:
+        published_result = binance_publisher.publish_post(binance_text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации index_signal для %s: %s", signal.ticker, e)
+        if queue_manager.register_failed_index_attempt(idx):
+            logger.warning("Сигнал %s выброшен из очереди индекса по лимиту попыток", signal.ticker)
+        queue_manager.set_retry_backoff("index_signal", 2)
+        return
+
+    logger.info("Опубликовано (index_signal, %s): %s", signal.ticker, published_result)
+    _crosspost_to_telegram(binance_text)
+    queue_manager.clear_pending_index_signal(idx)
+    queue_manager.set_last_post_time("index_signal")
+    queue_manager.roll_new_jitter("index_signal", config.INDEX_SIGNAL_JITTER_HOURS * 3600)
+
+
+# ============================================================
 # Формат 3: "article" - еженедельная статья-сводка
 # ============================================================
 
@@ -424,6 +481,104 @@ def try_publish_article_post() -> None:
     queue_manager.roll_new_jitter("article", config.ARTICLE_JITTER_HOURS * 3600)
 
 
+def try_publish_accuracy_report() -> None:
+    """Еженедельный отчёт точности сигналов (win-rate, средний % результата)
+    на основе outcome_tracker (Фаза 1). Та же схема backoff/jitter, что
+    у treasury/article - см. try_publish_treasury_post выше."""
+    seconds_elapsed = queue_manager.seconds_since_last_post("accuracy_report")
+    min_seconds = config.ACCURACY_REPORT_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("accuracy_report")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("accuracy_report"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+
+    logger.info("Окно публикации (отчёт точности) открыто - считаю статистику")
+
+    try:
+        result = accuracy_report_generator.generate_accuracy_report_post()
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на отчёте точности - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("accuracy_report", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации отчёта точности: %s", e)
+        queue_manager.set_retry_backoff("accuracy_report", 1)
+        return
+
+    if result is None:
+        # Недостаточно закрытых сигналов за период - не сбой, а штатная
+        # ситуация (например, только что включили трекинг). Сдвигаем
+        # таймер на обычный интервал, а не долбим каждый тик.
+        logger.info("Недостаточно данных для отчёта точности - пропускаю до следующего окна")
+        queue_manager.set_last_post_time("accuracy_report")
+        queue_manager.roll_new_jitter("accuracy_report", config.ACCURACY_REPORT_JITTER_HOURS * 3600)
+        return
+
+    binance_text, telegram_text = result
+
+    try:
+        published_result = binance_publisher.publish_post(binance_text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации отчёта точности: %s", e)
+        queue_manager.set_retry_backoff("accuracy_report", 2)
+        return
+
+    logger.info("Опубликован отчёт точности: %s", published_result)
+    _crosspost_to_telegram(telegram_text)
+    queue_manager.set_last_post_time("accuracy_report")
+    queue_manager.roll_new_jitter("accuracy_report", config.ACCURACY_REPORT_JITTER_HOURS * 3600)
+
+
+def try_publish_loss_review() -> None:
+    """Разбор неудачных сигналов за период (Фаза 4, вторая часть) - та же
+    схема backoff/jitter, что у accuracy_report/treasury/article выше."""
+    seconds_elapsed = queue_manager.seconds_since_last_post("loss_review")
+    min_seconds = config.LOSS_REVIEW_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("loss_review")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("loss_review"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+
+    logger.info("Окно публикации (разбор промахов) открыто - собираю закрытые убыточные сигналы")
+
+    try:
+        result = loss_review_generator.generate_loss_review_post()
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на разборе промахов - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("loss_review", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации разбора промахов: %s", e)
+        queue_manager.set_retry_backoff("loss_review", 1)
+        return
+
+    if result is None:
+        # Недостаточно убыточных сигналов за период - не сбой, а штатная
+        # ситуация (в том числе хорошая - значит, стратегия давно не мажет).
+        logger.info("Недостаточно убыточных сигналов для разбора промахов - пропускаю до следующего окна")
+        queue_manager.set_last_post_time("loss_review")
+        queue_manager.roll_new_jitter("loss_review", config.LOSS_REVIEW_JITTER_HOURS * 3600)
+        return
+
+    binance_text, telegram_text = result
+
+    try:
+        published_result = binance_publisher.publish_post(binance_text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации разбора промахов: %s", e)
+        queue_manager.set_retry_backoff("loss_review", 2)
+        return
+
+    logger.info("Опубликован разбор промахов: %s", published_result)
+    _crosspost_to_telegram(telegram_text)
+    queue_manager.set_last_post_time("loss_review")
+    queue_manager.roll_new_jitter("loss_review", config.LOSS_REVIEW_JITTER_HOURS * 3600)
+
+
 # ============================================================
 # Общий цикл
 # ============================================================
@@ -467,6 +622,16 @@ def tick() -> None:
         except Exception:
             logger.exception("Ошибка проверки dead man's switch - пропускаю до следующего тика")
 
+        queue_manager.prune_expired_index_signals(config.INDEX_SIGNAL_MAX_AGE_HOURS)
+        try:
+            # В отличие от общего сканера, здесь вселенная всего 15 монет -
+            # сканируем каждый тик независимо от окна публикации (дёшево),
+            # публикация всё равно ограничена своим отдельным интервалом
+            # в try_publish_index_signal_post().
+            index_signal_scanner.run_index_scan()
+        except Exception:
+            logger.exception("Ошибка в сканере индекс-сигналов - пропускаю до следующего тика")
+
         seconds_elapsed = queue_manager.seconds_since_last_post("currency")
         min_seconds = config.MIN_POST_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("currency")
         seconds_until_window = min_seconds - seconds_elapsed
@@ -494,6 +659,9 @@ def tick() -> None:
         try_publish_opinion_post()
         try_publish_treasury_post()
         try_publish_article_post()
+        try_publish_accuracy_report()
+        try_publish_loss_review()
+        try_publish_index_signal_post()
     except Exception as e:
         logger.exception("Неожиданная ошибка в основном цикле")
         alerting.send_owner_alert(
@@ -517,9 +685,10 @@ def main() -> None:
 
     logger.info(
         "Бот запущен. Интервал проверки: %sс. Окна публикации - валюта: %sч, мнение: %sч, "
-        "treasury: %sч, статья: %sч",
+        "treasury: %sч, статья: %sч, отчёт точности: %sч",
         config.POLL_INTERVAL_SECONDS, config.MIN_POST_INTERVAL_HOURS,
         config.OPINION_INTERVAL_HOURS, config.TREASURY_INTERVAL_HOURS, config.ARTICLE_INTERVAL_HOURS,
+        config.ACCURACY_REPORT_INTERVAL_HOURS,
     )
 
     if once:

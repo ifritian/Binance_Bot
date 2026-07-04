@@ -297,6 +297,22 @@ def fetch_reference_change_pct(symbol: str, period_hours: float) -> Optional[flo
     return _fetch_symbol_change_pct(symbol, period_hours)
 
 
+def find_coin_by_ticker(ticker: str) -> Optional[tuple[str, dict]]:
+    """Ищет монету в корзине по тикеру - проверяет и основной тикер, и
+    fallback (например, если сигнал сгенерирован по MATIC, а в корзине
+    основной тикер - POL с fallback=MATIC, всё равно найдёт). Нужно
+    index_signal_generator.py, чтобы получить тир/вес монеты для поста
+    об управлении долей, без хрупкого парсинга строк.
+
+    Возвращает (tier_key, coin_dict) либо None, если тикер не из корзины."""
+    ticker = ticker.upper()
+    for tier_key, coins in BASKET.items():
+        for coin in coins:
+            if coin["ticker"].upper() == ticker or coin.get("fallback", "").upper() == ticker:
+                return tier_key, coin
+    return None
+
+
 def leading_tier(result: TreasuryIndexResult) -> Optional[TierResult]:
     """Тир с наибольшим % изменения (по модулю роста, не волатильности) -
     пригодится для короткой рефлексии в духе 'риск-аппетит возвращается',

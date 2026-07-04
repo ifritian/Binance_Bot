@@ -98,6 +98,30 @@ OUTCOME_MAX_TRACK_HOURS = float(os.environ.get("OUTCOME_MAX_TRACK_HOURS", "48"))
 # (см. alerting.send_owner_alert).
 DEAD_MANS_SWITCH_HOURS = float(os.environ.get("DEAD_MANS_SWITCH_HOURS", "24"))
 
+# --- Еженедельный отчёт точности сигналов (accuracy_report_generator.py) ---
+# Отдельный формат от currency/opinion/treasury/article - публикует
+# статистику из outcome_tracker (win-rate, средний % результата) раз в
+# ACCURACY_REPORT_INTERVAL_HOURS. Числа считаются кодом (см. treasury -
+# та же идея), LLM только пишет хук поверх готовых цифр.
+ACCURACY_REPORT_INTERVAL_HOURS = float(os.environ.get("ACCURACY_REPORT_INTERVAL_HOURS", "168"))
+ACCURACY_REPORT_JITTER_HOURS = float(os.environ.get("ACCURACY_REPORT_JITTER_HOURS", "6"))
+# Если за период закрылось меньше сигналов - пропускаем публикацию (не
+# позориться отчётом "n=1, win-rate 0% или 100%" - статистически бессмысленно).
+ACCURACY_REPORT_MIN_CLOSED_SIGNALS = int(os.environ.get("ACCURACY_REPORT_MIN_CLOSED_SIGNALS", "5"))
+
+# --- Разбор неудачных сигналов (loss_review_generator.py, Фаза 4) ---
+# Интервал и окно поиска специально близки друг к другу (4 дня / 4.5
+# дня), чтобы соседние отчёты почти не пересекались одними и теми же
+# сделками. MIN_LOSSES=1 - публикуем, если провал был хоть один: теперь
+# у каждого случая есть реальные цифры для анализа (MFE - насколько
+# цена всё-таки прошла в сторону тейка, и время до срабатывания стопа -
+# см. outcome_tracker._mfe_pct), так что даже один случай даёт
+# содержательный пост, а не просто "статистика по 1 сделке".
+LOSS_REVIEW_INTERVAL_HOURS = float(os.environ.get("LOSS_REVIEW_INTERVAL_HOURS", "96"))
+LOSS_REVIEW_JITTER_HOURS = float(os.environ.get("LOSS_REVIEW_JITTER_HOURS", "6"))
+LOSS_REVIEW_LOOKBACK_DAYS = float(os.environ.get("LOSS_REVIEW_LOOKBACK_DAYS", "4.5"))
+LOSS_REVIEW_MIN_LOSSES = int(os.environ.get("LOSS_REVIEW_MIN_LOSSES", "1"))
+
 # Случайный разброс окна публикации (+/-), чтобы интервалы не были
 # идеально механическими. Не меняет МИНИМАЛЬНЫЙ интервал в среднем -
 # просто сдвигает конкретное окно туда-сюда на случайную величину.
@@ -107,6 +131,21 @@ ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
 
 DB_PATH = BASE_DIR / "bot_state.db"
 LOG_PATH = BASE_DIR / "bot.log"
+
+# --- Сигналы по монетам Treasury Index (index_signal_scanner.py) ---
+# Тот же RSI/Bollinger сканер, что и scanner.py, но вселенная - только
+# 15 монет индекса, не весь рынок. Идея: подписчикам, которые следят
+# именно за этой корзиной, ценнее знать "SOL сейчас перепродан, удобная
+# точка для докупки в рамках индекса", чем узнавать об этом только
+# постфактум в еженедельной сводке Treasury Index.
+INDEX_SIGNAL_INTERVAL_HOURS = float(os.environ.get("INDEX_SIGNAL_INTERVAL_HOURS", "8"))
+INDEX_SIGNAL_JITTER_HOURS = float(os.environ.get("INDEX_SIGNAL_JITTER_HOURS", "2"))
+# Порог публикации ниже, чем MIN_SIGNAL_SCORE_TO_PUBLISH у общего сканера -
+# вселенная маленькая (15 монет), сигналов и так немного, задирать порог
+# как для рынка в 150 пар означало бы почти никогда не публиковать.
+MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH = int(os.environ.get("MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH", "55"))
+INDEX_SIGNAL_ALERT_COOLDOWN_HOURS = float(os.environ.get("INDEX_SIGNAL_ALERT_COOLDOWN_HOURS", "12"))
+INDEX_SIGNAL_MAX_AGE_HOURS = float(os.environ.get("INDEX_SIGNAL_MAX_AGE_HOURS", "2"))
 
 
 def validate_config() -> list[str]:

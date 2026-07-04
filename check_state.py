@@ -102,7 +102,17 @@ def main() -> None:
 
     report_window("currency", config.MIN_POST_INTERVAL_HOURS)
     report_window("opinion", config.OPINION_INTERVAL_HOURS)
+    report_window("treasury", config.TREASURY_INTERVAL_HOURS)
     report_window("article", config.ARTICLE_INTERVAL_HOURS)
+    report_window("accuracy_report", config.ACCURACY_REPORT_INTERVAL_HOURS)
+    report_window("loss_review", config.LOSS_REVIEW_INTERVAL_HOURS)
+    report_window("index_signal", config.INDEX_SIGNAL_INTERVAL_HOURS)
+
+    index_queue = queue_manager.pending_index_queue_summary()
+    print(f"\nОчередь index_signal (монеты Treasury Index): {len(index_queue)} шт., "
+          f"порог публикации: score > {config.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH}")
+    for line in index_queue:
+        print(f"    - {line}")
 
     open_outcomes = queue_manager.get_open_outcomes()
     print(f"\n=== Трекинг результатов сигналов ===")

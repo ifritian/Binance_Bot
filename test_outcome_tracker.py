@@ -12,38 +12,45 @@ def _c(high, low, close=None):
 
 
 def test_resolve_long_hits_target():
-    record = {"direction": "long", "target": 110, "stop": 90}
+    record = {"direction": "long", "target": 110, "stop": 90, "entry": 100}
     candles = [_c(105, 100), _c(112, 108)]
     result = outcome_tracker._resolve_outcome(record, candles)
-    assert result == ("win", 110), result
+    assert result == ("win", 110, 12.0), result
 
 
 def test_resolve_long_hits_stop():
-    record = {"direction": "long", "target": 110, "stop": 90}
+    record = {"direction": "long", "target": 110, "stop": 90, "entry": 100}
     candles = [_c(105, 100), _c(95, 88)]
     result = outcome_tracker._resolve_outcome(record, candles)
-    assert result == ("loss", 90), result
+    assert result == ("loss", 90, 5.0), result
 
 
 def test_resolve_short_hits_target():
-    record = {"direction": "short", "target": 90, "stop": 110}
+    record = {"direction": "short", "target": 90, "stop": 110, "entry": 100}
     candles = [_c(102, 98), _c(95, 88)]
     result = outcome_tracker._resolve_outcome(record, candles)
-    assert result == ("win", 90), result
+    assert result == ("win", 90, 12.0), result
 
 
 def test_resolve_both_hit_same_candle_is_conservative_loss():
-    record = {"direction": "long", "target": 110, "stop": 90}
+    record = {"direction": "long", "target": 110, "stop": 90, "entry": 100}
     candles = [_c(115, 85)]  # свеча пробила и тейк, и стоп
     result = outcome_tracker._resolve_outcome(record, candles)
-    assert result == ("loss", 90), result
+    assert result == ("loss", 90, 15.0), result
 
 
 def test_resolve_none_when_nothing_hit():
-    record = {"direction": "long", "target": 110, "stop": 90}
+    record = {"direction": "long", "target": 110, "stop": 90, "entry": 100}
     candles = [_c(105, 95), _c(103, 97)]
     result = outcome_tracker._resolve_outcome(record, candles)
     assert result is None, result
+
+
+def test_mfe_pct_long_and_short():
+    assert outcome_tracker._mfe_pct(entry=100, best_price=105, is_short=False) == 5.0
+    assert outcome_tracker._mfe_pct(entry=100, best_price=95, is_short=True) == 5.0
+    # Цена сразу пошла против сделки - MFE отрицательный (не продвинулась к цели вообще)
+    assert outcome_tracker._mfe_pct(entry=100, best_price=98, is_short=False) == -2.0
 
 
 def test_accuracy_stats_aggregation(monkeypatch):

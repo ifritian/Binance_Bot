@@ -21,6 +21,11 @@ outcome_tracker.py - трекинг результатов опубликова�
    средний % результата, в целом и в разбивке по стратегии/quality
    (get_accuracy_stats). Это и есть ответ на вопрос "работает ли
    формула score" - без домыслов, на фактической цене с Binance.
+5. Дополнительно к результату сохраняется mfe_pct (Max Favorable
+   Excursion - насколько цена всё-таки прошла в сторону тейка, прежде
+   чем развернуться) и hours_to_close. Это позволяет loss_review_generator
+   отличать "почти дошло до тейка, но развернулось" от "сразу пошло
+   против" - НА ОСНОВЕ РЕАЛЬНЫХ ЦЕН, а не догадок LLM о причине.
 
 Намеренное упрощение: если в ОДНОЙ 15-минутной свече задеты И тейк, И
 стоп одновременно, мы не знаем, что произошло раньше внутри свечи -
@@ -113,26 +118,44 @@ def _fetch_path_klines(symbol: str, since_ts: float) -> list[dict]:
     return [{"high": float(r[2]), "low": float(r[3]), "close": float(r[4])} for r in rows]
 
 
-def _resolve_outcome(record: dict, candles: list[dict]) -> tuple[str, float] | None:
+def _mfe_pct(entry: float, best_price: float, is_short: bool) -> float:
+    """Max Favorable Excursion - насколько далеко цена всё-таки прошла
+    В СТОРОНУ тейка, прежде чем сигнал закрылся (даже если в итоге не
+    сработал). Например, -1% при цели +2% значит "почти дошло, но не
+    хватило" - в отличие от 0%, когда цена сразу пошла против сделки.
+    Это измеримый факт по свечам, не предположение о причине."""
+    if is_short:
+        return round((entry - best_price) / entry * 100, 3)
+    return round((best_price - entry) / entry * 100, 3)
+
+
+def _resolve_outcome(record: dict, candles: list[dict]) -> tuple[str, float, float] | None:
     """Пробегает по свечам в хронологическом порядке, смотрит, что
-    случилось раньше - тейк или стоп. None, если пока ничего не задето."""
+    случилось раньше - тейк или стоп, и попутно считает MFE ТОЛЬКО по
+    свечам до момента разрешения (не по всей истории до "сейчас" - иначе
+    в MFE утекли бы будущие данные после того, как сделка уже закрылась).
+    Возвращает (result, exit_price, mfe_pct) либо None, если пока ничего
+    не задето."""
     is_short = record["direction"] == "short"
-    target, stop = record["target"], record["stop"]
+    target, stop, entry = record["target"], record["stop"], record["entry"]
+    best_price = None
 
     for c in candles:
         if is_short:
+            best_price = c["low"] if best_price is None else min(best_price, c["low"])
             hit_target = c["low"] <= target
             hit_stop = c["high"] >= stop
         else:
+            best_price = c["high"] if best_price is None else max(best_price, c["high"])
             hit_target = c["high"] >= target
             hit_stop = c["low"] <= stop
 
         if hit_target and hit_stop:
-            return "loss", stop  # неизвестно, что раньше внутри свечи - консервативно засчитываем убыток
+            return "loss", stop, _mfe_pct(entry, best_price, is_short)  # неизвестно, что раньше внутри свечи - консервативно засчитываем убыток
         if hit_target:
-            return "win", target
+            return "win", target, _mfe_pct(entry, best_price, is_short)
         if hit_stop:
-            return "loss", stop
+            return "loss", stop, _mfe_pct(entry, best_price, is_short)
 
     return None
 
@@ -154,30 +177,36 @@ def check_open_outcomes() -> dict:
         resolved = _resolve_outcome(record, candles) if candles else None
 
         if resolved is not None:
-            result, exit_price = resolved
+            result, exit_price, mfe_pct = resolved
         elif age >= max_age_seconds:
             if not candles:
                 # Не удалось получить свечи вообще - не закрываем вслепую,
                 # попробуем снова на следующем тике.
                 still_open.append(record)
                 continue
+            is_short = record["direction"] == "short"
+            best_price = min(c["low"] for c in candles) if is_short else max(c["high"] for c in candles)
             result, exit_price = "timeout", candles[-1]["close"]
+            mfe_pct = _mfe_pct(record["entry"], best_price, is_short)
         else:
             still_open.append(record)
             continue
 
         sign = -1 if record["direction"] == "short" else 1
         pnl_pct = sign * (exit_price - record["entry"]) / record["entry"] * 100 if record["entry"] else 0.0
+        closed_at = time.time()
 
         closed = dict(record)
         closed.update({
             "result": result,
             "exit_price": exit_price,
             "pnl_pct": round(pnl_pct, 3),
-            "closed_at": time.time(),
+            "mfe_pct": mfe_pct,
+            "hours_to_close": round((closed_at - record["published_at"]) / 3600, 2),
+            "closed_at": closed_at,
         })
         newly_closed.append(closed)
-        logger.info("Результат сигнала %s: %s (%+.2f%%)", record["ticker"], result, pnl_pct)
+        logger.info("Результат сигнала %s: %s (%+.2f%%, MFE %+.2f%%)", record["ticker"], result, pnl_pct, mfe_pct)
 
     queue_manager.replace_open_outcomes(still_open)
     if newly_closed:

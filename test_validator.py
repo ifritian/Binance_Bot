@@ -68,6 +68,29 @@ def test_image_post_with_invented_number_fails():
     assert "числа" in reason or "чисел" in reason
 
 
+def test_language_mixing_fails():
+    signal = _make_signal()
+    # Ровно тот баг, что был в проде: русский текст с затесавшимися
+    # английскими словами (не тикер, не акроним).
+    text = (
+        f"BEAT в a крутом sprint вниз, волatility like on American ropges. "
+        f"Вход 2.205 - 2.2178, стоп 2.2371, тейк 2.1729, RSI 81.74, score 89.\n\n{DISCLAIMER}"
+    )
+    ok, reason = validator.validate_post_text(text, signal)
+    assert ok is False
+    assert "английск" in reason.lower()
+
+
+def test_uppercase_tickers_do_not_trigger_language_check():
+    signal = _make_signal()
+    text = (
+        f"BEAT перегрет против USDT, возможен откат. "
+        f"Вход 2.205 - 2.2178, стоп 2.2371, тейк 2.1729, RSI 81.74, score 89.\n\n{DISCLAIMER}"
+    )
+    ok, reason = validator.validate_post_text(text, signal)
+    assert ok is True, reason
+
+
 if __name__ == "__main__":
     import sys
     import types

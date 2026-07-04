@@ -65,6 +65,36 @@ def assemble_signal_post(hook: str, signal) -> str:
     return f"{hook.strip()}\n\n{setup_block}\n\n{DISCLAIMER}"
 
 
+def assemble_index_management_post(hook: str, signal, tier_label: str, weight: float) -> str:
+    """Как assemble_signal_post, но в терминах управления ДОЛЕЙ в
+    портфеле (Treasury Index), а не разовой сделки - без слов
+    Вход/Стоп/Тейк. Числа те же самые (та же формула RSI/Bollinger, что
+    и у обычного сигнала - см. scanner.py), просто названы в контексте
+    докупки/частичной фиксации доли, а не открытия/закрытия позиции.
+
+    signal - RsiSignal (из index_signal_scanner.py). tier_label/weight -
+    из treasury_index.find_coin_by_ticker(signal.ticker).
+    """
+    is_buy = "перепрод" in signal.direction.lower()
+    emoji = "🟢" if is_buy else "🔴"
+    action = "Докупка доли" if is_buy else "Частичная фиксация доли"
+    range_label = "Диапазон для докупки" if is_buy else "Диапазон для фиксации"
+    rsi_state = "перепроданность" if is_buy else "перекупленность"
+
+    lines = [
+        f"{tier_label} | вес в индексе: {weight:g}%",
+        f"RSI: {signal.rsi_now} ({rsi_state})",
+        "",
+        f"Действие: {emoji} {action}",
+        f"{range_label}: {signal.entry_low} - {signal.entry_high}",
+        f"Ориентир возврата к среднему: {signal.target}",
+        f"Пересмотреть тезис, если цена уйдёт за: {signal.invalidation}",
+    ]
+    block = "\n".join(lines)
+
+    return f"{hook.strip()}\n\n{block}\n\n{DISCLAIMER}"
+
+
 # --- Режимы тона хука - для разнообразия постов ---
 # Каждый режим - короткая инструкция, которую добавляем к системному
 # промпту LLM. Сама ротация (какой режим выбрать сейчас) реализована
