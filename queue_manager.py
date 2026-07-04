@@ -403,6 +403,91 @@ def register_failed_attempt(index: int) -> bool:
     return dropped
 
 
+# --- Отдельная очередь для сигналов по монетам Treasury Index ---
+# (index_signal_scanner.py) - специально ОТДЕЛЬНО от основной очереди
+# currency (та выбирает лучший сигнал по всему рынку). Здесь вселенная
+# всего 15 тикеров индекса, и публикуется это отдельным форматом
+# ("удобный момент купить/продать монету из индекса"), со своим окном
+# по расписанию (config.INDEX_SIGNAL_INTERVAL_HOURS) - смешивать с
+# общей очередью значило бы либо утопить индекс-сигналы среди сотен
+# рыночных, либо наоборот вытеснять ими интересные рыночные сетапы.
+
+_INDEX_SIGNAL_QUEUE_MAX = 15  # по числу монет в корзине - больше и не нужно
+
+
+def _get_index_signal_queue() -> list[dict]:
+    return _get("index_signal_queue", [])
+
+
+def _set_index_signal_queue(queue: list[dict]) -> None:
+    _set("index_signal_queue", queue)
+
+
+def push_pending_index_signal(signal: RsiSignal) -> None:
+    queue = _get_index_signal_queue()
+    # Не дублируем сигнал по тому же тикеру - обновляем на более свежий,
+    # а не копим (в отличие от основной очереди, здесь вселенная маленькая
+    # и повторный сигнал по той же монете почти наверняка про то же самое).
+    queue = [item for item in queue if item["payload"].get("ticker") != signal.ticker]
+    queue.append({"kind": "index_signal", "payload": asdict(signal), "attempts": 0, "queued_at": time.time()})
+    if len(queue) > _INDEX_SIGNAL_QUEUE_MAX:
+        queue = queue[-_INDEX_SIGNAL_QUEUE_MAX:]
+    _set_index_signal_queue(queue)
+
+
+def prune_expired_index_signals(max_age_hours: float) -> int:
+    queue = _get_index_signal_queue()
+    if not queue:
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+    kept = [item for item in queue if item.get("queued_at", 0) >= cutoff]
+    dropped = len(queue) - len(kept)
+    if dropped:
+        _set_index_signal_queue(kept)
+    return dropped
+
+
+def get_pending_index_signal(min_score: int = 0) -> Optional[tuple[int, RsiSignal]]:
+    """Лучший (по score) сигнал в очереди индекса, выше min_score, или None."""
+    queue = _get_index_signal_queue()
+    best_idx, best_score = None, None
+    for idx, item in enumerate(queue):
+        try:
+            score = int(item["payload"].get("score", 0))
+        except (TypeError, ValueError):
+            score = 0
+        if score > min_score and (best_score is None or score > best_score):
+            best_idx, best_score = idx, score
+    if best_idx is None:
+        return None
+    return best_idx, RsiSignal(**queue[best_idx]["payload"])
+
+
+def clear_pending_index_signal(index: int) -> None:
+    queue = _get_index_signal_queue()
+    if 0 <= index < len(queue):
+        queue.pop(index)
+        _set_index_signal_queue(queue)
+
+
+def register_failed_index_attempt(index: int) -> bool:
+    """Как register_failed_attempt для основной очереди - возвращает
+    True, если запись выброшена по лимиту попыток."""
+    queue = _get_index_signal_queue()
+    if not (0 <= index < len(queue)):
+        return False
+    queue[index]["attempts"] += 1
+    dropped = queue[index]["attempts"] > MAX_PUBLISH_ATTEMPTS
+    if dropped:
+        queue.pop(index)
+    _set_index_signal_queue(queue)
+    return dropped
+
+
+def pending_index_queue_summary() -> list[str]:
+    return [f"{item['payload'].get('ticker', '?')} (попыток={item['attempts']})" for item in _get_index_signal_queue()]
+
+
 # --- Cooldown для собственного сканера сигналов (scanner.py) ---
 # Без этого, пока RSI пары держится за пределами 70/30 (а это может
 # длиться часами), сканер заносил бы в очередь практически идентичный
