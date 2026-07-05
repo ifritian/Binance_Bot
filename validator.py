@@ -28,7 +28,15 @@ _URL_RE = re.compile(r"https?://\S+")
 # Слова из наших же code-generated блоков (post_format.assemble_signal_post
 # пишет "RSI: ... | Score: .../100", accuracy_report_generator пишет
 # "Win-rate: ...") - не смешение языков, а часть шаблона.
-_ALLOWED_ENGLISH_WORDS = {"rsi", "score", "win", "rate"}
+_ALLOWED_ENGLISH_WORDS = {
+    "rsi", "score", "win", "rate",
+    # Названия стратегий (scanner.py: strategy_parts = ["RSI", "Bollinger Touch", "Divergence"])
+    # собираются кодом и попадают в структурированный блок поста как есть -
+    # это не LLM-хук, а служебный шаблонный текст, флагать их как "смешение
+    # языков" некорректно (баг: реально блокировал публикацию каждого
+    # сигнала со стратегией "RSI + Bollinger Touch" / "+ Divergence").
+    "bollinger", "touch", "divergence",
+}
 
 
 def find_suspicious_english_words(text: str) -> list[str]:

@@ -91,6 +91,30 @@ def test_uppercase_tickers_do_not_trigger_language_check():
     assert ok is True, reason
 
 
+def test_strategy_name_words_do_not_trigger_language_check():
+    """Регресс на реальный сбой в проде: сигналы со стратегией
+    'RSI + Bollinger Touch' / '+ Divergence' (см. scanner.py
+    strategy_parts) отклонялись валидатором как 'смешение языков',
+    хотя это служебные слова из кода, а не текст LLM. Полностью
+    блокировало публикацию всех сигналов с этими стратегиями."""
+    signal = _make_signal(
+        ticker="TRX", strategy="RSI + Bollinger Touch", direction="Шорт (перекупленность)",
+        entry_low="0.38471", entry_high="0.39458", invalidation="0.39987", target="0.3574",
+        rsi_now="89.97", score="100",
+    )
+    text = (
+        f"$TRX в зоне перекупленности, RSI зашкаливает, а цена только что "
+        f"коснулась верхней полосы Боллинджера - время для шорта 🤔\n\n"
+        f"🔴 Шорт (перекупленность) | RSI + Bollinger Touch\n"
+        f"Вход: 0.38471 - 0.39458\n"
+        f"Стоп: 0.39987\n"
+        f"Тейк: 0.3574\n"
+        f"RSI: 89.97 | Score: 100/100\n\n{DISCLAIMER}"
+    )
+    ok, reason = validator.validate_post_text(text, signal)
+    assert ok is True, reason
+
+
 if __name__ == "__main__":
     import sys
     import types
