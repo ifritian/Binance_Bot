@@ -6,7 +6,9 @@ Offline-тест treasury_index.py на синтетических данных 
 
 Запуск: python test_treasury_index.py
 """
-from treasury_index import CoinChange, TierResult, compute_index, format_index_block, leading_tier
+from treasury_index import (
+    CoinChange, TierResult, compute_breadth, compute_index, format_breadth_line, format_index_block, leading_tier,
+)
 
 # ticker -> % изменения (синтетика). POL отсутствует специально, чтобы
 # проверить fallback на MATIC.
@@ -127,10 +129,32 @@ def test_format_and_leading_tier():
     print(text)
 
 
+def test_breadth_counts_green_red_flat():
+    result = compute_index(period_hours=12, fetch_fn=fake_fetch)
+    breadth = compute_breadth(result)
+    # По FAKE_PCT: положительных (>0) - SOL,AVAX,ARB,OP,AAVE,UNI,MATIC,DYDX,SUI,STRK,PENDLE = 11
+    # отрицательных (<0) - NEAR,JUP,APT = 3; ровно 0 - MANTA = 1
+    assert breadth["green"] == 11, breadth
+    assert breadth["red"] == 3, breadth
+    assert breadth["flat"] == 1, breadth
+    assert breadth["total"] == 15, breadth
+
+    line = format_breadth_line(breadth)
+    assert "🟢 11" in line and "🔴 3" in line and "⚪ 1" in line
+    print("test_breadth_counts_green_red_flat OK -", line, "\n")
+
+
+def test_breadth_empty_when_no_data():
+    breadth = {"green": 0, "red": 0, "flat": 0, "total": 0}
+    assert format_breadth_line(breadth) == ""
+
+
 if __name__ == "__main__":
     test_basic_calc()
     test_missing_coin_renormalizes()
     test_whole_tier_missing()
     test_outlier_excluded_from_average_but_shown()
     test_format_and_leading_tier()
+    test_breadth_counts_green_red_flat()
+    test_breadth_empty_when_no_data()
     print("\nВсе тесты прошли.")

@@ -14,10 +14,13 @@ from datetime import datetime
 from typing import Optional
 
 from groq_client import call_groq
+import index_health_monitor
+import index_volatility
 import post_format
 import queue_manager
 from treasury_index import (
-    TreasuryIndexResult, compute_index, fetch_reference_change_pct, format_index_block, leading_tier,
+    TreasuryIndexResult, compute_breadth, compute_index, fetch_reference_change_pct,
+    format_breadth_line, format_index_block, leading_tier,
 )
 
 logger = logging.getLogger(__name__)
@@ -108,6 +111,13 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, st
     код (main.py) уже умеет это ловить и выставлять backoff, как для
     opinion/article."""
     result = compute_index(period_hours=period_hours)
+
+    try:
+        streaks = index_health_monitor.record_check_results(result.missing)
+        index_health_monitor.check_and_alert(streaks)
+    except Exception:
+        logger.exception("Ошибка мониторинга здоровья монет индекса - не блокирую публикацию Treasury Index")
+
     if result.total_pct is None:
         logger.warning("Treasury Index: не удалось посчитать ни один тир - пропускаю публикацию")
         return None
@@ -125,9 +135,22 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, st
     else:
         logger.warning("Не удалось получить BTC для сравнения - публикую Treasury Index без блока сравнения")
 
+    returns_history = queue_manager.append_treasury_return(result.total_pct)
+    volatility_stats = index_volatility.compute_volatility_and_drawdown(returns_history)
+    volatility_block = index_volatility.format_volatility_block(volatility_stats, period_hours)
+
+    breadth = compute_breadth(result)
+    breadth_line = format_breadth_line(breadth)
+
     comparison_block = _format_comparison_block(result, period_hours, btc_pct, history)
     if comparison_block:
         allowed_numbers |= _extract_numbers(comparison_block)
+    if volatility_block:
+        allowed_numbers |= _extract_numbers(volatility_block)
+        comparison_block = f"{comparison_block}\n{volatility_block}" if comparison_block else volatility_block
+    if breadth_line:
+        allowed_numbers |= _extract_numbers(breadth_line)
+        comparison_block = f"{comparison_block}\n{breadth_line}" if comparison_block else breadth_line
 
     lt = leading_tier(result)
     lead_line = ""

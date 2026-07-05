@@ -218,6 +218,29 @@ def update_treasury_history(index_pct: float, btc_pct: float) -> dict:
     return history
 
 
+# --- Ряд доходностей по периодам (для index_volatility.py) ---
+# update_treasury_history хранит только ТЕКУЩЕЕ кумулятивное значение -
+# этого достаточно для "с запуска +X%", но недостаточно для волатильности
+# и просадки (нужен весь путь, а не только конечная точка). Здесь -
+# отдельный список % за каждый период (обычно раз в TREASURY_INTERVAL_HOURS),
+# из которого можно восстановить кумулятивный ряд и посчитать std/max
+# drawdown задним числом.
+_TREASURY_RETURNS_MAX = 500  # с запасом на ~7 месяцев при 12ч периоде - более чем достаточно
+
+
+def get_treasury_returns_history() -> list[float]:
+    return _get("treasury_returns_history", [])
+
+
+def append_treasury_return(pct: float) -> list[float]:
+    history = get_treasury_returns_history()
+    history.append(pct)
+    if len(history) > _TREASURY_RETURNS_MAX:
+        history = history[-_TREASURY_RETURNS_MAX:]
+    _set("treasury_returns_history", history)
+    return history
+
+
 # --- Очередь отложенных постов, ждущих своего окна публикации ---
 # ВАЖНО: это настоящая FIFO-очередь, а не одно перезаписываемое
 # значение. Раньше "отложенный пост" был ОДНИМ слотом - если за тик
@@ -589,6 +612,52 @@ def get_strategy_adjustments() -> dict:
 
 def set_strategy_adjustments(adjustments: dict) -> None:
     _set("strategy_adjustments", adjustments)
+
+
+# --- История использования hook_mode + ручной ввод заработка Write to
+# Earn (engagement_tracker.py) - для косвенного A/B хуков. Официальный
+# Binance Square API не отдаёт статистику существующих постов (ни
+# просмотры/лайки, ни заработок) - это подтверждено документацией
+# square-post skill ("this skill only creates new posts"), поэтому
+# заработок вносится вручную раз в неделю (см. log_earnings.py), а вот
+# КАКОЙ hook_mode использовался в какую неделю - бот считает сам.
+
+_HOOK_MODE_HISTORY_MAX = 500   # с запасом на несколько месяцев ежедневных постов
+_EARNINGS_HISTORY_MAX = 104    # 2 года еженедельных записей - более чем достаточно
+
+
+def log_hook_mode_usage(mode: str) -> None:
+    history = _get("hook_mode_history", [])
+    history.append({"mode": mode, "timestamp": time.time()})
+    if len(history) > _HOOK_MODE_HISTORY_MAX:
+        history = history[-_HOOK_MODE_HISTORY_MAX:]
+    _set("hook_mode_history", history)
+
+
+def get_hook_mode_history() -> list[dict]:
+    return _get("hook_mode_history", [])
+
+
+def log_weekly_earnings(amount: float, currency: str, week_ending_ts: float) -> None:
+    history = get_earnings_history()
+    history.append({"amount": amount, "currency": currency, "week_ending": week_ending_ts, "logged_at": time.time()})
+    history.sort(key=lambda e: e["week_ending"])
+    if len(history) > _EARNINGS_HISTORY_MAX:
+        history = history[-_EARNINGS_HISTORY_MAX:]
+    _set("earnings_history", history)
+
+
+def get_earnings_history() -> list[dict]:
+    return _get("earnings_history", [])
+
+
+# --- Мониторинг здоровья монет Treasury Index (index_health_monitor.py) ---
+def get_coin_miss_streaks() -> dict:
+    return _get("coin_miss_streaks", {})
+
+
+def set_coin_miss_streaks(streaks: dict) -> None:
+    _set("coin_miss_streaks", streaks)
 
 
 def get_retry_backoff_remaining_seconds(post_type: str) -> Optional[float]:
