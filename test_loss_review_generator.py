@@ -89,6 +89,19 @@ def test_format_losses_block_sorts_worst_first():
     assert block.index("BIG") < block.index("SMALL")
 
 
+def test_format_losses_block_does_not_use_dollar_cashtags():
+    """Регресс: Binance Square сам парсит $ТИКЕР в тексте и превращает в
+    кэштег/coin-pair виджет - у него есть лимит на количество таких
+    кэштегов в одном посте ('Coin pair count exceeds the allowed
+    limit'). При нескольких убытках в одном посте (до 5 тикеров) это
+    реально приводило к ошибке публикации - тикеры в этом блоке НЕ
+    должны иметь префикс $."""
+    losses = [_loss("AAA", -1.0), _loss("BBB", -2.0), _loss("CCC", -3.0)]
+    block = lrg._format_losses_block(losses, total_closed=5, days=14)
+    assert "$AAA" not in block and "$BBB" not in block and "$CCC" not in block
+    assert "AAA" in block and "BBB" in block and "CCC" in block
+
+
 def test_validate_loss_review_hook_ok():
     ok, reason = lrg.validate_loss_review_hook("Не все сигналы отрабатывают, это нормально", {14})
     assert ok is True, reason

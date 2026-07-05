@@ -85,7 +85,7 @@ def _format_stats_block(stats: dict, days: float, period_closed: list[dict] | No
             for c in worst:
                 direction_ru = "Лонг" if c.get("direction") == "long" else "Шорт"
                 lines.append(
-                    f"  ${c.get('ticker', '?')} | {direction_ru} | {c.get('strategy', '?')} | "
+                    f"  {c.get('ticker', '?')} | {direction_ru} | {c.get('strategy', '?')} | "
                     f"результат {c['pnl_pct']:+.2f}% -> {classify_miss(c)}"
                 )
 

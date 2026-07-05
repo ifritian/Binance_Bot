@@ -47,8 +47,21 @@ def test_format_stats_block_includes_worst_losses(monkeypatch):
     ]
     block = arg._format_stats_block(stats, days=7, period_closed=period_closed)
     assert "Самые заметные промахи периода" in block
-    assert "$BEAT" in block
-    assert "$UNI" not in block  # это не убыток (pnl положительный) - не должен попасть в разбор промахов
+    assert "BEAT" in block
+    assert "UNI" not in block  # это не убыток (pnl положительный) - не должен попасть в разбор промахов
+
+
+def test_format_stats_block_worst_losses_no_dollar_cashtags():
+    """Тот же регресс, что в loss_review_generator - несколько $ТИКЕР в
+    одном посте превышают лимит кэштегов Binance Square."""
+    stats = _fake_stats(count=10, win_rate=60.0, avg_pnl=1.5)
+    period_closed = [
+        {"ticker": "AAA", "direction": "short", "strategy": "RSI", "pnl_pct": -3.2},
+        {"ticker": "BBB", "direction": "long", "strategy": "RSI", "pnl_pct": -0.5},
+        {"ticker": "CCC", "direction": "short", "strategy": "RSI", "pnl_pct": -1.0},
+    ]
+    block = arg._format_stats_block(stats, days=7, period_closed=period_closed)
+    assert "$AAA" not in block and "$BBB" not in block and "$CCC" not in block
 
 
 def test_format_stats_block_no_worst_losses_section_when_all_wins():

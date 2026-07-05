@@ -119,7 +119,7 @@ def _format_losses_block(losses: list[dict], total_closed: int, days: float, max
     for c in worst:
         direction_ru = "Лонг" if c["direction"] == "long" else "Шорт"
         lines.append(
-            f"${c['ticker']} | {direction_ru} | {c.get('strategy', '?')} | "
+            f"{c['ticker']} | {direction_ru} | {c.get('strategy', '?')} | "
             f"вход {c['entry']:g}, стоп {c['stop']:g} (сработал) | результат {c['pnl_pct']:+.2f}%"
         )
         lines.append(f"  -> {classify_miss(c)}")
