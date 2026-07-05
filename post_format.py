@@ -54,7 +54,7 @@ def assemble_signal_post(hook: str, signal) -> str:
     direction_emoji = "🟢" if "лонг" in signal.direction.lower() else "🔴"
 
     setup_lines = [
-        f"{direction_emoji} {signal.direction} | {signal.strategy}",
+        f"${signal.ticker} | {direction_emoji} {signal.direction} | {signal.strategy}",
         f"Вход: {signal.entry_low} - {signal.entry_high}",
         f"Стоп: {signal.invalidation}",
         f"Тейк: {signal.target}",
@@ -82,7 +82,7 @@ def assemble_index_management_post(hook: str, signal, tier_label: str, weight: f
     rsi_state = "перепроданность" if is_buy else "перекупленность"
 
     lines = [
-        f"{tier_label} | вес в индексе: {weight:g}%",
+        f"${signal.ticker} | {tier_label} | вес в индексе: {weight:g}%",
         f"RSI: {signal.rsi_now} ({rsi_state})",
         "",
         f"Действие: {emoji} {action}",

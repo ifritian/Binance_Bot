@@ -128,6 +128,17 @@ def test_assemble_index_management_post_buy_side():
     assert "Диапазон для докупки" in text
     assert "Вход:" not in text and "Стоп:" not in text and "Тейк:" not in text
     assert post_format.DISCLAIMER in text
+    assert f"${signal.ticker}" in text  # регресс: тикер должен быть гарантирован кодом, а не только хуком LLM
+
+
+def test_assemble_index_management_post_ticker_present_even_with_generic_hook():
+    """Регресс: раньше структурированный блок вообще не упоминал тикер -
+    если LLM-хук не называл монету явно, весь пост уходил без единого
+    упоминания того, о какой валюте речь."""
+    signal = _make_signal(ticker="AAVE")
+    generic_hook = "Интересный момент присмотреться к этой позиции в рамках индекса."
+    text = post_format.assemble_index_management_post(generic_hook, signal, "🟡 Рост", 8.0)
+    assert "AAVE" in text
 
 
 def test_assemble_index_management_post_sell_side():
@@ -135,6 +146,16 @@ def test_assemble_index_management_post_sell_side():
     text = post_format.assemble_index_management_post("хук", signal, "🟡 Рост", 8.0)
     assert "Частичная фиксация доли" in text
     assert "Диапазон для фиксации" in text
+
+
+def test_assemble_signal_post_ticker_present_even_with_generic_hook():
+    """Та же регрессия, но для обычных рыночных сигналов
+    (post_format.assemble_signal_post) - тикер должен быть в блоке,
+    собранном кодом, а не только в хуке."""
+    signal = _make_signal(ticker="BEAT")
+    generic_hook = "Похоже, разворот назревает - стоит понаблюдать."
+    text = post_format.assemble_signal_post(generic_hook, signal)
+    assert "BEAT" in text
 
 
 if __name__ == "__main__":
