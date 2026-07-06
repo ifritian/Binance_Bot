@@ -313,6 +313,38 @@ def find_coin_by_ticker(ticker: str) -> Optional[tuple[str, dict]]:
     return None
 
 
+def compute_breadth(result: TreasuryIndexResult) -> dict:
+    """Считает, сколько монет корзины сейчас в плюсе/минусе/нуле -
+    быстрый "пульс" состояния корзины отдельно от взвешенного %. Это не
+    дублирует total_pct: индекс может быть в плюсе даже если большинство
+    монет красные - если пара тяжеловесов сильно выросла. Ширина
+    показывает, насколько движение "общее" по корзине, а не тянется
+    парой монет."""
+    green = red = flat = 0
+    for tier in result.tiers:
+        for c in tier.coins:
+            if c.pct is None:
+                continue
+            if c.pct > 0:
+                green += 1
+            elif c.pct < 0:
+                red += 1
+            else:
+                flat += 1
+    return {"green": green, "red": red, "flat": flat, "total": green + red + flat}
+
+
+def format_breadth_line(breadth: dict) -> str:
+    """Пустая строка, если по корзине вообще нет данных (полный сбой API)."""
+    if breadth["total"] == 0:
+        return ""
+    parts = [f"🟢 {breadth['green']}"]
+    if breadth["flat"]:
+        parts.append(f"⚪ {breadth['flat']}")
+    parts.append(f"🔴 {breadth['red']}")
+    return f"Ширина: {' / '.join(parts)} из {breadth['total']} монет в плюсе/минусе"
+
+
 def leading_tier(result: TreasuryIndexResult) -> Optional[TierResult]:
     """Тир с наибольшим % изменения (по модулю роста, не волатильности) -
     пригодится для короткой рефлексии в духе 'риск-аппетит возвращается',

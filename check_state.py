@@ -10,6 +10,7 @@ check_state.py - диагностика без побочных эффектов
 Запуск: python check_state.py
 """
 import config
+import index_health_monitor
 import outcome_tracker
 import queue_manager
 import strategy_tuner
@@ -114,6 +115,16 @@ def main() -> None:
           f"порог публикации: score > {config.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH}")
     for line in index_queue:
         print(f"    - {line}")
+
+    streaks = queue_manager.get_coin_miss_streaks()
+    active_streaks = {t: s for t, s in streaks.items() if s > 0}
+    print(f"\nЗдоровье монет индекса (порог алерта: {index_health_monitor.MISS_STREAK_ALERT_THRESHOLD} проверок подряд без данных):")
+    if not active_streaks:
+        print("    все монеты резолвятся нормально")
+    else:
+        for ticker, streak in sorted(active_streaks.items(), key=lambda kv: -kv[1]):
+            flag = " ⚠️ ПОРОГ ПРЕВЫШЕН" if streak >= index_health_monitor.MISS_STREAK_ALERT_THRESHOLD else ""
+            print(f"    {ticker}: {streak} проверок(и) подряд без данных{flag}")
 
     open_outcomes = queue_manager.get_open_outcomes()
     print(f"\n=== Трекинг результатов сигналов ===")
