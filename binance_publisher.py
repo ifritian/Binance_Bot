@@ -107,16 +107,26 @@ def publish_post(text: str, image_paths: Optional[list[Path]] = None) -> dict:
     Публикует пост. Если передан image_paths (до 4 файлов) - сначала
     загружает каждую картинку, затем публикует пост с imageList.
     Если изображений нет - публикует обычный текстовый пост.
+
+    Результат включает ключ "image_urls" (список уже загруженных
+    публичных URL картинок, [] если картинок не было) - историческое
+    поле не используется кросспостом в Bluesky (там картинка грузится
+    как сырые байты с диска, см. main._crosspost_to_bluesky), но
+    оставлено на случай, если понадобится публичная ссылка на картинку
+    где-то ещё.
     """
     body: dict = {"contentType": 1, "bodyTextOnly": text}
 
+    image_urls: list[str] = []
     if image_paths:
         if len(image_paths) > 4:
             raise PublishError("Максимум 4 картинки на пост")
         image_urls = [upload_image(p) for p in image_paths]
         body["imageList"] = image_urls
 
-    return _send_content(body)
+    result = _send_content(body)
+    result["image_urls"] = image_urls
+    return result
 
 
 def publish_article(title: str, text: str, cover_path: Optional[Path] = None) -> dict:
@@ -124,13 +134,22 @@ def publish_article(title: str, text: str, cover_path: Optional[Path] = None) ->
     Публикует длинную статью (contentType=2) с заголовком и опциональной
     обложкой - формат "Article" в Binance Square, отдельная вкладка от
     обычных постов. Обложка - ровно одна картинка (не список).
+
+    Результат включает ключ "cover_url" (публичный URL уже загруженной
+    обложки, None если её не было) - историческое поле, кросспост в
+    Bluesky использует локальный cover_path напрямую (см.
+    main.try_publish_article_post), а не этот URL.
     """
     body: dict = {"contentType": 2, "bodyTextOnly": text, "title": title}
 
+    cover_url = None
     if cover_path is not None:
-        body["cover"] = upload_image(cover_path)
+        cover_url = upload_image(cover_path)
+        body["cover"] = cover_url
 
-    return _send_content(body)
+    result = _send_content(body)
+    result["cover_url"] = cover_url
+    return result
 
 
 def _send_content(body: dict) -> dict:

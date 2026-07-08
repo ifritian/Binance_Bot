@@ -25,6 +25,18 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 # chat_id вида "-1001234567890" (для приватных каналов).
 TELEGRAM_PUBLISH_CHANNEL = os.environ.get("TELEGRAM_PUBLISH_CHANNEL", "")
 
+# --- Bluesky (AT Protocol) - кросспостинг постов, как и в Telegram ---
+# Оба значения ОПЦИОНАЛЬНЫ (как TELEGRAM_PUBLISH_CHANNEL выше) - если не
+# заполнены, bluesky_publisher.is_configured() вернёт False и main.py
+# молча пропустит кросспост в Bluesky, не считая это ошибкой.
+#
+# BLUESKY_HANDLE - твой handle в Bluesky (например "alexei.bsky.social").
+# BLUESKY_APP_PASSWORD - App Password, НЕ основной пароль от аккаунта -
+# создаётся в самом Bluesky: Settings -> App passwords -> Add App
+# Password. Никакого Developer-портала или App Review не нужно.
+BLUESKY_HANDLE = os.environ.get("BLUESKY_HANDLE", "")
+BLUESKY_APP_PASSWORD = os.environ.get("BLUESKY_APP_PASSWORD", "")
+
 # Твой Telegram USER_ID для слушания личных сообщений (опционально)
 # Если заполнено - бот будет принимать сигналы и из личных сообщений от тебя
 YOUR_USER_ID = os.environ.get("YOUR_USER_ID")

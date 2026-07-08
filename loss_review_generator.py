@@ -108,47 +108,26 @@ def classify_miss(loss: dict) -> str:
     return label
 
 
-def _select_cases_to_show(losses: list[dict], max_shown: int) -> list[dict]:
-    """Отбирает случаи для показа: в приоритете те, где есть полные
-    данные о пути цены (MFE/время до стопа) - по ним получается
-    содержательный разбор, а не "недостаточно данных" (это временное
-    явление - старые записи, закрытые до появления диагностики в
-    outcome_tracker, постепенно вымоются из окна как раз за счёт этого
-    приоритета). Если случаев с данными меньше max_shown - дополняем
-    оставшимися худшими по результату."""
-    with_data = [c for c in losses if c.get("mfe_pct") is not None]
-    without_data = [c for c in losses if c.get("mfe_pct") is None]
-
-    with_data_sorted = sorted(with_data, key=lambda c: c["pnl_pct"])
-    without_data_sorted = sorted(without_data, key=lambda c: c["pnl_pct"])
-
-    selected = with_data_sorted[:max_shown]
-    if len(selected) < max_shown:
-        selected += without_data_sorted[: max_shown - len(selected)]
-    return selected
-
-
-def _format_losses_block(losses: list[dict], total_closed: int, days: float, max_shown: int = 4) -> str:
+def _format_losses_block(losses: list[dict], total_closed: int, days: float, max_shown: int = 5) -> str:
     lines = [f"📉 Разбор неудачных сигналов за последние {days:g} дней"]
     lines.append(f"Не сработало: {len(losses)} из {total_closed} закрытых сигналов за период")
+
+    # Худшие по % результата - показываем не больше max_shown, чтобы пост
+    # не разрастался, если убыточных случаев было много.
+    worst = sorted(losses, key=lambda c: c["pnl_pct"])[:max_shown]
     lines.append("")
-
-    shown = _select_cases_to_show(losses, max_shown)
-    for c in shown:
+    for c in worst:
         direction_ru = "Лонг" if c["direction"] == "long" else "Шорт"
-        exit_price = c.get("exit_price", c["stop"])
-        lines.append(f"📌 {c['ticker']} | {direction_ru} | {c.get('strategy', '?')}")
         lines.append(
-            f"  Вход: {c['entry']:g} | Стоп: {c['stop']:g} | Тейк: {c['target']:g} | Факт: {exit_price:g}"
+            f"{c['ticker']} | {direction_ru} | {c.get('strategy', '?')} | "
+            f"вход {c['entry']:g}, стоп {c['stop']:g} (сработал) | результат {c['pnl_pct']:+.2f}%"
         )
-        lines.append(f"  Результат: {c['pnl_pct']:+.2f}%")
-        lines.append(f"  Анализ: {classify_miss(c)}")
-        lines.append("")
+        lines.append(f"  -> {classify_miss(c)}")
 
-    if len(losses) > len(shown):
-        lines.append(f"(показаны {len(shown)} самых показательных случая из {len(losses)} неудачных за период)")
+    if len(losses) > max_shown:
+        lines.append(f"...и ещё {len(losses) - max_shown}")
 
-    return "\n".join(lines).rstrip()
+    return "\n".join(lines)
 
 
 def generate_loss_review_post(days: float | None = None) -> tuple[str, str] | None:

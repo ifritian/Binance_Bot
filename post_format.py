@@ -95,6 +95,85 @@ def assemble_index_management_post(hook: str, signal, tier_label: str, weight: f
     return f"{hook.strip()}\n\n{block}\n\n{DISCLAIMER}"
 
 
+# --- Формат поста для Bluesky (кросспостинг) ---
+# Bluesky - короткая соцсеть с жёстким лимитом в 300 символов на пост
+# (жёстче, чем было бы у Threads - 500), поэтому туда нельзя просто
+# отправлять тот же текст, что на Binance Square/Telegram (там лимиты
+# намного мягче, посты длиннее).
+# Как и у REFERRAL_LINE (см. выше - туда реферальная ссылка сознательно
+# НЕ добавляется в частые валютные посты, чтобы не выглядеть спамом на
+# площадке, где сам бот и так публикуется через официальный API), в
+# Bluesky ссылки на Binance и на свой Telegram-канал добавляются ВСЕГДА -
+# это отдельная площадка, которая иначе вообще не узнает, где смотреть
+# остальные посты и как открыть аккаунт.
+BLUESKY_CHAR_LIMIT = 300
+_BLUESKY_TRUNCATION_SUFFIX = "…"
+
+
+def build_bluesky_post(text: str, ticker: str | None = None) -> tuple[str, list]:
+    """Адаптирует уже готовый текст поста (собранный для Binance Square/
+    Telegram - hook + сетап/данные + дисклеймер) под формат Bluesky:
+    добавляет cashtag тикера (если известен) для дискаверабилити и
+    ссылки на Binance и Telegram-канал, затем жёстко обрезает ВСЁ до
+    300 символов - в первую очередь обрезается основной текст, а не
+    ссылки, так как весь смысл кросспоста в Bluesky - привести читателя
+    в Telegram/на Binance.
+
+    Возвращает (текст, link_facets) - link_facets - список пар
+    (подстрока, url) для bluesky_publisher._byte_facets, чтобы ссылки
+    в итоговом посте были кликабельными (Bluesky, в отличие от Threads/
+    Square, не парсит "голый" URL в тексте сам - нужны явные facets).
+
+    Ничего не меняет в исходном text - используется только здесь, отдельно
+    от текста, который реально уходит на Binance Square/Telegram."""
+    links = [REFERRAL_LINE]
+    link_facets = [(REFERRAL_LINK, REFERRAL_LINK)]
+
+    tg_line = telegram_channel_line()
+    tg_url = None
+    if tg_line:
+        links.append(tg_line)
+        # Сама ссылка (без окружающего текста эмодзи/фразы) - именно она
+        # должна стать facet'ом, "голый" https://t.me/... адрес всегда
+        # присутствует в tg_line как есть (см. telegram_channel_line).
+        tg_url = tg_line.split(" ")[-1]
+        link_facets.append((tg_url, tg_url))
+
+    links_block = "\n\n".join(links)
+
+    hashtag = f"#{ticker.upper()}" if ticker else ""
+
+    # Резервируем место под ссылки (и тег, если есть) + разделители
+    # между блоками ("\n\n" x количество склеек ниже).
+    reserved = len(links_block) + (len(hashtag) + 2 if hashtag else 0) + 2
+    max_body_len = max(BLUESKY_CHAR_LIMIT - reserved, 20)
+
+    body = text.strip()
+    if len(body) > max_body_len:
+        body = body[: max_body_len - len(_BLUESKY_TRUNCATION_SUFFIX)].rstrip()
+        body += _BLUESKY_TRUNCATION_SUFFIX
+
+    parts = [body]
+    if hashtag:
+        parts.append(hashtag)
+    parts.append(links_block)
+    result = "\n\n".join(p for p in parts if p)
+
+    # Финальная подстраховка на случай, если расчёт места выше всё же
+    # не сошёлся (например, из-за очень длинного тикера) - лучше грубо
+    # обрезать весь результат, чем упасть при публикации в Bluesky.
+    # Обрезаем только если укороченный результат всё ещё содержит обе
+    # ссылки целиком - иначе facets будут указывать мимо текста.
+    if len(result) > BLUESKY_CHAR_LIMIT:
+        result = result[: BLUESKY_CHAR_LIMIT - len(_BLUESKY_TRUNCATION_SUFFIX)].rstrip()
+        result += _BLUESKY_TRUNCATION_SUFFIX
+        # Ссылка, которую обрезка задела наполовину, битая - для неё
+        # facet построить нельзя, оставляем как есть (bluesky_publisher
+        # просто пропустит facets, подстрока которых не нашлась целиком).
+
+    return result, link_facets
+
+
 # --- Режимы тона хука - для разнообразия постов ---
 # Каждый режим - короткая инструкция, которую добавляем к системному
 # промпту LLM. Сама ротация (какой режим выбрать сейчас) реализована

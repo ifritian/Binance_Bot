@@ -16,7 +16,9 @@ main.py - точка входа.
 в момент публикации, без отдельной очереди.
 """
 import logging
+import mimetypes
 import sys
+from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -24,6 +26,7 @@ import article_generator
 import accuracy_report_generator
 import alerting
 import binance_publisher
+import bluesky_publisher
 import chart_generator
 import config
 import image_analyzer
@@ -130,7 +133,7 @@ def _publish_signal(signal) -> bool:
         )
         return False
 
-    published = _do_publish(post_text, [chart_path])
+    published = _do_publish(post_text, [chart_path], signal.ticker)
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
         # Ставим сигнал на трекинг результата ПОСЛЕ публикации - если
@@ -184,13 +187,13 @@ def _publish_image_insight(insight) -> bool:
         )
         return False
 
-    published = _do_publish(post_text, [image_path])
+    published = _do_publish(post_text, [image_path], insight.ticker)
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
     return published
 
 
-def _do_publish(post_text: str, image_paths) -> bool:
+def _do_publish(post_text: str, image_paths, ticker: str | None = None) -> bool:
     try:
         result = binance_publisher.publish_post(post_text, image_paths=image_paths)
     except binance_publisher.PublishError as e:
@@ -198,7 +201,9 @@ def _do_publish(post_text: str, image_paths) -> bool:
         return False
 
     logger.info("Опубликовано (валюта): %s", result)
-    _crosspost_to_telegram(post_text, image_paths[0] if image_paths else None)
+    image_path = image_paths[0] if image_paths else None
+    _crosspost_to_telegram(post_text, image_path)
+    _crosspost_to_bluesky(post_text, image_path, ticker=ticker)
     return True
 
 
@@ -217,6 +222,44 @@ def _crosspost_to_telegram(text: str, image_path=None) -> None:
         telegram_publisher.publish_post(text, image_path)
     except telegram_publisher.TelegramPublishError as e:
         logger.warning("Кросспост в Telegram не удался: %s", e)
+
+
+def _crosspost_to_bluesky(text: str, image_path=None, ticker: str | None = None) -> None:
+    """Дублирует уже опубликованный (на Binance Square) пост в Bluesky
+    (config.BLUESKY_HANDLE / config.BLUESKY_APP_PASSWORD).
+
+    Как и _crosspost_to_telegram выше - ОПЦИОНАЛЕН и НЕЗАВИСИМ от основной
+    публикации: если Bluesky не настроен - молча пропускаем, если настроен,
+    но запрос упал - логируем предупреждение и идём дальше.
+
+    image_path - ЛОКАЛЬНЫЙ путь к уже сгенерированному/скачанному файлу
+    (тот же, что был загружен на Binance Square) - AT Protocol грузит
+    картинку как сырые байты через uploadBlob, а не по URL (в отличие от
+    Telegram/бывшего Threads), поэтому здесь читаем файл с диска напрямую.
+
+    text адаптируется под формат Bluesky через post_format.build_bluesky_post
+    (хэштег тикера + ссылки на Binance/Telegram + обрезка под лимит 300
+    символов, плюс facets для кликабельных ссылок) - в исходном виде текст
+    никуда, кроме Bluesky, не уходит."""
+    if not bluesky_publisher.is_configured():
+        return
+    try:
+        bluesky_text, link_facets = post_format.build_bluesky_post(text, ticker=ticker)
+        image_bytes = None
+        content_type = "image/png"
+        if image_path is not None:
+            path = Path(image_path)
+            content_type = mimetypes.guess_type(path.name)[0] or "image/png"
+            image_bytes = path.read_bytes()
+        bluesky_publisher.publish_post(
+            bluesky_text,
+            image_bytes=image_bytes,
+            image_content_type=content_type,
+            link_facets=link_facets,
+        )
+    except bluesky_publisher.BlueskyPublishError as e:
+        logger.warning("Кросспост в Bluesky не удался: %s", e)
+
 
 
 def try_publish_currency_post() -> None:
@@ -311,6 +354,7 @@ def try_publish_opinion_post() -> None:
 
     logger.info("Опубликовано (мнение): %s", published_result)
     _crosspost_to_telegram(post_text)
+    _crosspost_to_bluesky(post_text)
     queue_manager.set_last_post_time("opinion")
     queue_manager.roll_new_jitter("opinion", config.OPINION_JITTER_HOURS * 3600)
 
@@ -358,6 +402,7 @@ def try_publish_treasury_post() -> None:
 
     logger.info("Опубликовано (Treasury Index): %s", published_result)
     _crosspost_to_telegram(telegram_text)
+    _crosspost_to_bluesky(telegram_text)
     queue_manager.set_last_post_time("treasury")
     queue_manager.roll_new_jitter("treasury", config.TREASURY_JITTER_HOURS * 3600)
 
@@ -410,6 +455,7 @@ def try_publish_index_signal_post() -> None:
 
     logger.info("Опубликовано (index_signal, %s): %s", signal.ticker, published_result)
     _crosspost_to_telegram(binance_text)
+    _crosspost_to_bluesky(binance_text, ticker=signal.ticker)
     queue_manager.clear_pending_index_signal(idx)
     queue_manager.set_last_post_time("index_signal")
     queue_manager.roll_new_jitter("index_signal", config.INDEX_SIGNAL_JITTER_HOURS * 3600)
@@ -478,6 +524,10 @@ def try_publish_article_post() -> None:
 
     logger.info("Опубликовано (статья): %s", published_result)
     _crosspost_to_telegram(f"{title}\n\n{body}", cover_path)
+    # Обложка для Bluesky - тот же локальный файл, что уже был загружен
+    # на Binance Square (uploadBlob в AT Protocol требует сырые байты,
+    # не URL - см. bluesky_publisher).
+    _crosspost_to_bluesky(f"{title}\n\n{body}", cover_path)
     queue_manager.set_last_post_time("article")
     queue_manager.roll_new_jitter("article", config.ARTICLE_JITTER_HOURS * 3600)
 
@@ -528,6 +578,7 @@ def try_publish_accuracy_report() -> None:
 
     logger.info("Опубликован отчёт точности: %s", published_result)
     _crosspost_to_telegram(telegram_text)
+    _crosspost_to_bluesky(telegram_text)
     queue_manager.set_last_post_time("accuracy_report")
     queue_manager.roll_new_jitter("accuracy_report", config.ACCURACY_REPORT_JITTER_HOURS * 3600)
 
@@ -576,6 +627,7 @@ def try_publish_loss_review() -> None:
 
     logger.info("Опубликован разбор промахов: %s", published_result)
     _crosspost_to_telegram(telegram_text)
+    _crosspost_to_bluesky(telegram_text)
     queue_manager.set_last_post_time("loss_review")
     queue_manager.roll_new_jitter("loss_review", config.LOSS_REVIEW_JITTER_HOURS * 3600)
 

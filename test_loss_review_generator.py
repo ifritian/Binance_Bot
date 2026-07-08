@@ -79,32 +79,7 @@ def test_format_losses_block_contains_tickers_and_results():
 def test_format_losses_block_caps_shown_cases():
     losses = [_loss(f"T{i}", -1.0 * i) for i in range(1, 8)]  # 7 losses
     block = lrg._format_losses_block(losses, total_closed=20, days=14, max_shown=5)
-    assert "показаны 5 самых показательных случая из 7" in block
-
-
-def test_format_losses_block_includes_target_and_exit_price():
-    """Регресс: раньше блок показывал только вход/стоп, без тейка и
-    фактической цены выхода - неполная картина."""
-    losses = [_loss("BEAT", -5.0)]
-    block = lrg._format_losses_block(losses, total_closed=5, days=4.5)
-    assert "Тейк:" in block
-    assert "Факт:" in block
-
-
-def test_select_cases_prioritizes_full_data_over_missing_data():
-    """Регресс: раньше в топ-N по худшему результату могли попасть
-    сплошь старые записи без mfe_pct ('недостаточно данных'), даже если
-    рядом были случаи с полным разбором, но чуть менее убыточные."""
-    no_data_worst = _loss("OLD", -20.0, mfe_pct=None, hours_to_close=None)
-    has_data_milder = _loss("NEW", -5.0, mfe_pct=2.0, hours_to_close=1.0)
-    shown = lrg._select_cases_to_show([no_data_worst, has_data_milder], max_shown=1)
-    assert shown[0]["ticker"] == "NEW"
-
-
-def test_select_cases_fills_remaining_slots_with_missing_data_if_needed():
-    only_no_data = [_loss("A", -1.0, mfe_pct=None), _loss("B", -2.0, mfe_pct=None)]
-    shown = lrg._select_cases_to_show(only_no_data, max_shown=2)
-    assert len(shown) == 2
+    assert "...и ещё 2" in block
 
 
 def test_format_losses_block_sorts_worst_first():
