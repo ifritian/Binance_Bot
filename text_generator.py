@@ -14,21 +14,19 @@
 отработал предыдущий сигнал (% движения, score). Числа, которые
 нельзя искажать - это % изменения и score, не цена.
 
-Groq отдаёт OpenAI-совместимый /chat/completions, используем обычный
-requests без специального SDK.
+Запрос к Groq идёт через общий groq_client.call_groq (не свою копию
+requests.post, как было раньше) - так этот генератор автоматически
+получает ту же защиту от 429/пустых/обрубленных по max_tokens ответов,
+что и остальные форматы постов (opinion/treasury/index_signal/...).
 """
 import logging
 
-import requests
-
-import config
+from groq_client import call_groq
 from image_analyzer import ImageInsight
 from post_format import HOOK_MODES, assemble_post, assemble_signal_post
 from signal_parser import RsiSignal
 
 logger = logging.getLogger(__name__)
-
-_GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
 # Примеры твоих прошлых постов - few-shot, чтобы LLM держал стиль:
 # короткая мысль-хук, cashtag, разговорный тон. Специально на русском -
@@ -96,25 +94,12 @@ _BASE_IMAGE_SYSTEM_PROMPT = f"""Ты пишешь короткий ХУК для
 Отвечай только текстом хука, без пояснений и без кавычек вокруг текста."""
 
 
-def _call_groq(system_prompt: str, user_prompt: str) -> str:
-    payload = {
-        "model": config.GROQ_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.8,
-        "max_tokens": 300,
-    }
-    headers = {"Authorization": f"Bearer {config.GROQ_API_KEY}"}
-
-    resp = requests.post(_GROQ_ENDPOINT, json=payload, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
-
-
-def generate_post_text(signal: RsiSignal, hook_mode: str) -> str:
+def generate_post_text(signal: RsiSignal, hook_mode: str) -> tuple[str, str]:
+    """Возвращает (text, hook) - text это уже собранный пост для Square/
+    Telegram (хук + блок сетапа + дисклеймер), hook - тот же хук отдельно,
+    БЕЗ чисел (см. промпт выше) - нужен main.py для формата "Тред-разбор
+    сильных сетапов" в Bluesky (post_format.build_bluesky_thread_signal),
+    где хук идёт первым постом треда САМ ПО СЕБЕ, а не частью одного текста."""
     system_prompt = f"{_BASE_SIGNAL_SYSTEM_PROMPT}\n\n{HOOK_MODES[hook_mode]}"
 
     user_prompt = f"""Тикер: ${signal.ticker}
@@ -128,10 +113,10 @@ def generate_post_text(signal: RsiSignal, hook_mode: str) -> str:
 конкретных цифр уровней входа/стопа/тейка/RSI/score (они будут добавлены
 отдельно)."""
 
-    hook = _call_groq(system_prompt, user_prompt)
+    hook = call_groq(system_prompt, user_prompt, max_tokens=300, temperature=0.8)
     text = assemble_signal_post(hook, signal)
     logger.info("Сгенерирован текст поста для %s (режим %s): %s", signal.ticker, hook_mode, text)
-    return text
+    return text, hook
 
 
 def generate_post_text_from_image(insight: ImageInsight, hook_mode: str) -> str:
@@ -149,7 +134,7 @@ def generate_post_text_from_image(insight: ImageInsight, hook_mode: str) -> str:
 Напиши хук в стиле автора. Никаких чисел и процентов - только
 качественное наблюдение."""
 
-    hook = _call_groq(system_prompt, user_prompt)
+    hook = call_groq(system_prompt, user_prompt, max_tokens=300, temperature=0.8)
     text = assemble_post(hook)
     logger.info("Сгенерирован текст поста по картинке для %s (режим %s): %s", insight.ticker, hook_mode, text)
     return text

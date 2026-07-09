@@ -16,15 +16,11 @@ import logging
 import random
 from typing import Optional
 
-import requests
-
-import config
 from chart_generator import fetch_klines
+from groq_client import call_groq
 from post_format import DISCLAIMER, assemble_post
 
 logger = logging.getLogger(__name__)
-
-_GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
 THEMES: dict[str, dict] = {
     "BTC": {"label": "$BTC", "tickers": ["BTC"]},
@@ -151,21 +147,16 @@ def generate_opinion_post(theme: str) -> Optional[tuple[str, set[float]]]:
         )
         allowed_numbers = set(stats["breakdown"].values()) | {avg}
 
-    payload = {
-        "model": config.GROQ_MODEL,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.9,
-        "max_tokens": 400,
-    }
-    headers = {"Authorization": f"Bearer {config.GROQ_API_KEY}"}
+    hook = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=400, temperature=0.9)
 
-    resp = requests.post(_GROQ_ENDPOINT, json=payload, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    hook = data["choices"][0]["message"]["content"].strip()
+    # Хук не должен быть пустым/почти пустым - без этой проверки
+    # assemble_post() тихо собрал бы пост из одного дисклеймера, без
+    # единой мысли автора (тот же баг, что был у index_signal/treasury/
+    # accuracy_report/loss_review - см. их validate_*_hook). call_groq
+    # уже перезапрашивает пустые ответы сам, это - подстраховка.
+    if len(hook.strip()) < 10:
+        logger.warning("Хук поста-мнения пустой или слишком короткий (%r) - публикую с нейтральным хуком", hook)
+        hook = f"{label}: как вам последнее движение? 🤔"
 
     text = assemble_post(hook)
     logger.info("Сгенерирован пост-мнение (тема %s, числа: %s): %s", theme, allowed_numbers, text)

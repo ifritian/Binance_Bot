@@ -178,7 +178,12 @@ def generate_loss_review_post(days: float | None = None) -> tuple[str, str] | No
 def validate_loss_review_hook(hook: str, allowed_numbers: set[float]) -> tuple[bool, str]:
     """Та же логика, что validate_accuracy_hook/validate_treasury_hook:
     хук не должен содержать чисел вне уже посчитанных, и не должен
-    содержать посторонних английских слов (см. Фазу "языковой баг")."""
+    содержать посторонних английских слов (см. Фазу "языковой баг").
+    Также не должен быть пустым/почти пустым (см. тот же баг в
+    index_signal_generator/treasury_generator/accuracy_report_generator)."""
+    if len(hook.strip()) < 10:
+        return False, f"Хук пустой или слишком короткий: {hook!r}"
+
     numbers = _extract_numbers(hook)
     unknown = [n for n in numbers if not any(abs(n - a) < 0.05 for a in allowed_numbers)]
     if unknown:

@@ -123,11 +123,32 @@ def _byte_facets(text: str, links: list) -> list:
     return facets
 
 
+def thread_ref(post_result: dict) -> dict:
+    """Достаёт {uri, cid} из результата publish_post - именно эта пара
+    identifies конкретный пост в AT Protocol (одного uri недостаточно,
+    Bluesky требует cid для reply/root ссылок). Использовать для
+    построения следующего поста треда через reply_refs()."""
+    if "uri" not in post_result or "cid" not in post_result:
+        raise BlueskyPublishError(f"В результате публикации нет uri/cid, не могу продолжить тред: {post_result}")
+    return {"uri": post_result["uri"], "cid": post_result["cid"]}
+
+
+def reply_refs(root_result: dict, parent_result: Optional[dict] = None) -> dict:
+    """Собирает structure "reply" для publish_post() - AT Protocol требует
+    ОБЕ ссылки, root (первый пост треда) и parent (пост, на который прямо
+    отвечаем) - для второго поста треда они совпадают, для третьего и
+    далее - разные (root всегда первый пост, parent - предыдущий)."""
+    root_ref = thread_ref(root_result)
+    parent_ref = thread_ref(parent_result) if parent_result is not None else root_ref
+    return {"root": root_ref, "parent": parent_ref}
+
+
 def publish_post(
     text: str,
     image_bytes: Optional[bytes] = None,
     image_content_type: str = "image/png",
     link_facets: Optional[list] = None,
+    reply_to: Optional[dict] = None,
 ) -> dict:
     """
     Публикует пост в Bluesky.
@@ -140,6 +161,12 @@ def publish_post(
     link_facets - список пар (подстрока, url) для кликабельных ссылок -
     см. post_format.build_bluesky_post, который возвращает этот список
     готовым, синхронизированным с текстом ссылок в самом посте.
+
+    reply_to - результат reply_refs(root, parent) - если задан, пост
+    публикуется как реплай в треде (используется для формата "Тред-разбор
+    сильных сетапов" и связки Win-reveal/До-После, см. main.py). Без
+    этого параметра пост публикуется как обычный, самостоятельный (корень
+    нового возможного треда).
     """
     session = _create_session()
     access_jwt = session["accessJwt"]
@@ -150,6 +177,9 @@ def publish_post(
         "text": text,
         "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
+
+    if reply_to:
+        record["reply"] = reply_to
 
     facets = _byte_facets(text, link_facets or [])
     if facets:
@@ -173,5 +203,48 @@ def publish_post(
         raise BlueskyPublishError(f"Сетевая ошибка при публикации: {e}") from e
 
     data = _parse(resp, "createRecord")
-    logger.info("Опубликовано в Bluesky: %s", data.get("uri"))
+    logger.info("Опубликовано в Bluesky%s: %s", " (реплай в треде)" if reply_to else "", data.get("uri"))
     return data
+
+
+def publish_thread(posts: list, image_bytes: Optional[bytes] = None, image_content_type: str = "image/png") -> list:
+    """
+    Публикует цепочку постов как тред (первый пост - обычный, остальные -
+    реплаи на предыдущий, с root всегда на первый). Картинка (если есть)
+    прикрепляется ТОЛЬКО к первому посту треда - это "обложка" треда в
+    ленте Bluesky, дальше идёт текст.
+
+    posts - список либо строк, либо пар (текст, link_facets) - facets
+    нужны только тем постам треда, где реально есть ссылки (обычно
+    последнему, см. post_format.build_bluesky_thread_signal).
+
+    Останавливается и поднимает BlueskyPublishError при первой же
+    неудачной публикации ЛЮБОГО поста треда - опубликованные до этого
+    посты треда остаются в Bluesky как есть (частичный тред без вывода
+    лучше, чем полное отсутствие, но вызывающий код может залогировать
+    это отдельно, см. main._crosspost_thread_to_bluesky)."""
+    if not posts:
+        raise BlueskyPublishError("Пустой список постов для треда")
+
+    results = []
+    root_result = None
+    parent_result = None
+
+    for i, item in enumerate(posts):
+        text, facets = item if isinstance(item, tuple) else (item, None)
+
+        reply_to = reply_refs(root_result, parent_result) if root_result is not None else None
+        result = publish_post(
+            text,
+            image_bytes=image_bytes if i == 0 else None,
+            image_content_type=image_content_type,
+            link_facets=facets,
+            reply_to=reply_to,
+        )
+        results.append(result)
+
+        if root_result is None:
+            root_result = result
+        parent_result = result
+
+    return results

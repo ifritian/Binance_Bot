@@ -108,7 +108,7 @@ def _publish_signal(signal) -> bool:
     hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
 
     try:
-        post_text = text_generator.generate_post_text(signal, hook_mode)
+        post_text, hook = text_generator.generate_post_text(signal, hook_mode)
     except Exception as e:
         logger.error("Ошибка генерации текста: %s", e)
         return False
@@ -133,7 +133,7 @@ def _publish_signal(signal) -> bool:
         )
         return False
 
-    published = _do_publish(post_text, [chart_path], signal.ticker)
+    published = _do_publish(post_text, [chart_path], signal.ticker, hook=hook, signal=signal)
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
         # Ставим сигнал на трекинг результата ПОСЛЕ публикации - если
@@ -193,7 +193,7 @@ def _publish_image_insight(insight) -> bool:
     return published
 
 
-def _do_publish(post_text: str, image_paths, ticker: str | None = None) -> bool:
+def _do_publish(post_text: str, image_paths, ticker: str | None = None, hook: str | None = None, signal=None) -> bool:
     try:
         result = binance_publisher.publish_post(post_text, image_paths=image_paths)
     except binance_publisher.PublishError as e:
@@ -203,7 +203,7 @@ def _do_publish(post_text: str, image_paths, ticker: str | None = None) -> bool:
     logger.info("Опубликовано (валюта): %s", result)
     image_path = image_paths[0] if image_paths else None
     _crosspost_to_telegram(post_text, image_path)
-    _crosspost_to_bluesky(post_text, image_path, ticker=ticker)
+    _crosspost_to_bluesky(post_text, image_path, ticker=ticker, hook=hook, signal=signal)
     return True
 
 
@@ -224,7 +224,13 @@ def _crosspost_to_telegram(text: str, image_path=None) -> None:
         logger.warning("Кросспост в Telegram не удался: %s", e)
 
 
-def _crosspost_to_bluesky(text: str, image_path=None, ticker: str | None = None) -> None:
+def _crosspost_to_bluesky(
+    text: str,
+    image_path=None,
+    ticker: str | None = None,
+    hook: str | None = None,
+    signal=None,
+) -> None:
     """Дублирует уже опубликованный (на Binance Square) пост в Bluesky
     (config.BLUESKY_HANDLE / config.BLUESKY_APP_PASSWORD).
 
@@ -234,23 +240,44 @@ def _crosspost_to_bluesky(text: str, image_path=None, ticker: str | None = None)
 
     image_path - ЛОКАЛЬНЫЙ путь к уже сгенерированному/скачанному файлу
     (тот же, что был загружен на Binance Square) - AT Protocol грузит
-    картинку как сырые байты через uploadBlob, а не по URL (в отличие от
-    Telegram/бывшего Threads), поэтому здесь читаем файл с диска напрямую.
+    картинку как сырые байты через uploadBlob, а не по URL, поэтому здесь
+    читаем файл с диска напрямую.
 
-    text адаптируется под формат Bluesky через post_format.build_bluesky_post
-    (хэштег тикера + ссылки на Binance/Telegram + обрезка под лимит 300
-    символов, плюс facets для кликабельных ссылок) - в исходном виде текст
-    никуда, кроме Bluesky, не уходит."""
+    Если signal передан, есть hook и сетап "сильный" (post_format.
+    is_strong_setup - score >= BLUESKY_THREAD_MIN_SCORE) - публикуется
+    формат "Тред-разбор" (3 поста цепочкой: интрига -> сетап -> вывод+
+    ссылки, см. post_format.build_bluesky_thread_signal), а не обычный
+    урезанный кросспост. Это редкий, "событийный" формат - для остальных
+    сигналов работает обычная логика через build_bluesky_post."""
     if not bluesky_publisher.is_configured():
         return
+
+    image_bytes = None
+    content_type = "image/png"
+    if image_path is not None:
+        path = Path(image_path)
+        content_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        image_bytes = path.read_bytes()
+
+    if signal is not None and hook is not None and post_format.is_strong_setup(signal):
+        try:
+            posts = post_format.build_bluesky_thread_signal(hook, signal)
+            bluesky_publisher.publish_thread(posts, image_bytes=image_bytes, image_content_type=content_type)
+            logger.info(
+                "Опубликован Bluesky-тред \"сильный сетап\" для %s (score=%s)",
+                signal.ticker, signal.score,
+            )
+        except bluesky_publisher.BlueskyPublishError as e:
+            logger.warning("Тред в Bluesky для %s не удался: %s", signal.ticker, e)
+        # Намеренно НЕ падаем дальше в обычный одиночный кросспост при
+        # неудаче треда - если часть треда всё же опубликовалась (напр.
+        # 1-2 поста, а на третьем упало), добавление ещё и отдельного
+        # полного поста той же темой выглядело бы задвоенным контентом
+        # в ленте. Лучше пропустить кросспост в этот раз, чем задвоить.
+        return
+
     try:
         bluesky_text, link_facets = post_format.build_bluesky_post(text, ticker=ticker)
-        image_bytes = None
-        content_type = "image/png"
-        if image_path is not None:
-            path = Path(image_path)
-            content_type = mimetypes.guess_type(path.name)[0] or "image/png"
-            image_bytes = path.read_bytes()
         bluesky_publisher.publish_post(
             bluesky_text,
             image_bytes=image_bytes,
@@ -326,6 +353,11 @@ def try_publish_opinion_post() -> None:
 
     try:
         result = opinion_generator.generate_opinion_post(theme)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на посте-мнении - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("opinion", backoff_hours)
+        return
     except Exception as e:
         logger.error("Ошибка генерации поста-мнения: %s", e)
         queue_manager.set_retry_backoff("opinion", 1)

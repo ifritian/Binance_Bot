@@ -14,6 +14,20 @@ import types
 import config
 import post_format
 import bluesky_publisher
+from signal_parser import RsiSignal
+
+
+def _make_signal(**overrides) -> RsiSignal:
+    base = dict(
+        ticker="BEAT", timeframe="15m", strategy="RSI + Bollinger Touch",
+        direction="Шорт", current_price="2.225", rsi_now="81.74", score="89",
+        quality="Conservative", entry_low="2.205", entry_high="2.2178",
+        invalidation="2.2371", target="2.1729", change_24h="+35.67%",
+        volume="57.67M", rsi_live="82.64", created_at="2026-06-23 22:44:59 EEST",
+        description="desc", raw_text="raw",
+    )
+    base.update(overrides)
+    return RsiSignal(**base)
 
 
 class _FakeResponse:
@@ -153,6 +167,123 @@ def test_publish_post_raises_on_login_error(monkeypatch):
         raise AssertionError("ожидалось BlueskyPublishError")
     except bluesky_publisher.BlueskyPublishError:
         pass
+
+
+def test_is_strong_setup_true_above_threshold():
+    signal = _make_signal(score="89")
+    assert post_format.is_strong_setup(signal) is True
+
+
+def test_is_strong_setup_false_below_threshold():
+    signal = _make_signal(score="70")
+    assert post_format.is_strong_setup(signal) is False
+
+
+def test_is_strong_setup_false_on_garbage_score():
+    signal = _make_signal(score="не число")
+    assert post_format.is_strong_setup(signal) is False
+
+
+def test_build_bluesky_thread_signal_has_three_posts_with_links_on_last(monkeypatch):
+    monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "@my_channel")
+    signal = _make_signal()
+
+    posts = post_format.build_bluesky_thread_signal("Хук без цифр про сетап.", signal)
+
+    assert len(posts) == 3
+    assert posts[0] == "Хук без цифр про сетап."
+    assert signal.entry_low in posts[1]
+    assert signal.target in posts[1]
+    post3_text, facets = posts[2]
+    assert post_format.DISCLAIMER in post3_text
+    assert post_format.REFERRAL_LINK in post3_text
+    assert "https://t.me/my_channel" in post3_text
+    assert len(facets) == 2
+
+
+def test_thread_ref_extracts_uri_and_cid():
+    ref = bluesky_publisher.thread_ref({"uri": "at://did:plc:x/app.bsky.feed.post/1", "cid": "bafy1"})
+    assert ref == {"uri": "at://did:plc:x/app.bsky.feed.post/1", "cid": "bafy1"}
+
+
+def test_thread_ref_raises_without_cid():
+    try:
+        bluesky_publisher.thread_ref({"uri": "at://did:plc:x/app.bsky.feed.post/1"})
+        raise AssertionError("ожидалось BlueskyPublishError")
+    except bluesky_publisher.BlueskyPublishError:
+        pass
+
+
+def test_reply_refs_second_post_root_equals_parent():
+    root = {"uri": "at://root", "cid": "c-root"}
+    refs = bluesky_publisher.reply_refs(root)
+    assert refs["root"] == refs["parent"] == root
+
+
+def test_reply_refs_third_post_root_differs_from_parent():
+    root = {"uri": "at://root", "cid": "c-root"}
+    parent = {"uri": "at://post2", "cid": "c-post2"}
+    refs = bluesky_publisher.reply_refs(root, parent)
+    assert refs["root"] == root
+    assert refs["parent"] == parent
+
+
+def test_publish_thread_chains_three_posts_with_correct_reply_refs(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+
+    session_calls = []
+    record_calls = []
+
+    def _fake_post(url, **kwargs):
+        if url.endswith("/com.atproto.server.createSession"):
+            session_calls.append(1)
+            return _FakeResponse({"accessJwt": "jwt-1", "did": "did:plc:abc"})
+        if url.endswith("/com.atproto.repo.createRecord"):
+            record = kwargs["json"]["record"]
+            record_calls.append(record)
+            idx = len(record_calls)
+            return _FakeResponse({"uri": f"at://did:plc:abc/app.bsky.feed.post/{idx}", "cid": f"cid-{idx}"})
+        raise AssertionError(f"неожиданный вызов: {url}")
+
+    monkeypatch.setattr(bluesky_publisher.requests, "post", _fake_post)
+
+    results = bluesky_publisher.publish_thread(["Пост 1 - интрига", "Пост 2 - сетап", ("Пост 3 - вывод", [])])
+
+    assert len(results) == 3
+    assert "reply" not in record_calls[0]
+    assert record_calls[1]["reply"]["root"]["uri"] == results[0]["uri"]
+    assert record_calls[1]["reply"]["parent"]["uri"] == results[0]["uri"]
+    assert record_calls[2]["reply"]["root"]["uri"] == results[0]["uri"]
+    assert record_calls[2]["reply"]["parent"]["uri"] == results[1]["uri"]
+    # Логинимся заново на КАЖДЫЙ пост (см. docstring publish_post) - три
+    # поста треда -> три отдельных createSession.
+    assert len(session_calls) == 3
+
+
+def test_publish_thread_attaches_image_only_to_first_post(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+
+    calls = []
+
+    def _fake_post(url, **kwargs):
+        calls.append(url)
+        if url.endswith("/com.atproto.server.createSession"):
+            return _FakeResponse({"accessJwt": "jwt-1", "did": "did:plc:abc"})
+        if url.endswith("/com.atproto.repo.uploadBlob"):
+            return _FakeResponse({"blob": {"ref": "fake-blob"}})
+        if url.endswith("/com.atproto.repo.createRecord"):
+            idx = sum(1 for c in calls if c.endswith("createRecord"))
+            return _FakeResponse({"uri": f"at://did:plc:abc/app.bsky.feed.post/{idx}", "cid": f"cid-{idx}"})
+        raise AssertionError(f"неожиданный вызов: {url}")
+
+    monkeypatch.setattr(bluesky_publisher.requests, "post", _fake_post)
+
+    bluesky_publisher.publish_thread(["Пост 1", "Пост 2"], image_bytes=b"\x89PNG", image_content_type="image/png")
+
+    upload_calls = [c for c in calls if c.endswith("uploadBlob")]
+    assert len(upload_calls) == 1
 
 
 if __name__ == "__main__":

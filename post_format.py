@@ -45,23 +45,29 @@ def assemble_post(hook: str, include_referral: bool = False) -> str:
     return "\n\n".join(parts)
 
 
-def assemble_signal_post(hook: str, signal) -> str:
-    """Хук (от LLM) + блок сетапа (вход/стоп/тейк/RSI/score - собран
-    КОДОМ, не LLM, чтобы цифры были гарантированно точными) + дисклеймер.
-
-    signal - RsiSignal из signal_parser.
-    """
+def signal_setup_lines(signal) -> list:
+    """Строки с сетапом (направление/вход/стоп/тейк/RSI/score) - вынесено
+    отдельно от assemble_signal_post, чтобы переиспользовать в
+    build_bluesky_thread_signal (там этот блок идёт ОТДЕЛЬНЫМ постом
+    треда, а не частью одного текста) без дублирования кода/риска
+    разъехаться цифрами между Square-версией и Bluesky-версией."""
     direction_emoji = "🟢" if "лонг" in signal.direction.lower() else "🔴"
-
-    setup_lines = [
+    return [
         f"{direction_emoji} {signal.direction} | {signal.strategy}",
         f"Вход: {signal.entry_low} - {signal.entry_high}",
         f"Стоп: {signal.invalidation}",
         f"Тейк: {signal.target}",
         f"RSI: {signal.rsi_now} | Score: {signal.score}/100",
     ]
-    setup_block = "\n".join(setup_lines)
 
+
+def assemble_signal_post(hook: str, signal) -> str:
+    """Хук (от LLM) + блок сетапа (вход/стоп/тейк/RSI/score - собран
+    КОДОМ, не LLM, чтобы цифры были гарантированно точными) + дисклеймер.
+
+    signal - RsiSignal из signal_parser.
+    """
+    setup_block = "\n".join(signal_setup_lines(signal))
     return f"{hook.strip()}\n\n{setup_block}\n\n{DISCLAIMER}"
 
 
@@ -172,6 +178,57 @@ def build_bluesky_post(text: str, ticker: str | None = None) -> tuple[str, list]
         # просто пропустит facets, подстрока которых не нашлась целиком).
 
     return result, link_facets
+
+
+# --- Формат "Тред-разбор сильных сетапов" (Bluesky) ---
+# Не каждый сигнал заслуживает трёхпостового треда - это отдельный,
+# "событийный" формат для реально сильных сетапов (высокий score), а не
+# стандартная подача. Если делать тред из каждого сигнала - пропадает
+# сам эффект "события", ради которого он и нужен (см. main.py,
+# _crosspost_to_bluesky - там решается, какой из двух форматов взять).
+BLUESKY_THREAD_MIN_SCORE = 85
+
+
+def is_strong_setup(signal) -> bool:
+    """True, если score сигнала достаточно высок для формата
+    "Тред-разбор" (см. BLUESKY_THREAD_MIN_SCORE) - порог заметно выше
+    общего MIN_SIGNAL_SCORE_TO_PUBLISH (70), тред должен быть редким
+    исключением, а не обычным способом подачи."""
+    try:
+        return int(str(signal.score).strip()) >= BLUESKY_THREAD_MIN_SCORE
+    except (TypeError, ValueError):
+        return False
+
+
+def build_bluesky_thread_signal(hook: str, signal) -> list:
+    """Собирает 3 поста для Bluesky-треда сильного сетапа:
+    1) интрига - тот же хук, что ушёл на Square/Telegram (validator уже
+       гарантирует отсутствие в нём чисел - это первый пост треда,
+       цифры намеренно приберегаются для второго);
+    2) сетап - вход/стоп/тейк/RSI/score, те же гарантированно точные
+       цифры, что и в assemble_signal_post (см. signal_setup_lines) -
+       код-блок, не LLM, риска расхождения с Square-версией нет;
+    3) вывод - дисклеймер + ссылки на Binance/Telegram (с facets, чтобы
+       быть кликабельными - см. bluesky_publisher._byte_facets).
+
+    Возвращает список из 3 элементов для bluesky_publisher.publish_thread
+    (первые два - просто строки, третий - пара (текст, link_facets)).
+    Каждый пост короткий по построению (хук уже проверен на длину/лимит
+    Square, сетап - 5 коротких строк, вывод - дисклеймер+2 ссылки) -
+    отдельная обрезка под 300 символов не требуется ни одному из трёх."""
+    post1 = hook.strip()
+    post2 = "\n".join(signal_setup_lines(signal))
+
+    links = [REFERRAL_LINE]
+    link_facets = [(REFERRAL_LINK, REFERRAL_LINK)]
+    tg_line = telegram_channel_line()
+    if tg_line:
+        links.append(tg_line)
+        tg_url = tg_line.split(" ")[-1]
+        link_facets.append((tg_url, tg_url))
+    post3 = f"{DISCLAIMER}\n\n" + "\n\n".join(links)
+
+    return [post1, post2, (post3, link_facets)]
 
 
 # --- Режимы тона хука - для разнообразия постов ---

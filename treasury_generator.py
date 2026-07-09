@@ -198,10 +198,20 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, st
     return binance_text, telegram_text, result
 
 
+_MIN_HOOK_CHARS = 10
+
+
 def validate_treasury_hook(hook: str, allowed_numbers: set[float]) -> tuple[bool, str]:
     """Хук не должен содержать чисел, которых нет среди уже посчитанных
     (числового блока). Сам числовой блок в проверку не входит - он
-    собран кодом и по определению корректен."""
+    собран кодом и по определению корректен.
+
+    Также хук не должен быть пустым/почти пустым (см. index_signal_generator
+    - тот же баг: пустой хук формально не содержит "чужих" чисел и молча
+    проходил бы проверку, оставляя пост без единой мысли автора)."""
+    if len(hook.strip()) < _MIN_HOOK_CHARS:
+        return False, f"Хук пустой или слишком короткий: {hook!r}"
+
     numbers = _extract_numbers(hook)
     unknown = [n for n in numbers if not any(abs(n - a) < 0.05 for a in allowed_numbers)]
     if unknown:
