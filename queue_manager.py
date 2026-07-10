@@ -191,6 +191,15 @@ def set_last_hot_take_theme(theme: str) -> None:
     _set("last_hot_take_theme", theme)
 
 
+def get_last_mini_lesson_topic() -> Optional[str]:
+    """Ротация темы мини-урока - своя, отдельная от opinion/hot_take."""
+    return _get("last_mini_lesson_topic", None)
+
+
+def set_last_mini_lesson_topic(topic: str) -> None:
+    _set("last_mini_lesson_topic", topic)
+
+
 # --- Последний использованный режим тона хука - для ротации ---
 
 def get_last_hook_mode() -> Optional[str]:

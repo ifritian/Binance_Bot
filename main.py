@@ -35,6 +35,7 @@ import hot_take_generator
 import index_signal_generator
 import index_signal_scanner
 import loss_review_generator
+import mini_lesson_generator
 import opinion_generator
 import outcome_tracker
 import post_format
@@ -517,6 +518,67 @@ def try_publish_hot_take() -> None:
 
 
 # ============================================================
+# Формат "Мини-урок" - ТОЛЬКО Bluesky (см. mini_lesson_generator.py)
+# ============================================================
+
+def try_publish_mini_lesson() -> None:
+    """Как и try_publish_hot_take - публикует ТОЛЬКО в Bluesky, минуя
+    Square/Telegram. Без реальных рыночных чисел (это концептуальный
+    образовательный пост, не про конкретный актив сейчас), поэтому нет
+    проверки allowed_numbers - только validate_mini_lesson (дисклеймер/
+    длина/отсутствие заявлений о конкретной цене)."""
+    if not bluesky_publisher.is_configured():
+        return
+
+    seconds_elapsed = queue_manager.seconds_since_last_post("mini_lesson")
+    min_seconds = config.MINI_LESSON_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("mini_lesson")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("mini_lesson"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+
+    logger.info("Окно публикации (мини-урок, Bluesky) открыто - генерирую пост")
+
+    topic = mini_lesson_generator.pick_topic(queue_manager.get_last_mini_lesson_topic())
+
+    try:
+        post_text = mini_lesson_generator.generate_mini_lesson(topic)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на мини-уроке - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("mini_lesson", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации мини-урока: %s", e)
+        queue_manager.set_retry_backoff("mini_lesson", 1)
+        return
+
+    if post_text is None:
+        logger.warning("Не удалось сгенерировать мини-урок по теме %s - пропускаю до следующего окна", topic)
+        queue_manager.set_retry_backoff("mini_lesson", 1)
+        return
+
+    ok, reason = mini_lesson_generator.validate_mini_lesson(post_text)
+    if not ok:
+        logger.error("Мини-урок не прошёл проверку, публикация отменена: %s", reason)
+        queue_manager.set_retry_backoff("mini_lesson", 1)
+        return
+
+    try:
+        bluesky_publisher.publish_post(post_text)
+    except bluesky_publisher.BlueskyPublishError as e:
+        logger.warning("Публикация мини-урока в Bluesky не удалась: %s", e)
+        queue_manager.set_retry_backoff("mini_lesson", 1)
+        return
+
+    logger.info("Опубликован мини-урок (тема %s) в Bluesky", topic)
+    queue_manager.set_last_mini_lesson_topic(topic)
+    queue_manager.set_last_post_time("mini_lesson")
+    queue_manager.roll_new_jitter("mini_lesson", config.MINI_LESSON_JITTER_HOURS * 3600)
+
+
+# ============================================================
 # Формат 2.5: "treasury" - Treasury Index (собственный инфраструктурный индекс)
 # ============================================================
 
@@ -876,6 +938,7 @@ def tick() -> None:
         try_publish_currency_post()
         try_publish_opinion_post()
         try_publish_hot_take()
+        try_publish_mini_lesson()
         try_publish_treasury_post()
         try_publish_article_post()
         try_publish_accuracy_report()

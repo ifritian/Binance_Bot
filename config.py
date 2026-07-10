@@ -78,6 +78,9 @@ OPINION_INTERVAL_HOURS = float(os.environ.get("OPINION_INTERVAL_HOURS", "48"))
 # интервал сознательно смещён от OPINION_INTERVAL_HOURS (48ч), чтобы эти
 # два формата не выходили в одно и то же окно каждый раз.
 HOT_TAKE_INTERVAL_HOURS = float(os.environ.get("HOT_TAKE_INTERVAL_HOURS", "60"))
+# Формат "Мини-урок" - тоже ТОЛЬКО Bluesky, своё расписание, смещённое
+# от HOT_TAKE_INTERVAL_HOURS (60ч) и OPINION_INTERVAL_HOURS (48ч).
+MINI_LESSON_INTERVAL_HOURS = float(os.environ.get("MINI_LESSON_INTERVAL_HOURS", "84"))
 ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))
 
@@ -144,6 +147,7 @@ LOSS_REVIEW_MIN_LOSSES = int(os.environ.get("LOSS_REVIEW_MIN_LOSSES", "1"))
 CURRENCY_JITTER_MINUTES = float(os.environ.get("CURRENCY_JITTER_MINUTES", "20"))
 OPINION_JITTER_HOURS = float(os.environ.get("OPINION_JITTER_HOURS", "4"))
 HOT_TAKE_JITTER_HOURS = float(os.environ.get("HOT_TAKE_JITTER_HOURS", "6"))
+MINI_LESSON_JITTER_HOURS = float(os.environ.get("MINI_LESSON_JITTER_HOURS", "8"))
 ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
 
 DB_PATH = BASE_DIR / "bot_state.db"

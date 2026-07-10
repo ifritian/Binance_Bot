@@ -158,6 +158,39 @@ def test_try_publish_hot_take_publishes_only_to_bluesky(monkeypatch):
     assert telegram_calls == []
 
 
+def test_try_publish_mini_lesson_skips_when_bluesky_not_configured(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "")
+    calls = []
+    monkeypatch.setattr(main.mini_lesson_generator, "generate_mini_lesson", lambda topic: calls.append(topic))
+
+    main.try_publish_mini_lesson()
+
+    assert calls == []
+
+
+def test_try_publish_mini_lesson_publishes_only_to_bluesky(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.queue_manager, "get_last_mini_lesson_topic", lambda: None)
+    monkeypatch.setattr(main.mini_lesson_generator, "pick_topic", lambda last: "rsi")
+    monkeypatch.setattr(main.mini_lesson_generator, "generate_mini_lesson", lambda topic: "текст мини-урока")
+    monkeypatch.setattr(main.mini_lesson_generator, "validate_mini_lesson", lambda text: (True, ""))
+
+    binance_calls = []
+    bluesky_calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda *a, **k: binance_calls.append(1))
+    monkeypatch.setattr(main.bluesky_publisher, "publish_post", lambda *a, **k: bluesky_calls.append(1))
+
+    main.try_publish_mini_lesson()
+
+    assert bluesky_calls == [1]
+    assert binance_calls == []
+
+
 if __name__ == "__main__":
     import sys
 
