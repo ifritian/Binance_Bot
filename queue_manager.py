@@ -180,6 +180,17 @@ def set_last_opinion_theme(theme: str) -> None:
     _set("last_opinion_theme", theme)
 
 
+def get_last_hot_take_theme() -> Optional[str]:
+    """Отдельно от get_last_opinion_theme - хот-тейк публикуется в своё
+    расписание (см. config.HOT_TAKE_INTERVAL_HOURS), тема ротируется
+    независимо, чтобы не быть всегда синхронной с постом-мнением."""
+    return _get("last_hot_take_theme", None)
+
+
+def set_last_hot_take_theme(theme: str) -> None:
+    _set("last_hot_take_theme", theme)
+
+
 # --- Последний использованный режим тона хука - для ротации ---
 
 def get_last_hook_mode() -> Optional[str]:

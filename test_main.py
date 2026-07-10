@@ -107,6 +107,57 @@ def test_one_bad_record_does_not_block_the_rest(monkeypatch):
     assert "ok-reply" in calls
 
 
+def test_try_publish_hot_take_skips_when_bluesky_not_configured(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "")
+    calls = []
+    monkeypatch.setattr(main.hot_take_generator, "generate_hot_take", lambda theme: calls.append(theme))
+
+    main.try_publish_hot_take()
+
+    # Не должны даже пытаться сгенерировать текст - незачем тратить LLM-вызов,
+    # если публиковать всё равно некуда.
+    assert calls == []
+
+
+def test_try_publish_hot_take_respects_interval(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    calls = []
+    monkeypatch.setattr(main.hot_take_generator, "generate_hot_take", lambda theme: calls.append(theme))
+
+    main.try_publish_hot_take()
+
+    assert calls == []
+
+
+def test_try_publish_hot_take_publishes_only_to_bluesky(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.queue_manager, "get_last_hot_take_theme", lambda: None)
+    monkeypatch.setattr(main.hot_take_generator, "pick_theme", lambda last: "BTC")
+    monkeypatch.setattr(main.hot_take_generator, "generate_hot_take", lambda theme: ("текст хот-тейка", {5.5}))
+    monkeypatch.setattr(main.hot_take_generator, "validate_hot_take", lambda text, nums: (True, ""))
+
+    binance_calls = []
+    telegram_calls = []
+    bluesky_calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda *a, **k: binance_calls.append(1))
+    monkeypatch.setattr(main.telegram_publisher, "publish_post", lambda *a, **k: telegram_calls.append(1))
+    monkeypatch.setattr(main.bluesky_publisher, "publish_post", lambda *a, **k: bluesky_calls.append(1))
+
+    main.try_publish_hot_take()
+
+    assert bluesky_calls == [1]
+    assert binance_calls == []
+    assert telegram_calls == []
+
+
 if __name__ == "__main__":
     import sys
 

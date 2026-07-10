@@ -31,6 +31,7 @@ import chart_generator
 import config
 import image_analyzer
 import groq_client
+import hot_take_generator
 import index_signal_generator
 import index_signal_scanner
 import loss_review_generator
@@ -454,6 +455,68 @@ def try_publish_opinion_post() -> None:
 
 
 # ============================================================
+# Формат "Хот-тейк" - ТОЛЬКО Bluesky (см. hot_take_generator.py)
+# ============================================================
+
+def try_publish_hot_take() -> None:
+    """В отличие от остальных try_publish_* - публикует ТОЛЬКО в
+    Bluesky, минуя Binance Square/Telegram целиком (это формат,
+    заточенный под механику конкретно этой площадки - см. docstring
+    hot_take_generator.py). Если Bluesky не настроен - даже не пытаемся
+    генерировать текст, незачем тратить вызов LLM впустую."""
+    if not bluesky_publisher.is_configured():
+        return
+
+    seconds_elapsed = queue_manager.seconds_since_last_post("hot_take")
+    min_seconds = config.HOT_TAKE_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("hot_take")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("hot_take"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+
+    logger.info("Окно публикации (хот-тейк, Bluesky) открыто - генерирую пост")
+
+    theme = hot_take_generator.pick_theme(queue_manager.get_last_hot_take_theme())
+
+    try:
+        result = hot_take_generator.generate_hot_take(theme)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на хот-тейке - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("hot_take", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации хот-тейка: %s", e)
+        queue_manager.set_retry_backoff("hot_take", 1)
+        return
+
+    if result is None:
+        logger.warning("Не удалось получить данные для темы %s - пропускаю до следующего окна хот-тейка", theme)
+        queue_manager.set_retry_backoff("hot_take", 1)
+        return
+
+    post_text, allowed_numbers = result
+    ok, reason = hot_take_generator.validate_hot_take(post_text, allowed_numbers)
+    if not ok:
+        logger.error("Хот-тейк не прошёл проверку, публикация отменена: %s", reason)
+        queue_manager.set_retry_backoff("hot_take", 1)
+        return
+
+    try:
+        bluesky_publisher.publish_post(post_text)
+    except bluesky_publisher.BlueskyPublishError as e:
+        logger.warning("Публикация хот-тейка в Bluesky не удалась: %s", e)
+        queue_manager.set_retry_backoff("hot_take", 1)
+        return
+
+    logger.info("Опубликован хот-тейк (тема %s) в Bluesky", theme)
+    queue_manager.set_last_hot_take_theme(theme)
+    queue_manager.set_last_post_time("hot_take")
+    queue_manager.roll_new_jitter("hot_take", config.HOT_TAKE_JITTER_HOURS * 3600)
+
+
+# ============================================================
 # Формат 2.5: "treasury" - Treasury Index (собственный инфраструктурный индекс)
 # ============================================================
 
@@ -812,6 +875,7 @@ def tick() -> None:
 
         try_publish_currency_post()
         try_publish_opinion_post()
+        try_publish_hot_take()
         try_publish_treasury_post()
         try_publish_article_post()
         try_publish_accuracy_report()

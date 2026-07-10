@@ -16,6 +16,8 @@ import logging
 import random
 from typing import Optional
 
+import requests
+
 from chart_generator import fetch_klines
 from groq_client import call_groq
 from post_format import DISCLAIMER, assemble_post
@@ -60,10 +62,15 @@ def pick_theme(last_theme: Optional[str]) -> str:
     return random.choice(themes)
 
 
-def _calc_ticker_stats(ticker: str) -> Optional[dict]:
+def calc_ticker_stats(ticker: str) -> Optional[dict]:
     """Реальные числа по тикеру за последние 2 дня: % изменения,
     амплитуда (high-low в % от открытия) и текущая цена. Всё считаем
-    сами по тем же данным CoinGecko, без участия LLM."""
+    сами по тем же данным CoinGecko, без участия LLM.
+
+    Публичная функция (без ведущего "_") - переиспользуется
+    hot_take_generator.py для формата "Хот-тейк" (та же логика "дай LLM
+    готовое реальное число, а не пусть придумывает").
+    """
     try:
         klines = fetch_klines(ticker, days=2)
     except requests.RequestException as e:
@@ -87,22 +94,24 @@ def _calc_ticker_stats(ticker: str) -> Optional[dict]:
     return {"pct": pct, "amplitude_pct": amplitude_pct, "current_price": close_price}
 
 
-def _calc_theme_stats(theme: str) -> Optional[dict]:
+def calc_theme_stats(theme: str) -> Optional[dict]:
     """Для одного тикера (BTC/ETH) - полный набор (pct/амплитуда/цена).
     Для 'market' - % по каждому активу корзины + средний % по корзине
     (амплитуду и цену для разнородной корзины не считаем - бессмысленно
-    усреднять цену BTC и SOL)."""
+    усреднять цену BTC и SOL).
+
+    Публичная функция - переиспользуется hot_take_generator.py."""
     tickers = THEMES[theme]["tickers"]
 
     if len(tickers) == 1:
-        stats = _calc_ticker_stats(tickers[0])
+        stats = calc_ticker_stats(tickers[0])
         if stats is None:
             return None
         return {"single": stats}
 
     breakdown = {}
     for t in tickers:
-        stats = _calc_ticker_stats(t)
+        stats = calc_ticker_stats(t)
         if stats is not None:
             breakdown[t] = stats["pct"]
 
@@ -116,7 +125,7 @@ def _calc_theme_stats(theme: str) -> Optional[dict]:
 def generate_opinion_post(theme: str) -> Optional[tuple[str, set[float]]]:
     """Возвращает (готовый текст поста, набор разрешённых чисел для
     проверки), либо None, если не удалось получить данные."""
-    stats = _calc_theme_stats(theme)
+    stats = calc_theme_stats(theme)
     if stats is None:
         return None
 
