@@ -169,7 +169,53 @@ def test_publish_post_raises_on_login_error(monkeypatch):
         pass
 
 
-def test_is_strong_setup_true_above_threshold():
+def _make_closed_record(**overrides) -> dict:
+    base = dict(
+        ticker="BEAT", direction="short", strategy="RSI + Bollinger Touch",
+        entry=2.21, stop=2.2371, target=2.1729, result="win",
+        exit_price=2.1729, pnl_pct=1.72, mfe_pct=1.9,
+        bluesky_ref={"uri": "at://did:plc:abc/app.bsky.feed.post/1", "cid": "bafy1"},
+    )
+    base.update(overrides)
+    return base
+
+
+def test_build_bluesky_outcome_reply_win(monkeypatch):
+    record = _make_closed_record(result="win", pnl_pct=1.72)
+    text, facets = post_format.build_bluesky_outcome_reply(record)
+    assert "Цель достигнута" in text
+    assert "$BEAT" in text
+    assert "+1.72%" in text
+    assert facets == []
+
+
+def test_build_bluesky_outcome_reply_loss():
+    record = _make_closed_record(result="loss", pnl_pct=-1.15, exit_price=2.2371)
+    text, _ = post_format.build_bluesky_outcome_reply(record)
+    assert "Сработал стоп" in text
+    assert "-1.15%" in text
+
+
+def test_build_bluesky_outcome_reply_timeout():
+    record = _make_closed_record(result="timeout", pnl_pct=0.2)
+    text, _ = post_format.build_bluesky_outcome_reply(record)
+    assert "Тайм-аут" in text
+
+
+def test_build_bluesky_win_reveal_has_links_and_positive_pnl(monkeypatch):
+    monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "@my_channel")
+    record = _make_closed_record(result="win", pnl_pct=1.72)
+
+    text, facets = post_format.build_bluesky_win_reveal(record)
+
+    assert "$BEAT" in text
+    assert "+1.72%" in text
+    assert post_format.REFERRAL_LINK in text
+    assert "https://t.me/my_channel" in text
+    assert len(facets) == 2
+
+
+
     signal = _make_signal(score="89")
     assert post_format.is_strong_setup(signal) is True
 

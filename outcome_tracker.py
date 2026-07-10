@@ -57,9 +57,17 @@ def _to_float(value, default: float = 0.0) -> float:
         return default
 
 
-def record_signal_outcome(signal) -> None:
+def record_signal_outcome(signal, bluesky_ref: dict | None = None) -> None:
     """Ставит только что опубликованный сигнал на трекинг результата.
-    Вызывать ПОСЛЕ успешной публикации, не раньше."""
+    Вызывать ПОСЛЕ успешной публикации, не раньше.
+
+    bluesky_ref - {uri, cid} корневого поста в Bluesky (обычного или
+    первого поста треда "сильного сетапа", см. main._crosspost_to_bluesky),
+    если кросспост туда состоялся. Нужен, чтобы при закрытии сделки
+    (check_open_outcomes) можно было ответить В ТОТ ЖЕ ТРЕД с итогом -
+    формат "До/После" (см. post_format.build_bluesky_outcome_reply). Если
+    Bluesky не настроен или кросспост не удался - None, и при резолюции
+    просто не будет реплая (публикация на Square этим не затрагивается)."""
     entry_low = _to_float(signal.entry_low)
     entry_high = _to_float(signal.entry_high)
     if entry_low and entry_high:
@@ -88,6 +96,7 @@ def record_signal_outcome(signal) -> None:
         "stop": stop,
         "target": target,
         "published_at": time.time(),
+        "bluesky_ref": bluesky_ref,
     }
     queue_manager.add_open_outcome(record)
     logger.info(
@@ -162,10 +171,14 @@ def _resolve_outcome(record: dict, candles: list[dict]) -> tuple[str, float, flo
 
 def check_open_outcomes() -> dict:
     """Проверяет все открытые трекинги на новые результаты.
-    Возвращает {"closed": N, "still_open": M} - для логов/диагностики."""
+    Возвращает {"closed": N, "still_open": M, "closed_records": [...]} -
+    closed_records нужен main.tick() для формата "Win-reveal"/"До-После"
+    в Bluesky (см. main._post_outcome_updates_to_bluesky) - без него
+    пришлось бы повторно вычитывать closed_outcomes и гадать, какие из
+    них новые именно в этом тике."""
     open_items = queue_manager.get_open_outcomes()
     if not open_items:
-        return {"closed": 0, "still_open": 0}
+        return {"closed": 0, "still_open": 0, "closed_records": []}
 
     still_open: list[dict] = []
     newly_closed: list[dict] = []
@@ -212,7 +225,7 @@ def check_open_outcomes() -> dict:
     if newly_closed:
         queue_manager.append_closed_outcomes(newly_closed)
 
-    return {"closed": len(newly_closed), "still_open": len(still_open)}
+    return {"closed": len(newly_closed), "still_open": len(still_open), "closed_records": newly_closed}
 
 
 def get_accuracy_stats(days: float | None = None) -> dict:

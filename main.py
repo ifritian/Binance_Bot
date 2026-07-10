@@ -133,13 +133,13 @@ def _publish_signal(signal) -> bool:
         )
         return False
 
-    published = _do_publish(post_text, [chart_path], signal.ticker, hook=hook, signal=signal)
+    published, bluesky_ref = _do_publish(post_text, [chart_path], signal.ticker, hook=hook, signal=signal)
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
         # Ставим сигнал на трекинг результата ПОСЛЕ публикации - если
         # пост не вышел, аудитория его не видела, трекать нечего.
         try:
-            outcome_tracker.record_signal_outcome(signal)
+            outcome_tracker.record_signal_outcome(signal, bluesky_ref=bluesky_ref)
         except Exception:
             logger.exception("Не удалось поставить сигнал %s на трекинг результата", signal.ticker)
     return published
@@ -187,24 +187,32 @@ def _publish_image_insight(insight) -> bool:
         )
         return False
 
-    published = _do_publish(post_text, [image_path], insight.ticker)
+    published, _bluesky_ref = _do_publish(post_text, [image_path], insight.ticker)
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
     return published
 
 
-def _do_publish(post_text: str, image_paths, ticker: str | None = None, hook: str | None = None, signal=None) -> bool:
+def _do_publish(
+    post_text: str, image_paths, ticker: str | None = None, hook: str | None = None, signal=None
+) -> tuple:
+    """Возвращает (published: bool, bluesky_ref: dict | None) -
+    bluesky_ref - {uri, cid} корневого поста в Bluesky (обычного или
+    первого поста треда "сильного сетапа"), если кросспост туда
+    состоялся - нужен вызывающему коду (main._publish_signal) для
+    outcome_tracker.record_signal_outcome (формат "До/После" отвечает
+    именно в этот пост, см. main._post_outcome_updates_to_bluesky)."""
     try:
         result = binance_publisher.publish_post(post_text, image_paths=image_paths)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации: %s", e)
-        return False
+        return False, None
 
     logger.info("Опубликовано (валюта): %s", result)
     image_path = image_paths[0] if image_paths else None
     _crosspost_to_telegram(post_text, image_path)
-    _crosspost_to_bluesky(post_text, image_path, ticker=ticker, hook=hook, signal=signal)
-    return True
+    bluesky_ref = _crosspost_to_bluesky(post_text, image_path, ticker=ticker, hook=hook, signal=signal)
+    return True, bluesky_ref
 
 
 def _crosspost_to_telegram(text: str, image_path=None) -> None:
@@ -230,7 +238,7 @@ def _crosspost_to_bluesky(
     ticker: str | None = None,
     hook: str | None = None,
     signal=None,
-) -> None:
+) -> dict | None:
     """Дублирует уже опубликованный (на Binance Square) пост в Bluesky
     (config.BLUESKY_HANDLE / config.BLUESKY_APP_PASSWORD).
 
@@ -248,9 +256,14 @@ def _crosspost_to_bluesky(
     формат "Тред-разбор" (3 поста цепочкой: интрига -> сетап -> вывод+
     ссылки, см. post_format.build_bluesky_thread_signal), а не обычный
     урезанный кросспост. Это редкий, "событийный" формат - для остальных
-    сигналов работает обычная логика через build_bluesky_post."""
+    сигналов работает обычная логика через build_bluesky_post.
+
+    Возвращает {uri, cid} КОРНЕВОГО поста (обычного или первого поста
+    треда), если публикация удалась, иначе None - используется для
+    привязки будущего ответа "До/После" (см. outcome_tracker.
+    record_signal_outcome / main._post_outcome_updates_to_bluesky)."""
     if not bluesky_publisher.is_configured():
-        return
+        return None
 
     image_bytes = None
     content_type = "image/png"
@@ -262,30 +275,79 @@ def _crosspost_to_bluesky(
     if signal is not None and hook is not None and post_format.is_strong_setup(signal):
         try:
             posts = post_format.build_bluesky_thread_signal(hook, signal)
-            bluesky_publisher.publish_thread(posts, image_bytes=image_bytes, image_content_type=content_type)
+            results = bluesky_publisher.publish_thread(posts, image_bytes=image_bytes, image_content_type=content_type)
             logger.info(
                 "Опубликован Bluesky-тред \"сильный сетап\" для %s (score=%s)",
                 signal.ticker, signal.score,
             )
+            return bluesky_publisher.thread_ref(results[0]) if results else None
         except bluesky_publisher.BlueskyPublishError as e:
             logger.warning("Тред в Bluesky для %s не удался: %s", signal.ticker, e)
+            return None
         # Намеренно НЕ падаем дальше в обычный одиночный кросспост при
         # неудаче треда - если часть треда всё же опубликовалась (напр.
         # 1-2 поста, а на третьем упало), добавление ещё и отдельного
         # полного поста той же темой выглядело бы задвоенным контентом
         # в ленте. Лучше пропустить кросспост в этот раз, чем задвоить.
-        return
 
     try:
         bluesky_text, link_facets = post_format.build_bluesky_post(text, ticker=ticker)
-        bluesky_publisher.publish_post(
+        result = bluesky_publisher.publish_post(
             bluesky_text,
             image_bytes=image_bytes,
             image_content_type=content_type,
             link_facets=link_facets,
         )
+        return bluesky_publisher.thread_ref(result)
     except bluesky_publisher.BlueskyPublishError as e:
         logger.warning("Кросспост в Bluesky не удался: %s", e)
+        return None
+
+
+def _post_outcome_updates_to_bluesky(closed_records: list) -> None:
+    """Форматы "До/После" и "Win-reveal" - вызывается из tick() сразу
+    после outcome_tracker.check_open_outcomes() для каждой ТОЛЬКО ЧТО
+    закрытой сделки.
+
+    Для каждой записи:
+    1. Если у сигнала был bluesky_ref (кросспост при входе удался) -
+       отвечаем В ТОТ ЖЕ ТРЕД сухим итогом (build_bluesky_outcome_reply) -
+       это формат "До/После", закрывающий открытую петлю для тех, кто
+       видел входной пост. Публикуется на ЛЮБОЙ исход (win/loss/timeout).
+    2. Если результат - "win", ДОПОЛНИТЕЛЬНО публикуется отдельный
+       самостоятельный "победный" пост (build_bluesky_win_reveal) - формат
+       "Win-reveal", рассчитанный на ленту в целом, а не только на тех,
+       кто видел исходный вход (у него есть свои ссылки на Binance/TG).
+
+    Как и остальные кросспосты - полностью опционально (тихо пропускаем,
+    если Bluesky не настроен) и не должно ронять tick() при сетевой
+    ошибке на отдельной записи - одна неудачная запись не должна
+    блокировать остальные."""
+    if not bluesky_publisher.is_configured() or not closed_records:
+        return
+
+    for record in closed_records:
+        bluesky_ref = record.get("bluesky_ref")
+        if bluesky_ref:
+            try:
+                reply_text, reply_facets = post_format.build_bluesky_outcome_reply(record)
+                root_result = {"uri": bluesky_ref["uri"], "cid": bluesky_ref["cid"]}
+                bluesky_publisher.publish_post(
+                    reply_text,
+                    link_facets=reply_facets,
+                    reply_to=bluesky_publisher.reply_refs(root_result),
+                )
+            except bluesky_publisher.BlueskyPublishError as e:
+                logger.warning("Ответ 'До/После' в Bluesky для %s не удался: %s", record["ticker"], e)
+            except (KeyError, TypeError) as e:
+                logger.warning("Некорректный bluesky_ref у %s, пропускаю 'До/После': %s", record["ticker"], e)
+
+        if record.get("result") == "win":
+            try:
+                win_text, win_facets = post_format.build_bluesky_win_reveal(record)
+                bluesky_publisher.publish_post(win_text, link_facets=win_facets)
+            except bluesky_publisher.BlueskyPublishError as e:
+                logger.warning("Win-reveal в Bluesky для %s не удался: %s", record["ticker"], e)
 
 
 
@@ -699,6 +761,7 @@ def tick() -> None:
                     "Трекинг результатов: закрыто %d, ещё открыто %d",
                     outcome_summary["closed"], outcome_summary["still_open"],
                 )
+                _post_outcome_updates_to_bluesky(outcome_summary["closed_records"])
         except Exception:
             logger.exception("Ошибка проверки открытых результатов - пропускаю до следующего тика")
 

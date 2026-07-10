@@ -79,6 +79,38 @@ def test_accuracy_stats_empty(monkeypatch):
     assert stats["overall"] == {"count": 0, "win_rate": None, "avg_pnl_pct": None}
 
 
+def test_record_signal_outcome_stores_bluesky_ref(monkeypatch):
+    saved = []
+    monkeypatch.setattr(outcome_tracker.queue_manager, "add_open_outcome", lambda record: saved.append(record))
+
+    class _FakeSignal:
+        ticker = "BEAT"
+        entry_low, entry_high = "2.205", "2.2178"
+        invalidation, target = "2.2371", "2.1729"
+        direction, strategy, quality, score = "Шорт", "RSI + Bollinger Touch", "Conservative", "89"
+
+    ref = {"uri": "at://did:plc:abc/app.bsky.feed.post/1", "cid": "bafy1"}
+    outcome_tracker.record_signal_outcome(_FakeSignal(), bluesky_ref=ref)
+
+    assert len(saved) == 1
+    assert saved[0]["bluesky_ref"] == ref
+
+
+def test_record_signal_outcome_without_bluesky_ref_defaults_to_none(monkeypatch):
+    saved = []
+    monkeypatch.setattr(outcome_tracker.queue_manager, "add_open_outcome", lambda record: saved.append(record))
+
+    class _FakeSignal:
+        ticker = "BEAT"
+        entry_low, entry_high = "2.205", "2.2178"
+        invalidation, target = "2.2371", "2.1729"
+        direction, strategy, quality, score = "Шорт", "RSI + Bollinger Touch", "Conservative", "89"
+
+    outcome_tracker.record_signal_outcome(_FakeSignal())
+
+    assert saved[0]["bluesky_ref"] is None
+
+
 if __name__ == "__main__":
     import sys
     import types

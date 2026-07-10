@@ -231,6 +231,66 @@ def build_bluesky_thread_signal(hook: str, signal) -> list:
     return [post1, post2, (post3, link_facets)]
 
 
+# --- Форматы "Win-reveal" и "До/После" (Bluesky) ---
+# Оба строятся из ОДНОГО И ТОГО ЖЕ closed-record (см. outcome_tracker.
+# check_open_outcomes -> "closed_records"), но это РАЗНЫЕ посты с разной
+# ролью:
+# - build_bluesky_outcome_reply - фактический итог РЕПЛАЕМ в тот же тред,
+#   где был вход (см. record["bluesky_ref"]) - публикуется на ЛЮБОЙ исход
+#   (win/loss/timeout), это "закрытие" открытой петли, начатой входным
+#   постом (см. main._post_outcome_updates_to_bluesky).
+# - build_bluesky_win_reveal - отдельный, самостоятельный "победный" пост
+#   (не реплай) - публикуется ТОЛЬКО на result == "win", специально для
+#   ленты (не все, кто увидит его, видели исходный пост про вход).
+
+_RESULT_LABELS = {
+    "win": "🎯 Цель достигнута",
+    "loss": "🛑 Сработал стоп",
+    "timeout": "⌛ Тайм-аут (не дошло ни до тейка, ни до стопа)",
+}
+
+
+def build_bluesky_outcome_reply(record: dict) -> tuple[str, list]:
+    """Короткий фактический итог сделки для реплая в исходный тред.
+    Не претендует на анализ причин - только сухие цифры (result уже
+    вычислен outcome_tracker.check_open_outcomes по реальным свечам)."""
+    label = _RESULT_LABELS.get(record["result"], record["result"])
+    pnl = record["pnl_pct"]
+    pnl_str = f"{pnl:+.2f}%"
+
+    lines = [
+        f"{label}",
+        f"${record['ticker']}: вход {record['entry']:g} → выход {record['exit_price']:g} ({pnl_str})",
+    ]
+    text = "\n".join(lines)
+    return text, []
+
+
+def build_bluesky_win_reveal(record: dict) -> tuple[str, list]:
+    """Отдельный "победный" пост - публикуется только для result == "win".
+    В отличие от build_bluesky_outcome_reply (сухой итог реплаем в тред),
+    этот пост самостоятельный и рассчитан на ленту - со ссылками, чтобы
+    случайный зритель, который НЕ видел исходный вход, тоже мог дойти до
+    Telegram/Binance."""
+    pnl_str = f"+{record['pnl_pct']:.2f}%"
+    direction_ru = "шорт" if record["direction"] == "short" else "лонг"
+
+    links = [REFERRAL_LINE]
+    link_facets = [(REFERRAL_LINK, REFERRAL_LINK)]
+    tg_line = telegram_channel_line()
+    if tg_line:
+        links.append(tg_line)
+        tg_url = tg_line.split(" ")[-1]
+        link_facets.append((tg_url, tg_url))
+    links_block = "\n\n".join(links)
+
+    text = (
+        f"✅ ${record['ticker']} ({direction_ru}, {record['strategy']}) - цель достигнута, {pnl_str}\n\n"
+        f"Разборы сетапов и вход/стоп/тейк по каждому - здесь:\n\n{links_block}"
+    )
+    return text, link_facets
+
+
 # --- Режимы тона хука - для разнообразия постов ---
 # Каждый режим - короткая инструкция, которую добавляем к системному
 # промпту LLM. Сама ротация (какой режим выбрать сейчас) реализована
