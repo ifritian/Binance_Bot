@@ -200,6 +200,15 @@ def set_last_mini_lesson_topic(topic: str) -> None:
     _set("last_mini_lesson_topic", topic)
 
 
+def get_last_audience_question() -> Optional[str]:
+    """Ротация вопроса аудитории - своя, отдельная от остальных форматов."""
+    return _get("last_audience_question", None)
+
+
+def set_last_audience_question(question: str) -> None:
+    _set("last_audience_question", question)
+
+
 # --- Последний использованный режим тона хука - для ротации ---
 
 def get_last_hook_mode() -> Optional[str]:

@@ -191,6 +191,37 @@ def test_try_publish_mini_lesson_publishes_only_to_bluesky(monkeypatch):
     assert binance_calls == []
 
 
+def test_try_publish_audience_question_skips_when_bluesky_not_configured(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "")
+    calls = []
+    monkeypatch.setattr(main.bluesky_publisher, "publish_post", lambda *a, **k: calls.append(1))
+
+    main.try_publish_audience_question()
+
+    assert calls == []
+
+
+def test_try_publish_audience_question_publishes_picked_question(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.queue_manager, "get_last_audience_question", lambda: None)
+    monkeypatch.setattr(main.audience_question_generator, "pick_question", lambda last: "Тестовый вопрос?")
+
+    calls = []
+    saved_question = []
+    monkeypatch.setattr(main.bluesky_publisher, "publish_post", lambda text, **k: calls.append(text))
+    monkeypatch.setattr(main.queue_manager, "set_last_audience_question", lambda q: saved_question.append(q))
+
+    main.try_publish_audience_question()
+
+    assert calls == ["Тестовый вопрос?"]
+    assert saved_question == ["Тестовый вопрос?"]
+
+
 if __name__ == "__main__":
     import sys
 

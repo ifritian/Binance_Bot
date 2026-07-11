@@ -25,6 +25,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 import article_generator
 import accuracy_report_generator
 import alerting
+import audience_question_generator
 import binance_publisher
 import bluesky_publisher
 import chart_generator
@@ -579,6 +580,44 @@ def try_publish_mini_lesson() -> None:
 
 
 # ============================================================
+# Формат "Вопрос аудитории" - ТОЛЬКО Bluesky
+# (см. audience_question_generator.py)
+# ============================================================
+
+def try_publish_audience_question() -> None:
+    """Как и остальные Bluesky-эксклюзивные форматы - публикует ТОЛЬКО
+    в Bluesky. Без обращения к LLM (см. docstring
+    audience_question_generator.py) - вопрос это статический,
+    заранее написанный текст, генерировать и валидировать нечего."""
+    if not bluesky_publisher.is_configured():
+        return
+
+    seconds_elapsed = queue_manager.seconds_since_last_post("audience_question")
+    min_seconds = (
+        config.AUDIENCE_QUESTION_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("audience_question")
+    )
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("audience_question"):
+        return
+
+    question = audience_question_generator.pick_question(queue_manager.get_last_audience_question())
+
+    try:
+        bluesky_publisher.publish_post(question)
+    except bluesky_publisher.BlueskyPublishError as e:
+        logger.warning("Публикация вопроса аудитории в Bluesky не удалась: %s", e)
+        queue_manager.set_retry_backoff("audience_question", 1)
+        return
+
+    logger.info("Опубликован вопрос аудитории в Bluesky: %s", question)
+    queue_manager.set_last_audience_question(question)
+    queue_manager.set_last_post_time("audience_question")
+    queue_manager.roll_new_jitter("audience_question", config.AUDIENCE_QUESTION_JITTER_HOURS * 3600)
+
+
+# ============================================================
 # Формат 2.5: "treasury" - Treasury Index (собственный инфраструктурный индекс)
 # ============================================================
 
@@ -939,6 +978,7 @@ def tick() -> None:
         try_publish_opinion_post()
         try_publish_hot_take()
         try_publish_mini_lesson()
+        try_publish_audience_question()
         try_publish_treasury_post()
         try_publish_article_post()
         try_publish_accuracy_report()
