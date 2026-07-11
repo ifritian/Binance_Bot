@@ -175,6 +175,12 @@ EMERGENCY_COOLDOWN_HOURS = float(os.environ.get("EMERGENCY_COOLDOWN_HOURS", "6")
 # спам и не раз в месяц (когда прогресс забывается).
 TELEGRAM_GLOSSARY_INTERVAL_HOURS = float(os.environ.get("TELEGRAM_GLOSSARY_INTERVAL_HOURS", "96"))
 TELEGRAM_GLOSSARY_JITTER_HOURS = float(os.environ.get("TELEGRAM_GLOSSARY_JITTER_HOURS", "8"))
+
+# --- Формат "Опросы/AMA" (Telegram, Этап 3) - см. telegram_engagement.py ---
+TELEGRAM_POLL_INTERVAL_HOURS = float(os.environ.get("TELEGRAM_POLL_INTERVAL_HOURS", "120"))
+TELEGRAM_POLL_JITTER_HOURS = float(os.environ.get("TELEGRAM_POLL_JITTER_HOURS", "10"))
+TELEGRAM_AMA_INTERVAL_HOURS = float(os.environ.get("TELEGRAM_AMA_INTERVAL_HOURS", "240"))
+TELEGRAM_AMA_JITTER_HOURS = float(os.environ.get("TELEGRAM_AMA_JITTER_HOURS", "12"))
 ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
 
 DB_PATH = BASE_DIR / "bot_state.db"

@@ -47,6 +47,7 @@ import signal_parser
 import strategy_tuner
 import telegram_listener
 import telegram_extended
+import telegram_engagement
 import telegram_glossary
 import telegram_publisher
 import text_generator
@@ -786,6 +787,71 @@ def try_publish_telegram_glossary() -> None:
 
 
 # ============================================================
+# Форматы "Опрос" и "AMA" - ТОЛЬКО Telegram (см. telegram_engagement.py)
+# ============================================================
+
+def try_publish_telegram_poll() -> None:
+    """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
+    вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
+    в Telegram."""
+    if not telegram_publisher.is_configured():
+        return
+
+    seconds_elapsed = queue_manager.seconds_since_last_post("telegram_poll")
+    min_seconds = config.TELEGRAM_POLL_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("telegram_poll")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("telegram_poll"):
+        return
+
+    poll = telegram_engagement.pick_poll(queue_manager.get_last_telegram_poll())
+
+    try:
+        telegram_publisher.publish_poll(poll["question"], poll["options"])
+    except telegram_publisher.TelegramPublishError as e:
+        logger.warning("Публикация опроса в Telegram не удалась: %s", e)
+        queue_manager.set_retry_backoff("telegram_poll", 1)
+        return
+
+    logger.info("Опубликован опрос в Telegram: %s", poll["question"])
+    queue_manager.set_last_telegram_poll(poll["question"])
+    queue_manager.set_last_post_time("telegram_poll")
+    queue_manager.roll_new_jitter("telegram_poll", config.TELEGRAM_POLL_JITTER_HOURS * 3600)
+
+
+def try_publish_telegram_ama() -> None:
+    """Приглашение на AMA - без LLM, статический пул текстов (см.
+    docstring telegram_engagement.py). Сам разбор ответов на вопросы из
+    комментариев - за пределами автоматизации, это делает человек
+    вручную отдельным постом позже. Публикует ТОЛЬКО в Telegram."""
+    if not telegram_publisher.is_configured():
+        return
+
+    seconds_elapsed = queue_manager.seconds_since_last_post("telegram_ama")
+    min_seconds = config.TELEGRAM_AMA_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("telegram_ama")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("telegram_ama"):
+        return
+
+    prompt = telegram_engagement.pick_ama_prompt(queue_manager.get_last_telegram_ama_prompt())
+
+    try:
+        telegram_publisher.publish_post(prompt)
+    except telegram_publisher.TelegramPublishError as e:
+        logger.warning("Публикация приглашения на AMA в Telegram не удалась: %s", e)
+        queue_manager.set_retry_backoff("telegram_ama", 1)
+        return
+
+    logger.info("Опубликовано приглашение на AMA в Telegram")
+    queue_manager.set_last_telegram_ama_prompt(prompt)
+    queue_manager.set_last_post_time("telegram_ama")
+    queue_manager.roll_new_jitter("telegram_ama", config.TELEGRAM_AMA_JITTER_HOURS * 3600)
+
+
+# ============================================================
 # Формат 2.5: "treasury" - Treasury Index (собственный инфраструктурный индекс)
 # ============================================================
 
@@ -1149,6 +1215,8 @@ def tick() -> None:
         try_publish_mini_lesson()
         try_publish_audience_question()
         try_publish_telegram_glossary()
+        try_publish_telegram_poll()
+        try_publish_telegram_ama()
         try_publish_treasury_post()
         try_publish_article_post()
         try_publish_accuracy_report()

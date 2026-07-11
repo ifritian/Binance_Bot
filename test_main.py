@@ -440,6 +440,65 @@ def test_try_publish_telegram_glossary_publishes_only_to_telegram_and_advances_i
     assert saved_index == [3]  # индекс продвинулся на 1 (был 2)
 
 
+def test_try_publish_telegram_poll_skips_when_telegram_not_configured(monkeypatch):
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: False)
+    calls = []
+    monkeypatch.setattr(main.telegram_publisher, "publish_poll", lambda *a, **k: calls.append(1))
+
+    main.try_publish_telegram_poll()
+
+    assert calls == []
+
+
+def test_try_publish_telegram_poll_publishes_picked_poll(monkeypatch):
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: True)
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.queue_manager, "get_last_telegram_poll", lambda: None)
+    poll = {"question": "Тестовый вопрос?", "options": ["А", "Б"]}
+    monkeypatch.setattr(main.telegram_engagement, "pick_poll", lambda last: poll)
+
+    calls = []
+    saved = []
+    monkeypatch.setattr(main.telegram_publisher, "publish_poll", lambda q, opts: calls.append((q, opts)))
+    monkeypatch.setattr(main.queue_manager, "set_last_telegram_poll", lambda q: saved.append(q))
+
+    main.try_publish_telegram_poll()
+
+    assert calls == [("Тестовый вопрос?", ["А", "Б"])]
+    assert saved == ["Тестовый вопрос?"]
+
+
+def test_try_publish_telegram_ama_skips_when_telegram_not_configured(monkeypatch):
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: False)
+    calls = []
+    monkeypatch.setattr(main.telegram_publisher, "publish_post", lambda *a, **k: calls.append(1))
+
+    main.try_publish_telegram_ama()
+
+    assert calls == []
+
+
+def test_try_publish_telegram_ama_publishes_picked_prompt(monkeypatch):
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: True)
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.queue_manager, "get_last_telegram_ama_prompt", lambda: None)
+    monkeypatch.setattr(main.telegram_engagement, "pick_ama_prompt", lambda last: "Тестовое приглашение на AMA")
+
+    calls = []
+    saved = []
+    monkeypatch.setattr(main.telegram_publisher, "publish_post", lambda text, **k: calls.append(text))
+    monkeypatch.setattr(main.queue_manager, "set_last_telegram_ama_prompt", lambda p: saved.append(p))
+
+    main.try_publish_telegram_ama()
+
+    assert calls == ["Тестовое приглашение на AMA"]
+    assert saved == ["Тестовое приглашение на AMA"]
+
+
 if __name__ == "__main__":
     import sys
 

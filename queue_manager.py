@@ -221,6 +221,24 @@ def set_glossary_index(index: int) -> None:
     _set("glossary_index", index)
 
 
+def get_last_telegram_poll() -> Optional[str]:
+    """Ротация опроса (Telegram) - своя, отдельная от остальных форматов."""
+    return _get("last_telegram_poll", None)
+
+
+def set_last_telegram_poll(question: str) -> None:
+    _set("last_telegram_poll", question)
+
+
+def get_last_telegram_ama_prompt() -> Optional[str]:
+    """Ротация приглашения на AMA (Telegram) - своя, отдельная от опроса."""
+    return _get("last_telegram_ama_prompt", None)
+
+
+def set_last_telegram_ama_prompt(prompt: str) -> None:
+    _set("last_telegram_ama_prompt", prompt)
+
+
 # --- Последний использованный режим тона хука - для ротации ---
 
 def get_last_hook_mode() -> Optional[str]:

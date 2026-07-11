@@ -99,3 +99,33 @@ def publish_post(text: str, image_path: Optional[Path] = None) -> dict:
     result = _post("sendMessage", data={"chat_id": chat_id, "text": text})
     logger.info("Кросспост в Telegram опубликован (без фото): message_id=%s", result.get("message_id"))
     return result
+
+
+def publish_poll(question: str, options: list, is_anonymous: bool = True) -> dict:
+    """
+    Публикует нативный Telegram-опрос (не обычное сообщение) - формат
+    "Опрос" (см. telegram_engagement.py). Telegram API требует 2-10
+    вариантов ответа, вопрос до 300 символов, каждый вариант до 100.
+
+    is_anonymous=True (по умолчанию) - обычная практика для опросов в
+    каналах (не в группах): участники видят только агрегированный
+    результат, а не кто как проголосовал - это снижает соцдавление
+    "проголосовать как большинство" и даёт более честную картину.
+
+    Поднимает TelegramPublishError при любой проблеме - как и
+    publish_post, вызывающий код уже умеет это ловить.
+    """
+    import json
+
+    chat_id = config.TELEGRAM_PUBLISH_CHANNEL
+    result = _post(
+        "sendPoll",
+        data={
+            "chat_id": chat_id,
+            "question": question,
+            "options": json.dumps(options, ensure_ascii=False),
+            "is_anonymous": is_anonymous,
+        },
+    )
+    logger.info("Опрос опубликован в Telegram: message_id=%s", result.get("message_id"))
+    return result
