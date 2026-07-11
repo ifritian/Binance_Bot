@@ -168,6 +168,13 @@ VOLATILITY_ALERT_WINDOW_HOURS = int(os.environ.get("VOLATILITY_ALERT_WINDOW_HOUR
 # кулдаун нужен, чтобы не постить про одно и то же движение рынка
 # повторно, пока оно ещё не улеглось ниже порога.
 EMERGENCY_COOLDOWN_HOURS = float(os.environ.get("EMERGENCY_COOLDOWN_HOURS", "6"))
+
+# --- Формат "Глоссарий" (Telegram, Этап 2) - см. telegram_glossary.py ---
+# Публикуется ТОЛЬКО в Telegram, последовательно (не случайно) - раз в
+# несколько дней, чтобы серия ощущалась как регулярная рубрика, а не
+# спам и не раз в месяц (когда прогресс забывается).
+TELEGRAM_GLOSSARY_INTERVAL_HOURS = float(os.environ.get("TELEGRAM_GLOSSARY_INTERVAL_HOURS", "96"))
+TELEGRAM_GLOSSARY_JITTER_HOURS = float(os.environ.get("TELEGRAM_GLOSSARY_JITTER_HOURS", "8"))
 ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
 
 DB_PATH = BASE_DIR / "bot_state.db"

@@ -406,6 +406,40 @@ def test_build_extended_telegram_text_falls_back_on_exception(monkeypatch):
     assert result == post_text
 
 
+def test_try_publish_telegram_glossary_skips_when_telegram_not_configured(monkeypatch):
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: False)
+    calls = []
+    monkeypatch.setattr(main.telegram_glossary, "generate_glossary_post", lambda topic: calls.append(topic))
+
+    main.try_publish_telegram_glossary()
+
+    assert calls == []
+
+
+def test_try_publish_telegram_glossary_publishes_only_to_telegram_and_advances_index(monkeypatch):
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: True)
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.queue_manager, "get_glossary_index", lambda: 2)
+    monkeypatch.setattr(main.telegram_glossary, "get_topic", lambda index: {"key": "test_topic"})
+    monkeypatch.setattr(main.telegram_glossary, "generate_glossary_post", lambda topic: "текст поста глоссария")
+    monkeypatch.setattr(main.telegram_glossary, "validate_glossary_post", lambda text, topic: (True, ""))
+
+    telegram_calls = []
+    binance_calls = []
+    saved_index = []
+    monkeypatch.setattr(main.telegram_publisher, "publish_post", lambda text, **k: telegram_calls.append(text))
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda *a, **k: binance_calls.append(1))
+    monkeypatch.setattr(main.queue_manager, "set_glossary_index", lambda idx: saved_index.append(idx))
+
+    main.try_publish_telegram_glossary()
+
+    assert telegram_calls == ["текст поста глоссария"]
+    assert binance_calls == []
+    assert saved_index == [3]  # индекс продвинулся на 1 (был 2)
+
+
 if __name__ == "__main__":
     import sys
 

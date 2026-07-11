@@ -47,6 +47,7 @@ import signal_parser
 import strategy_tuner
 import telegram_listener
 import telegram_extended
+import telegram_glossary
 import telegram_publisher
 import text_generator
 import treasury_generator
@@ -725,6 +726,66 @@ def try_publish_audience_question() -> None:
 
 
 # ============================================================
+# Формат "Глоссарий" - ТОЛЬКО Telegram (см. telegram_glossary.py)
+# ============================================================
+
+def try_publish_telegram_glossary() -> None:
+    """Публикует ТОЛЬКО в Telegram (в отличие от Bluesky-эксклюзивных
+    форматов выше) - минуя Binance Square/Bluesky целиком. Темы идут
+    строго последовательно (queue_manager.get_glossary_index), а не
+    случайно - см. docstring telegram_glossary.py."""
+    if not telegram_publisher.is_configured():
+        return
+
+    seconds_elapsed = queue_manager.seconds_since_last_post("telegram_glossary")
+    min_seconds = (
+        config.TELEGRAM_GLOSSARY_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("telegram_glossary")
+    )
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("telegram_glossary"):
+        return
+
+    index = queue_manager.get_glossary_index()
+    topic = telegram_glossary.get_topic(index)
+
+    try:
+        post_text = telegram_glossary.generate_glossary_post(topic)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на посте глоссария - жду %.1fч", backoff_hours)
+        queue_manager.set_retry_backoff("telegram_glossary", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации поста глоссария (%s): %s", topic["key"], e)
+        queue_manager.set_retry_backoff("telegram_glossary", 1)
+        return
+
+    if post_text is None:
+        queue_manager.set_retry_backoff("telegram_glossary", 1)
+        return
+
+    ok, reason = telegram_glossary.validate_glossary_post(post_text, topic)
+    if not ok:
+        logger.error("Пост глоссария (%s) не прошёл проверку, публикация отменена: %s", topic["key"], reason)
+        queue_manager.set_retry_backoff("telegram_glossary", 1)
+        return
+
+    try:
+        telegram_publisher.publish_post(post_text)
+    except telegram_publisher.TelegramPublishError as e:
+        logger.warning("Публикация поста глоссария в Telegram не удалась: %s", e)
+        queue_manager.set_retry_backoff("telegram_glossary", 1)
+        return
+
+    logger.info("Опубликован пост глоссария (%s) в Telegram", topic["key"])
+    queue_manager.set_glossary_index(index + 1)
+    queue_manager.set_last_post_time("telegram_glossary")
+    queue_manager.roll_new_jitter("telegram_glossary", config.TELEGRAM_GLOSSARY_JITTER_HOURS * 3600)
+
+
+# ============================================================
 # Формат 2.5: "treasury" - Treasury Index (собственный инфраструктурный индекс)
 # ============================================================
 
@@ -1087,6 +1148,7 @@ def tick() -> None:
         try_publish_hot_take()
         try_publish_mini_lesson()
         try_publish_audience_question()
+        try_publish_telegram_glossary()
         try_publish_treasury_post()
         try_publish_article_post()
         try_publish_accuracy_report()

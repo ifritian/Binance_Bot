@@ -209,6 +209,18 @@ def set_last_audience_question(question: str) -> None:
     _set("last_audience_question", question)
 
 
+def get_glossary_index() -> int:
+    """Порядковый номер следующей темы глоссария (Telegram) - в отличие
+    от остальных ротаций (случайных, без повторов подряд) - здесь строго
+    последовательный проход по telegram_glossary.TOPICS, с переходом на
+    начало после последней темы (см. telegram_glossary.get_topic)."""
+    return _get("glossary_index", 0)
+
+
+def set_glossary_index(index: int) -> None:
+    _set("glossary_index", index)
+
+
 # --- Последний использованный режим тона хука - для ротации ---
 
 def get_last_hook_mode() -> Optional[str]:
