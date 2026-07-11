@@ -46,6 +46,7 @@ import scanner
 import signal_parser
 import strategy_tuner
 import telegram_listener
+import telegram_extended
 import telegram_publisher
 import text_generator
 import treasury_generator
@@ -215,9 +216,41 @@ def _do_publish(
 
     logger.info("Опубликовано (валюта): %s", result)
     image_path = image_paths[0] if image_paths else None
-    _crosspost_to_telegram(post_text, image_path)
+    telegram_text = _build_extended_telegram_text(post_text, signal, hook) if (signal is not None and hook) else post_text
+    _crosspost_to_telegram(telegram_text, image_path)
     bluesky_ref = _crosspost_to_bluesky(post_text, image_path, ticker=ticker, hook=hook, signal=signal)
     return True, bluesky_ref
+
+
+def _build_extended_telegram_text(post_text: str, signal, hook: str) -> str:
+    """Формат "Разбор без купюр" (Telegram) - расширяет обычный текст
+    сигнала блоком "Контекст" (см. telegram_extended.py), ТОЛЬКО для
+    кросспоста в канал. Square и Bluesky получают post_text как есть,
+    без этого блока - это осознанное отличие контента по площадкам, а
+    не сокращённая копия одного и того же текста.
+
+    Если генерация/валидация блока не удалась - тихий fallback на
+    обычный post_text, публикация в канал всё равно происходит, просто
+    без дополнительного блока (бонус необязателен, а не условие)."""
+    try:
+        result = telegram_extended.generate_extended_context(signal, hook)
+    except Exception as e:
+        logger.warning("Не удалось сгенерировать блок 'Контекст' для Telegram (%s): %s", signal.ticker, e)
+        return post_text
+
+    if result is None:
+        return post_text
+
+    context, allowed_numbers = result
+    ok, reason = telegram_extended.validate_extended_context(context, allowed_numbers)
+    if not ok:
+        logger.warning("Блок 'Контекст' для %s не прошёл проверку (%s) - публикую без него", signal.ticker, reason)
+        return post_text
+
+    if post_text.endswith(post_format.DISCLAIMER):
+        body = post_text[: -len(post_format.DISCLAIMER)].rstrip()
+        return f"{body}\n\n📚 Контекст:\n{context}\n\n{post_format.DISCLAIMER}"
+    return f"{post_text}\n\n📚 Контекст:\n{context}"
 
 
 def _crosspost_to_telegram(text: str, image_path=None) -> None:

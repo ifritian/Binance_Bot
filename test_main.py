@@ -337,6 +337,75 @@ def test_try_publish_emergency_post_publishes_on_spike(monkeypatch):
     assert saved_time == ["emergency"]
 
 
+def _make_signal(**overrides):
+    from signal_parser import RsiSignal
+    base = dict(
+        ticker="BEAT", timeframe="15m", strategy="RSI + Bollinger Touch",
+        direction="Шорт", current_price="2.225", rsi_now="81.74", score="89",
+        quality="Conservative", entry_low="2.205", entry_high="2.2178",
+        invalidation="2.2371", target="2.1729", change_24h="+35.67%",
+        volume="57.67M", rsi_live="82.64", created_at="2026-06-23 22:44:59 EEST",
+        description="desc", raw_text="raw",
+    )
+    base.update(overrides)
+    return RsiSignal(**base)
+
+
+def test_build_extended_telegram_text_inserts_context_before_disclaimer(monkeypatch):
+    signal = _make_signal()
+    post_text = f"Хук.\n\nВход: 2.205 - 2.2178\n\n{main.post_format.DISCLAIMER}"
+
+    monkeypatch.setattr(
+        main.telegram_extended, "generate_extended_context",
+        lambda s, hook: ("Контекст про RSI 81.74.", {81.74}),
+    )
+    monkeypatch.setattr(main.telegram_extended, "validate_extended_context", lambda text, nums: (True, ""))
+
+    result = main._build_extended_telegram_text(post_text, signal, "Хук.")
+
+    assert "Контекст про RSI 81.74." in result
+    assert result.endswith(main.post_format.DISCLAIMER)
+    assert result.index("Контекст про RSI 81.74.") < result.index(main.post_format.DISCLAIMER)
+
+
+def test_build_extended_telegram_text_falls_back_when_generation_returns_none(monkeypatch):
+    signal = _make_signal()
+    post_text = f"Хук.\n\n{main.post_format.DISCLAIMER}"
+    monkeypatch.setattr(main.telegram_extended, "generate_extended_context", lambda s, hook: None)
+
+    result = main._build_extended_telegram_text(post_text, signal, "Хук.")
+
+    assert result == post_text
+
+
+def test_build_extended_telegram_text_falls_back_when_validation_fails(monkeypatch):
+    signal = _make_signal()
+    post_text = f"Хук.\n\n{main.post_format.DISCLAIMER}"
+    monkeypatch.setattr(
+        main.telegram_extended, "generate_extended_context",
+        lambda s, hook: ("плохой контекст", {81.74}),
+    )
+    monkeypatch.setattr(main.telegram_extended, "validate_extended_context", lambda text, nums: (False, "плохо"))
+
+    result = main._build_extended_telegram_text(post_text, signal, "Хук.")
+
+    assert result == post_text
+
+
+def test_build_extended_telegram_text_falls_back_on_exception(monkeypatch):
+    signal = _make_signal()
+    post_text = f"Хук.\n\n{main.post_format.DISCLAIMER}"
+
+    def _raise(s, hook):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(main.telegram_extended, "generate_extended_context", _raise)
+
+    result = main._build_extended_telegram_text(post_text, signal, "Хук.")
+
+    assert result == post_text
+
+
 if __name__ == "__main__":
     import sys
 
