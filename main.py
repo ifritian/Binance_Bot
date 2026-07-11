@@ -17,6 +17,7 @@ main.py - точка входа.
 """
 import logging
 import mimetypes
+import random
 import sys
 from pathlib import Path
 
@@ -49,6 +50,7 @@ import telegram_publisher
 import text_generator
 import treasury_generator
 import validator
+import volatility_alert
 
 logging.basicConfig(
     level=logging.INFO,
@@ -294,7 +296,13 @@ def _crosspost_to_bluesky(
         # в ленте. Лучше пропустить кросспост в этот раз, чем задвоить.
 
     try:
-        bluesky_text, link_facets = post_format.build_bluesky_post(text, ticker=ticker)
+        # "Тизер-график" - только когда есть картинка (без неё тизер не
+        # имеет смысла - показывать нечего) и не всегда, а с заданной
+        # вероятностью (см. config.BLUESKY_TEASER_PROBABILITY).
+        if image_bytes and random.random() < config.BLUESKY_TEASER_PROBABILITY:
+            bluesky_text, link_facets = post_format.build_bluesky_teaser(ticker=ticker)
+        else:
+            bluesky_text, link_facets = post_format.build_bluesky_post(text, ticker=ticker)
         result = bluesky_publisher.publish_post(
             bluesky_text,
             image_bytes=image_bytes,
@@ -397,6 +405,72 @@ def try_publish_currency_post() -> None:
                 kind, payload.ticker, queue_manager.MAX_PUBLISH_ATTEMPTS,
             )
         # иначе пост остаётся в очереди, попробуем снова на следующем тике
+
+
+# ============================================================
+# Формат "Экстренный" - ТОЛЬКО Bluesky (см. volatility_alert.py)
+# ============================================================
+
+def try_publish_emergency_post() -> None:
+    """В отличие от остальных Bluesky-форматов - проверяется на КАЖДОМ
+    тике, а не по фиксированному расписанию: у скачка волатильности нет
+    предсказуемого времени, реагировать нужно как можно быстрее.
+    Повторные срабатывания ограничены кулдауном
+    (config.EMERGENCY_COOLDOWN_HOURS), а не джиттером."""
+    if not bluesky_publisher.is_configured():
+        return
+
+    seconds_elapsed = queue_manager.seconds_since_last_post("emergency")
+    if seconds_elapsed < config.EMERGENCY_COOLDOWN_HOURS * 3600:
+        return
+    if not queue_manager.should_retry_now("emergency"):
+        return
+
+    try:
+        spike = volatility_alert.detect_market_volatility_spike()
+    except Exception as e:
+        logger.error("Ошибка проверки рыночной волатильности: %s", e)
+        return
+
+    if spike is None:
+        return
+
+    logger.info(
+        "Обнаружен скачок волатильности рынка (%.2f%% за %dч) - генерирую экстренный пост",
+        spike["pct"], spike["window_hours"],
+    )
+
+    try:
+        post_text = volatility_alert.generate_emergency_post(spike)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на экстренном посте - жду %.1fч", backoff_hours)
+        queue_manager.set_retry_backoff("emergency", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации экстренного поста: %s", e)
+        queue_manager.set_retry_backoff("emergency", 1)
+        return
+
+    if post_text is None:
+        queue_manager.set_retry_backoff("emergency", 1)
+        return
+
+    ok, reason = volatility_alert.validate_emergency_post(post_text, spike)
+    if not ok:
+        logger.error("Экстренный пост не прошёл проверку, публикация отменена: %s", reason)
+        queue_manager.set_retry_backoff("emergency", 1)
+        return
+
+    try:
+        bluesky_publisher.publish_post(post_text)
+    except bluesky_publisher.BlueskyPublishError as e:
+        logger.warning("Публикация экстренного поста в Bluesky не удалась: %s", e)
+        queue_manager.set_retry_backoff("emergency", 1)
+        return
+
+    logger.info("Опубликован экстренный пост о волатильности рынка в Bluesky")
+    queue_manager.set_last_post_time("emergency")
 
 
 # ============================================================
@@ -974,6 +1048,7 @@ def tick() -> None:
                 seconds_until_window / 60, config.ACTIVE_WINDOW_LOOKAHEAD_MINUTES,
             )
 
+        try_publish_emergency_post()
         try_publish_currency_post()
         try_publish_opinion_post()
         try_publish_hot_take()

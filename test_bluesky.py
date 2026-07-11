@@ -215,7 +215,31 @@ def test_build_bluesky_win_reveal_has_links_and_positive_pnl(monkeypatch):
     assert len(facets) == 2
 
 
+def test_build_bluesky_teaser_with_ticker_and_telegram(monkeypatch):
+    monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "@my_channel")
+    text, facets = post_format.build_bluesky_teaser(ticker="BTC")
 
+    assert "$BTC" in text
+    assert "👀" in text
+    assert "https://t.me/my_channel" in text
+    assert facets == [("https://t.me/my_channel", "https://t.me/my_channel")]
+
+
+def test_build_bluesky_teaser_without_ticker():
+    text, _ = post_format.build_bluesky_teaser(ticker=None)
+    assert "👀" in text
+    assert "$" not in text.split("\n")[0]
+
+
+def test_build_bluesky_teaser_falls_back_to_binance_link_without_telegram(monkeypatch):
+    monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "")
+    text, facets = post_format.build_bluesky_teaser(ticker="ETH")
+
+    assert post_format.REFERRAL_LINK in text
+    assert facets == [(post_format.REFERRAL_LINK, post_format.REFERRAL_LINK)]
+
+
+def test_is_strong_setup_true_above_threshold():
     signal = _make_signal(score="89")
     assert post_format.is_strong_setup(signal) is True
 

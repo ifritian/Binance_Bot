@@ -231,6 +231,33 @@ def build_bluesky_thread_signal(hook: str, signal) -> list:
     return [post1, post2, (post3, link_facets)]
 
 
+# --- Формат "Тизер-график" (Bluesky) ---
+# Альтернативный, минималистичный стиль подачи ОБЫЧНОГО (не "сильного")
+# сигнала: вместо хука+сетапа - просто картинка почти без слов. Чистый
+# curiosity gap - показываем ЧТО-ТО (график), но не говорим ничего,
+# пока человек не перейдёт в Telegram за разбором. Используется НЕ
+# каждый раз (см. main.config.BLUESKY_TEASER_PROBABILITY) - если бы
+# каждый обычный сигнал шёл тизером, разбор в Telegram обесценился бы
+# сам по себе (незачем переходить, если тизеры никогда не раскрываются
+# отдельным полным постом).
+def build_bluesky_teaser(ticker: str | None = None) -> tuple[str, list]:
+    """Возвращает (текст, link_facets) - картинка прикладывается
+    ОТДЕЛЬНО вызывающим кодом (main._crosspost_to_bluesky), как и в
+    остальных форматах."""
+    cashtag_line = f"${ticker.upper()} 👀" if ticker else "👀"
+
+    tg_line = telegram_channel_line()
+    if tg_line:
+        tg_url = tg_line.split(" ")[-1]
+        text = f"{cashtag_line}\n\nРазбор - в Telegram: {tg_url}"
+        link_facets = [(tg_url, tg_url)]
+    else:
+        text = f"{cashtag_line}\n\n{REFERRAL_LINE}"
+        link_facets = [(REFERRAL_LINK, REFERRAL_LINK)]
+
+    return text, link_facets
+
+
 # --- Форматы "Win-reveal" и "До/После" (Bluesky) ---
 # Оба строятся из ОДНОГО И ТОГО ЖЕ closed-record (см. outcome_tracker.
 # check_open_outcomes -> "closed_records"), но это РАЗНЫЕ посты с разной

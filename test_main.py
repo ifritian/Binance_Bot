@@ -222,6 +222,121 @@ def test_try_publish_audience_question_publishes_picked_question(monkeypatch):
     assert saved_question == ["Тестовый вопрос?"]
 
 
+def test_crosspost_to_bluesky_uses_teaser_when_random_below_probability(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(config, "BLUESKY_TEASER_PROBABILITY", 1.0)  # всегда тизер в этом тесте
+    monkeypatch.setattr(main.random, "random", lambda: 0.0)
+
+    teaser_calls = []
+    full_calls = []
+    monkeypatch.setattr(main.post_format, "build_bluesky_teaser", lambda ticker=None: teaser_calls.append(ticker) or ("teaser-text", []))
+    monkeypatch.setattr(main.post_format, "build_bluesky_post", lambda text, ticker=None: full_calls.append(ticker) or ("full-text", []))
+    monkeypatch.setattr(main.bluesky_publisher, "publish_post", lambda text, **k: {"uri": "at://x", "cid": "c1"})
+
+    main._crosspost_to_bluesky("текст поста", image_path=None, ticker="BTC")
+    # Без картинки тизер не используется даже при вероятности 1.0 - нечего
+    # показывать, тизер имеет смысл только с графиком.
+    assert teaser_calls == []
+    assert full_calls == ["BTC"]
+
+
+def test_crosspost_to_bluesky_uses_full_post_when_random_above_probability(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(config, "BLUESKY_TEASER_PROBABILITY", 0.25)
+    monkeypatch.setattr(main.random, "random", lambda: 0.9)  # выше вероятности - обычный пост
+
+    teaser_calls = []
+    full_calls = []
+    monkeypatch.setattr(main.post_format, "build_bluesky_teaser", lambda ticker=None: teaser_calls.append(ticker) or ("teaser-text", []))
+    monkeypatch.setattr(main.post_format, "build_bluesky_post", lambda text, ticker=None: full_calls.append(ticker) or ("full-text", []))
+    monkeypatch.setattr(main.bluesky_publisher, "publish_post", lambda text, **k: {"uri": "at://x", "cid": "c1"})
+    monkeypatch.setattr(main.Path, "read_bytes", lambda self: b"\x89PNG")
+
+    main._crosspost_to_bluesky("текст поста", image_path="fake_chart.png", ticker="BTC")
+    assert full_calls == ["BTC"]
+    assert teaser_calls == []
+
+
+def test_crosspost_to_bluesky_uses_teaser_with_image_when_below_probability(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(config, "BLUESKY_TEASER_PROBABILITY", 0.25)
+    monkeypatch.setattr(main.random, "random", lambda: 0.1)  # ниже вероятности - тизер
+
+    teaser_calls = []
+    full_calls = []
+    monkeypatch.setattr(main.post_format, "build_bluesky_teaser", lambda ticker=None: teaser_calls.append(ticker) or ("teaser-text", []))
+    monkeypatch.setattr(main.post_format, "build_bluesky_post", lambda text, ticker=None: full_calls.append(ticker) or ("full-text", []))
+    monkeypatch.setattr(main.bluesky_publisher, "publish_post", lambda text, **k: {"uri": "at://x", "cid": "c1"})
+    monkeypatch.setattr(main.Path, "read_bytes", lambda self: b"\x89PNG")
+
+    main._crosspost_to_bluesky("текст поста", image_path="fake_chart.png", ticker="BTC")
+    assert teaser_calls == ["BTC"]
+    assert full_calls == []
+
+
+def test_try_publish_emergency_post_skips_when_bluesky_not_configured(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "")
+    calls = []
+    monkeypatch.setattr(main.volatility_alert, "detect_market_volatility_spike", lambda: calls.append(1))
+
+    main.try_publish_emergency_post()
+
+    assert calls == []
+
+
+def test_try_publish_emergency_post_respects_cooldown(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10)
+    calls = []
+    monkeypatch.setattr(main.volatility_alert, "detect_market_volatility_spike", lambda: calls.append(1))
+
+    main.try_publish_emergency_post()
+
+    assert calls == []
+
+
+def test_try_publish_emergency_post_does_nothing_without_spike(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.volatility_alert, "detect_market_volatility_spike", lambda: None)
+
+    calls = []
+    monkeypatch.setattr(main.bluesky_publisher, "publish_post", lambda *a, **k: calls.append(1))
+
+    main.try_publish_emergency_post()
+
+    assert calls == []
+
+
+def test_try_publish_emergency_post_publishes_on_spike(monkeypatch):
+    monkeypatch.setattr(config, "BLUESKY_HANDLE", "alexei.bsky.social")
+    monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "app-pass")
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+
+    spike = {"pct": 6.0, "direction": "up", "window_hours": 3}
+    monkeypatch.setattr(main.volatility_alert, "detect_market_volatility_spike", lambda: spike)
+    monkeypatch.setattr(main.volatility_alert, "generate_emergency_post", lambda s: "🚨 текст экстренного поста")
+    monkeypatch.setattr(main.volatility_alert, "validate_emergency_post", lambda text, s: (True, ""))
+
+    calls = []
+    saved_time = []
+    monkeypatch.setattr(main.bluesky_publisher, "publish_post", lambda text, **k: calls.append(text))
+    monkeypatch.setattr(main.queue_manager, "set_last_post_time", lambda post_type: saved_time.append(post_type))
+
+    main.try_publish_emergency_post()
+
+    assert calls == ["🚨 текст экстренного поста"]
+    assert saved_time == ["emergency"]
+
+
 if __name__ == "__main__":
     import sys
 

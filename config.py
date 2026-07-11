@@ -36,6 +36,13 @@ TELEGRAM_PUBLISH_CHANNEL = os.environ.get("TELEGRAM_PUBLISH_CHANNEL", "")
 # Password. Никакого Developer-портала или App Review не нужно.
 BLUESKY_HANDLE = os.environ.get("BLUESKY_HANDLE", "")
 BLUESKY_APP_PASSWORD = os.environ.get("BLUESKY_APP_PASSWORD", "")
+# Формат "Тизер-график" - доля ОБЫЧНЫХ (не "сильных", см.
+# post_format.BLUESKY_THREAD_MIN_SCORE) сигналов с картинкой, которые
+# уходят в Bluesky минималистичным тизером (см. post_format.
+# build_bluesky_teaser) вместо полного хука+сетапа. Не 100%, иначе
+# переход в Telegram за разбором обесценился бы - тизер должен быть
+# исключением, а не нормой.
+BLUESKY_TEASER_PROBABILITY = float(os.environ.get("BLUESKY_TEASER_PROBABILITY", "0.25"))
 
 # Твой Telegram USER_ID для слушания личных сообщений (опционально)
 # Если заполнено - бот будет принимать сигналы и из личных сообщений от тебя
@@ -151,6 +158,16 @@ OPINION_JITTER_HOURS = float(os.environ.get("OPINION_JITTER_HOURS", "4"))
 HOT_TAKE_JITTER_HOURS = float(os.environ.get("HOT_TAKE_JITTER_HOURS", "6"))
 MINI_LESSON_JITTER_HOURS = float(os.environ.get("MINI_LESSON_JITTER_HOURS", "8"))
 AUDIENCE_QUESTION_JITTER_HOURS = float(os.environ.get("AUDIENCE_QUESTION_JITTER_HOURS", "12"))
+
+# --- Формат "Экстренный" (Bluesky) - см. volatility_alert.py ---
+# Порог движения $BTC за окно ниже, при превышении которого считаем это
+# "рыночным скачком волатильности", достойным отдельного поста.
+VOLATILITY_ALERT_THRESHOLD_PCT = float(os.environ.get("VOLATILITY_ALERT_THRESHOLD_PCT", "4.0"))
+VOLATILITY_ALERT_WINDOW_HOURS = int(os.environ.get("VOLATILITY_ALERT_WINDOW_HOURS", "3"))
+# Проверяется КАЖДЫЙ тик (не по расписанию, как остальные форматы) -
+# кулдаун нужен, чтобы не постить про одно и то же движение рынка
+# повторно, пока оно ещё не улеглось ниже порога.
+EMERGENCY_COOLDOWN_HOURS = float(os.environ.get("EMERGENCY_COOLDOWN_HOURS", "6"))
 ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
 
 DB_PATH = BASE_DIR / "bot_state.db"
