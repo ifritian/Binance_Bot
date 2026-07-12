@@ -18,9 +18,10 @@ import index_health_monitor
 import index_volatility
 import post_format
 import queue_manager
+import treasury_chart
 from treasury_index import (
-    TreasuryIndexResult, compute_breadth, compute_index, fetch_reference_change_pct,
-    format_breadth_line, format_index_block, leading_tier,
+    TreasuryIndexResult, compute_breadth, compute_index, fetch_market_benchmark_pct,
+    fetch_reference_change_pct, format_breadth_line, format_index_block, leading_tier,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,16 +60,23 @@ def _sign(pct: float) -> str:
 
 def _format_comparison_block(
     result: TreasuryIndexResult, period_hours: float,
-    btc_pct: Optional[float], history: Optional[dict],
+    btc_pct: Optional[float], eth_pct: Optional[float], market_pct: Optional[float],
+    history: Optional[dict],
 ) -> str:
-    """Собирает (кодом, не LLM) две строки-"крючка" для шеринга:
+    """Собирает (кодом, не LLM) блок-"крючок" для шеринга:
     - расхождение с BTC за тот же период - самая "цитируемая" метрика
-      поста (интереснее голого числа индекса самого по себе);
-    - кумулятивный трекер с момента запуска (индекс vs BTC, база 100) -
-      придаёт постам ощущение "истории", за которой можно следить
-      неделями, а не разового снимка.
-    Возвращает пустую строку, если ни того ни другого посчитать не
-    удалось (BTC недоступен) - остальной пост публикуется как обычно."""
+      поста (интереснее голого числа индекса самого по себе), подана
+      развёрнуто ("обогнал/отстал на X п.п.");
+    - компактная вторая строка с ETH и равновзвешенным топ-4 рынка
+      (treasury_index.fetch_market_benchmark_pct) - более честный
+      ориентир, чем один BTC, но без повторения той же развёрнутой
+      формулировки трижды подряд;
+    - кумулятивный трекер с момента запуска (индекс/BTC/ETH/рынок,
+      база 100) - придаёт постам ощущение "истории", за которой можно
+      следить неделями, а не разового снимка.
+    Возвращает пустую строку, если вообще ничего из этого посчитать не
+    удалось (все внешние тикеры недоступны) - остальной пост
+    публикуется как обычно."""
     lines = []
 
     if btc_pct is not None:
@@ -84,22 +92,42 @@ def _format_comparison_block(
             f"vs BTC {_sign(btc_pct)}{btc_pct}% - {verb}"
         )
 
+    extra_bits = []
+    if eth_pct is not None:
+        extra_bits.append(f"ETH {_sign(eth_pct)}{eth_pct}%")
+    if market_pct is not None:
+        extra_bits.append(f"топ-4 рынка {_sign(market_pct)}{market_pct}%")
+    if extra_bits:
+        lines.append(f"📐 Для сравнения: {', '.join(extra_bits)}")
+
     if history is not None:
         launch_date = datetime.fromtimestamp(history["launch_at"]).strftime("%d.%m.%Y")
         idx_cum = round(history["index_value"] - 100, 2)
         btc_cum = round(history["btc_value"] - 100, 2)
-        lines.append(
-            f"📈 С запуска ({launch_date}): Индекс {_sign(idx_cum)}{idx_cum}% | BTC {_sign(btc_cum)}{btc_cum}%"
-        )
+        since_parts = [f"Индекс {_sign(idx_cum)}{idx_cum}%", f"BTC {_sign(btc_cum)}{btc_cum}%"]
+
+        if "eth_value" in history:
+            eth_cum = round(history["eth_value"] - 100, 2)
+            since_parts.append(f"ETH {_sign(eth_cum)}{eth_cum}%")
+        if "market_value" in history:
+            market_cum = round(history["market_value"] - 100, 2)
+            since_parts.append(f"Рынок {_sign(market_cum)}{market_cum}%")
+
+        lines.append(f"📈 С запуска ({launch_date}): {' | '.join(since_parts)}")
 
     return "\n".join(lines)
 
 
-def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, str, TreasuryIndexResult]]:
-    """Возвращает (текст для Binance Square, текст для кросспоста в Telegram,
-    TreasuryIndexResult), либо None, если индекс не удалось посчитать
-    вообще (ни один тир не собрался - например, полностью недоступен
-    data-api.binance.vision).
+def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
+    """Возвращает (текст для Binance Square, текст для кросспоста в
+    Telegram, TreasuryIndexResult, chart_path), либо None, если индекс
+    не удалось посчитать вообще (ни один тир не собрался - например,
+    полностью недоступен data-api.binance.vision).
+
+    chart_path - Path к PNG с equity curve "с запуска" (см.
+    treasury_chart.py), либо None, если снимков ещё недостаточно для
+    содержательного графика или его не удалось построить - в обоих
+    случаях пост публикуется без картинки, не блокируется.
 
     Сейчас оба текста идентичны - ссылка на Telegram-канал в пост для
     Binance Square НЕ добавляется (площадка блокирует такие посты
@@ -125,13 +153,26 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, st
     index_block = format_index_block(result)
     allowed_numbers = _extract_numbers(index_block) | {period_hours}
 
-    # Сравнение с BTC за тот же период + кумулятивный трекер с запуска.
-    # Если BTC недоступен (сетевой сбой) - просто публикуем пост без
-    # этого блока, не блокируем публикацию из-за одного тикера.
+    # Сравнение с BTC/ETH/рынком за тот же период + кумулятивный трекер
+    # с запуска. Каждый бенчмарк опционален - если какой-то недоступен
+    # (сетевой сбой), публикуем пост без него, не блокируем публикацию
+    # из-за одного внешнего тикера.
     btc_pct = fetch_reference_change_pct("BTCUSDT", period_hours)
+    eth_pct = fetch_reference_change_pct("ETHUSDT", period_hours)
+    market_pct = fetch_market_benchmark_pct(period_hours)
+
     history = None
+    chart_path = None
     if btc_pct is not None:
-        history = queue_manager.update_treasury_history(result.total_pct, btc_pct)
+        history = queue_manager.update_treasury_history(result.total_pct, btc_pct, eth_pct, market_pct)
+        snapshots = queue_manager.append_treasury_snapshot(history)
+        try:
+            chart_path = treasury_chart.generate_treasury_chart(snapshots)
+        except Exception:
+            # Картинка - бонус, не условие публикации: если построение
+            # почему-то упало (испорченный снимок, проблема matplotlib
+            # в среде выполнения и т.п.), публикуем пост текстом, как раньше.
+            logger.exception("Не удалось построить график Treasury Index - публикую без картинки")
     else:
         logger.warning("Не удалось получить BTC для сравнения - публикую Treasury Index без блока сравнения")
 
@@ -142,7 +183,7 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, st
     breadth = compute_breadth(result)
     breadth_line = format_breadth_line(breadth)
 
-    comparison_block = _format_comparison_block(result, period_hours, btc_pct, history)
+    comparison_block = _format_comparison_block(result, period_hours, btc_pct, eth_pct, market_pct, history)
     if comparison_block:
         allowed_numbers |= _extract_numbers(comparison_block)
     if volatility_block:
@@ -195,7 +236,7 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple[str, st
 
     logger.info("Сгенерирован пост Treasury Index (%s%%, лидер %s): %s",
                 total_sign + str(result.total_pct), lt.key if lt else "нет", binance_text[:150].replace("\n", " "))
-    return binance_text, telegram_text, result
+    return binance_text, telegram_text, result, chart_path
 
 
 _MIN_HOOK_CHARS = 10

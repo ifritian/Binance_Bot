@@ -883,18 +883,19 @@ def try_publish_treasury_post() -> None:
         queue_manager.set_retry_backoff("treasury", 1)
         return
 
-    binance_text, telegram_text, _index_result = result
+    binance_text, telegram_text, _index_result, chart_path = result
+    image_paths = [chart_path] if chart_path else None
 
     try:
-        published_result = binance_publisher.publish_post(binance_text)
+        published_result = binance_publisher.publish_post(binance_text, image_paths=image_paths)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации Treasury Index: %s", e)
         queue_manager.set_retry_backoff("treasury", 2)
         return
 
     logger.info("Опубликовано (Treasury Index): %s", published_result)
-    _crosspost_to_telegram(telegram_text)
-    _crosspost_to_bluesky(telegram_text)
+    _crosspost_to_telegram(telegram_text, chart_path)
+    _crosspost_to_bluesky(telegram_text, chart_path)
     queue_manager.set_last_post_time("treasury")
     queue_manager.roll_new_jitter("treasury", config.TREASURY_JITTER_HOURS * 3600)
 

@@ -297,6 +297,36 @@ def fetch_reference_change_pct(symbol: str, period_hours: float) -> Optional[flo
     return _fetch_symbol_change_pct(symbol, period_hours)
 
 
+# Равновзвешенная корзина топ-капитализации для более честного ориентира,
+# чем один BTC - топ-1 монета иногда двигается нетипично для рынка в
+# целом (например, на новостях по конкретно BTC-ETF), среднее по
+# нескольким тяжеловесам сглаживает этот эффект. Та же четвёрка, что и
+# в opinion_generator.THEMES["market"] - единая терминология "рынок в
+# целом" по всему боту.
+MARKET_BENCHMARK_TICKERS = ["BTC", "ETH", "SOL", "BNB"]
+
+
+def fetch_market_benchmark_pct(period_hours: float) -> Optional[float]:
+    """Равновзвешенный % по MARKET_BENCHMARK_TICKERS за тот же период,
+    что и сам индекс (та же свечная база - data-api.binance.vision,
+    1h-свечи) - в отличие от opinion_generator.calc_theme_stats("market"),
+    который считает за фиксированные 2 дня, здесь период гибкий и
+    совпадает с period_hours индекса, чтобы сравнение было корректным
+    "за то же самое время", а не за разные окна.
+
+    Возвращает None, если не удалось получить данные ни по одному
+    активу корзины - остальной пост публикуется без этого сравнения."""
+    pcts = []
+    for ticker in MARKET_BENCHMARK_TICKERS:
+        pct = _fetch_symbol_change_pct(f"{ticker}USDT", period_hours)
+        if pct is not None:
+            pcts.append(pct)
+
+    if not pcts:
+        return None
+    return round(sum(pcts) / len(pcts), 2)
+
+
 def find_coin_by_ticker(ticker: str) -> Optional[tuple[str, dict]]:
     """Ищет монету в корзине по тикеру - проверяет и основной тикер, и
     fallback (например, если сигнал сгенерирован по MATIC, а в корзине

@@ -262,19 +262,72 @@ def get_treasury_history() -> Optional[dict]:
     return _get("treasury_history", None)
 
 
-def update_treasury_history(index_pct: float, btc_pct: float) -> dict:
+def update_treasury_history(
+    index_pct: float, btc_pct: float,
+    eth_pct: Optional[float] = None, market_pct: Optional[float] = None,
+) -> dict:
     """Применяет очередное изменение (% за период) к кумулятивным
-    значениям индекса и BTC и сохраняет. Первый вызов инициализирует
-    базу 100/100 и текущий момент как launch_at (запоминается один раз,
-    дальше не трогается). Возвращает обновлённое состояние."""
+    значениям индекса, BTC и, если удалось получить, ETH и
+    равновзвешенной корзины топ-4 (см. treasury_index.
+    fetch_market_benchmark_pct). Первый вызов инициализирует базу 100
+    для всех значений и текущий момент как launch_at (запоминается один
+    раз, дальше не трогается).
+
+    eth_pct/market_pct - ОПЦИОНАЛЬНЫ: если в конкретный тик их не
+    удалось получить (сетевой сбой), соответствующее кумулятивное
+    значение просто не обновляется в этот раз - не сбрасывается и не
+    роняет публикацию, как и остальной индекс при частичных данных.
+
+    Обратная совместимость: history, сохранённая ДО появления полей
+    eth_value/market_value, дополняется ими на лету (база 100, отсчёт
+    "с этого момента", а не ретроактивно - реальных данных за прошлые
+    периоды для них просто нет)."""
     history = get_treasury_history()
     if history is None:
-        history = {"launch_at": time.time(), "index_value": 100.0, "btc_value": 100.0}
+        history = {
+            "launch_at": time.time(), "index_value": 100.0, "btc_value": 100.0,
+            "eth_value": 100.0, "market_value": 100.0,
+        }
+    else:
+        history.setdefault("eth_value", 100.0)
+        history.setdefault("market_value", 100.0)
 
     history["index_value"] = round(history["index_value"] * (1 + index_pct / 100), 4)
     history["btc_value"] = round(history["btc_value"] * (1 + btc_pct / 100), 4)
+    if eth_pct is not None:
+        history["eth_value"] = round(history["eth_value"] * (1 + eth_pct / 100), 4)
+    if market_pct is not None:
+        history["market_value"] = round(history["market_value"] * (1 + market_pct / 100), 4)
+
     _set("treasury_history", history)
     return history
+
+
+# --- Снимки истории индекса (для графика динамики, см. treasury_chart.py) ---
+# update_treasury_history хранит только ТЕКУЩЕЕ кумулятивное состояние -
+# для графика "с запуска" нужен весь путь, а не только конечная точка,
+# поэтому здесь отдельно копим снимки {timestamp, index_value, btc_value,
+# eth_value, market_value} по одному на каждый пост Treasury Index.
+_TREASURY_SNAPSHOTS_MAX = 500  # тот же запас, что и у treasury_returns_history
+
+
+def get_treasury_snapshots() -> list:
+    return _get("treasury_snapshots", [])
+
+
+def append_treasury_snapshot(history: dict) -> list:
+    snapshots = get_treasury_snapshots()
+    snapshots.append({
+        "timestamp": time.time(),
+        "index_value": history["index_value"],
+        "btc_value": history["btc_value"],
+        "eth_value": history.get("eth_value", 100.0),
+        "market_value": history.get("market_value", 100.0),
+    })
+    if len(snapshots) > _TREASURY_SNAPSHOTS_MAX:
+        snapshots = snapshots[-_TREASURY_SNAPSHOTS_MAX:]
+    _set("treasury_snapshots", snapshots)
+    return snapshots
 
 
 # --- Ряд доходностей по периодам (для index_volatility.py) ---
