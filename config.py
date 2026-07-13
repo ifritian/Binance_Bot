@@ -181,6 +181,14 @@ TELEGRAM_POLL_INTERVAL_HOURS = float(os.environ.get("TELEGRAM_POLL_INTERVAL_HOUR
 TELEGRAM_POLL_JITTER_HOURS = float(os.environ.get("TELEGRAM_POLL_JITTER_HOURS", "10"))
 TELEGRAM_AMA_INTERVAL_HOURS = float(os.environ.get("TELEGRAM_AMA_INTERVAL_HOURS", "240"))
 TELEGRAM_AMA_JITTER_HOURS = float(os.environ.get("TELEGRAM_AMA_JITTER_HOURS", "12"))
+
+# --- Формат "Предложения по ребалансировке" (Telegram, Этап 4, A) ---
+# Раз в ~месяц - редкий, глубокий разбор, не ежедневная рубрика. Бот
+# только предлагает кандидатов на пересмотр (см. rebalance_advisor.py),
+# решение о фактическом изменении BASKET в treasury_index.py принимает
+# человек.
+REBALANCE_REVIEW_INTERVAL_HOURS = float(os.environ.get("REBALANCE_REVIEW_INTERVAL_HOURS", "720"))
+REBALANCE_REVIEW_JITTER_HOURS = float(os.environ.get("REBALANCE_REVIEW_JITTER_HOURS", "24"))
 ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
 
 DB_PATH = BASE_DIR / "bot_state.db"

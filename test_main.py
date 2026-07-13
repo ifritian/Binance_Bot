@@ -499,6 +499,53 @@ def test_try_publish_telegram_ama_publishes_picked_prompt(monkeypatch):
     assert saved == ["Тестовое приглашение на AMA"]
 
 
+def test_try_publish_rebalance_report_skips_when_telegram_not_configured(monkeypatch):
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: False)
+    calls = []
+    monkeypatch.setattr(main.rebalance_advisor, "find_rebalance_candidates", lambda: calls.append(1))
+
+    main.try_publish_rebalance_report()
+
+    assert calls == []
+
+
+def test_try_publish_rebalance_report_no_publish_when_no_candidates(monkeypatch):
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: True)
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.rebalance_advisor, "find_rebalance_candidates", lambda: [])
+
+    calls = []
+    saved_time = []
+    monkeypatch.setattr(main.telegram_publisher, "publish_post", lambda *a, **k: calls.append(1))
+    monkeypatch.setattr(main.queue_manager, "set_last_post_time", lambda post_type: saved_time.append(post_type))
+
+    main.try_publish_rebalance_report()
+
+    assert calls == []
+    # Всё равно фиксируем время проверки, чтобы не проверять каждый тик подряд.
+    assert saved_time == ["rebalance_report"]
+
+
+def test_try_publish_rebalance_report_publishes_when_candidates_found(monkeypatch):
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: True)
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+
+    candidates = [{"ticker": "OP", "tier": "tier1", "reason": "underperform", "detail": "..."}]
+    monkeypatch.setattr(main.rebalance_advisor, "find_rebalance_candidates", lambda: candidates)
+    monkeypatch.setattr(main.rebalance_advisor, "build_rebalance_report", lambda c: "текст отчёта")
+
+    calls = []
+    monkeypatch.setattr(main.telegram_publisher, "publish_post", lambda text, **k: calls.append(text))
+
+    main.try_publish_rebalance_report()
+
+    assert calls == ["текст отчёта"]
+
+
 if __name__ == "__main__":
     import sys
 

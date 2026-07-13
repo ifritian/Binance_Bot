@@ -146,6 +146,13 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
     except Exception:
         logger.exception("Ошибка мониторинга здоровья монет индекса - не блокирую публикацию Treasury Index")
 
+    try:
+        queue_manager.append_coin_periods(result.tiers)
+    except Exception:
+        # История для rebalance_advisor - не критична для самого поста,
+        # одна неудачная запись не должна ронять публикацию Treasury Index.
+        logger.exception("Не удалось обновить per-coin историю для ребалансировки")
+
     if result.total_pct is None:
         logger.warning("Treasury Index: не удалось посчитать ни один тир - пропускаю публикацию")
         return None

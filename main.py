@@ -42,6 +42,7 @@ import opinion_generator
 import outcome_tracker
 import post_format
 import queue_manager
+import rebalance_advisor
 import scanner
 import signal_parser
 import strategy_tuner
@@ -852,6 +853,67 @@ def try_publish_telegram_ama() -> None:
 
 
 # ============================================================
+# Формат "Предложения по ребалансировке" - ТОЛЬКО Telegram
+# (см. rebalance_advisor.py)
+# ============================================================
+
+def try_publish_rebalance_report() -> None:
+    """ПОЛУавтоматический - бот только ПРЕДЛАГАЕТ кандидатов на пересмотр
+    состава Treasury Index, ничего не меняет в BASKET сам (см. docstring
+    rebalance_advisor.py). Если кандидатов нет - отчёт не публикуется
+    вообще (это нормальный, самый частый исход, не ошибка). Публикует
+    ТОЛЬКО в Telegram."""
+    if not telegram_publisher.is_configured():
+        return
+
+    seconds_elapsed = queue_manager.seconds_since_last_post("rebalance_report")
+    min_seconds = (
+        config.REBALANCE_REVIEW_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("rebalance_report")
+    )
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("rebalance_report"):
+        return
+
+    candidates = rebalance_advisor.find_rebalance_candidates()
+    if not candidates:
+        logger.info("Ребалансировка: кандидатов на пересмотр состава индекса нет - отчёт не нужен")
+        # Не откладываем окно джиттером - следующая проверка пройдёт по
+        # тому же базовому интервалу, а не будет искусственно сдвинута
+        # тем, что в этот раз предлагать было нечего.
+        queue_manager.set_last_post_time("rebalance_report")
+        return
+
+    try:
+        report_text = rebalance_advisor.build_rebalance_report(candidates)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на отчёте по ребалансировке - жду %.1fч", backoff_hours)
+        queue_manager.set_retry_backoff("rebalance_report", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации отчёта по ребалансировке: %s", e)
+        queue_manager.set_retry_backoff("rebalance_report", 1)
+        return
+
+    if report_text is None:
+        queue_manager.set_retry_backoff("rebalance_report", 1)
+        return
+
+    try:
+        telegram_publisher.publish_post(report_text)
+    except telegram_publisher.TelegramPublishError as e:
+        logger.warning("Публикация отчёта по ребалансировке в Telegram не удалась: %s", e)
+        queue_manager.set_retry_backoff("rebalance_report", 1)
+        return
+
+    logger.info("Опубликован отчёт по ребалансировке (%d кандидатов) в Telegram", len(candidates))
+    queue_manager.set_last_post_time("rebalance_report")
+    queue_manager.roll_new_jitter("rebalance_report", config.REBALANCE_REVIEW_JITTER_HOURS * 3600)
+
+
+# ============================================================
 # Формат 2.5: "treasury" - Treasury Index (собственный инфраструктурный индекс)
 # ============================================================
 
@@ -1218,6 +1280,7 @@ def tick() -> None:
         try_publish_telegram_glossary()
         try_publish_telegram_poll()
         try_publish_telegram_ama()
+        try_publish_rebalance_report()
         try_publish_treasury_post()
         try_publish_article_post()
         try_publish_accuracy_report()

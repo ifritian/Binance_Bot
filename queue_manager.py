@@ -330,6 +330,36 @@ def append_treasury_snapshot(history: dict) -> list:
     return snapshots
 
 
+# --- История % по каждой монете корзины (для rebalance_advisor.py) ---
+# Треугольный ряд: {ticker: [pct, pct, None, ...]} - одно значение на
+# каждый успешный расчёт индекса (None, если в тот раз данные по
+# монете не получены - см. CoinChange.pct). Нужен, чтобы отличить
+# разовую просадку монеты от СИСТЕМАТИЧЕСКОГО отставания от тира -
+# без истории по каждой монете отдельно это в принципе не посчитать.
+_COIN_HISTORY_MAX = 120  # ~60 дней при цикле в 12ч - разумное окно для "хронического" отставания
+
+
+def get_coin_pct_history() -> dict:
+    return _get("coin_pct_history", {})
+
+
+def append_coin_periods(tiers: list) -> dict:
+    """Добавляет по одному значению pct на каждую монету из всех тиров
+    результата compute_index() - вызывается из treasury_generator.
+    generate_treasury_post на каждый успешный расчёт индекса
+    (независимо от того, удалось ли посчитать сравнение с BTC/ETH -
+    это отдельная, самостоятельная история)."""
+    history = get_coin_pct_history()
+    for tier in tiers:
+        for coin in tier.coins:
+            history.setdefault(coin.ticker, [])
+            history[coin.ticker].append(coin.pct)
+            if len(history[coin.ticker]) > _COIN_HISTORY_MAX:
+                history[coin.ticker] = history[coin.ticker][-_COIN_HISTORY_MAX:]
+    _set("coin_pct_history", history)
+    return history
+
+
 # --- Ряд доходностей по периодам (для index_volatility.py) ---
 # update_treasury_history хранит только ТЕКУЩЕЕ кумулятивное значение -
 # этого достаточно для "с запуска +X%", но недостаточно для волатильности

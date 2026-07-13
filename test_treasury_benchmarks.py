@@ -185,6 +185,39 @@ def test_generate_treasury_chart_returns_none_on_broken_snapshot(monkeypatch):
     assert result is None
 
 
+def test_append_coin_periods_appends_one_value_per_coin(monkeypatch):
+    monkeypatch.setattr(queue_manager, "get_coin_pct_history", lambda: {})
+    saved = {}
+    monkeypatch.setattr(queue_manager, "_set", lambda key, value: saved.__setitem__(key, value))
+
+    tier = TierResult(key="tier1", label="Тест", pct=1.0, coins=[
+        _FakeCoin(ticker="SOL", pct=2.0),
+        _FakeCoin(ticker="AVAX", pct=None),
+    ])
+    history = queue_manager.append_coin_periods([tier])
+
+    assert history["SOL"] == [2.0]
+    assert history["AVAX"] == [None]
+
+
+def test_append_coin_periods_caps_length(monkeypatch):
+    existing = {"SOL": [1.0] * queue_manager._COIN_HISTORY_MAX}
+    monkeypatch.setattr(queue_manager, "get_coin_pct_history", lambda: existing)
+    monkeypatch.setattr(queue_manager, "_set", lambda key, value: None)
+
+    tier = TierResult(key="tier1", label="Тест", pct=1.0, coins=[_FakeCoin(ticker="SOL", pct=3.0)])
+    history = queue_manager.append_coin_periods([tier])
+
+    assert len(history["SOL"]) == queue_manager._COIN_HISTORY_MAX
+    assert history["SOL"][-1] == 3.0
+
+
+class _FakeCoin:
+    def __init__(self, ticker, pct):
+        self.ticker = ticker
+        self.pct = pct
+
+
 if __name__ == "__main__":
     import sys
     import types
