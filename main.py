@@ -945,8 +945,22 @@ def try_publish_treasury_post() -> None:
         queue_manager.set_retry_backoff("treasury", 1)
         return
 
-    binance_text, telegram_text, _index_result, chart_path = result
-    image_paths = [chart_path] if chart_path else None
+    binance_text, telegram_text, _index_result, chart_path, heatmap_path, composition_path = result
+
+    # Square поддерживает карусель из нескольких картинок - отдаём все,
+    # что удалось построить. Heatmap первой (самый информативный "снимок
+    # периода" каждый раз), дальше equity curve (история), и, если в
+    # этот раз сгенерирована, диаграмма состава (редкая, но ценная).
+    square_images = [p for p in (heatmap_path, chart_path, composition_path) if p is not None]
+    image_paths = square_images or None
+
+    # Telegram/Bluesky (см. _crosspost_to_telegram/_crosspost_to_bluesky)
+    # принимают только ОДНУ картинку - приоритет: диаграмма состава,
+    # если сгенерирована в этот раз (редкое "особое" событие, стоит
+    # выделить), иначе тепловая карта (ценность каждый раз), equity
+    # curve сюда намеренно не идёт - она менее нужна как единственная
+    # картинка при живом текстовом "с запуска" блоке в самом посте.
+    single_image_path = composition_path or heatmap_path
 
     try:
         published_result = binance_publisher.publish_post(binance_text, image_paths=image_paths)
@@ -956,8 +970,8 @@ def try_publish_treasury_post() -> None:
         return
 
     logger.info("Опубликовано (Treasury Index): %s", published_result)
-    _crosspost_to_telegram(telegram_text, chart_path)
-    _crosspost_to_bluesky(telegram_text, chart_path)
+    _crosspost_to_telegram(telegram_text, single_image_path)
+    _crosspost_to_bluesky(telegram_text, single_image_path)
     queue_manager.set_last_post_time("treasury")
     queue_manager.roll_new_jitter("treasury", config.TREASURY_JITTER_HOURS * 3600)
 

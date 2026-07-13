@@ -13,12 +13,15 @@ import re
 from datetime import datetime
 from typing import Optional
 
+import config
 from groq_client import call_groq
 import index_health_monitor
 import index_volatility
 import post_format
 import queue_manager
 import treasury_chart
+import treasury_composition_chart
+import treasury_heatmap
 from treasury_index import (
     TreasuryIndexResult, compute_breadth, compute_index, fetch_market_benchmark_pct,
     fetch_reference_change_pct, format_breadth_line, format_index_block, leading_tier,
@@ -120,14 +123,23 @@ def _format_comparison_block(
 
 def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
     """Возвращает (текст для Binance Square, текст для кросспоста в
-    Telegram, TreasuryIndexResult, chart_path), либо None, если индекс
-    не удалось посчитать вообще (ни один тир не собрался - например,
-    полностью недоступен data-api.binance.vision).
+    Telegram, TreasuryIndexResult, chart_path, heatmap_path,
+    composition_path), либо None, если индекс не удалось посчитать
+    вообще (ни один тир не собрался - например, полностью недоступен
+    data-api.binance.vision).
 
-    chart_path - Path к PNG с equity curve "с запуска" (см.
-    treasury_chart.py), либо None, если снимков ещё недостаточно для
-    содержательного графика или его не удалось построить - в обоих
-    случаях пост публикуется без картинки, не блокируется.
+    - chart_path - equity curve "с запуска" (treasury_chart.py), либо
+      None, если снимков ещё недостаточно или BTC недоступен для
+      сравнения (без него не с чем сверять кумулятив).
+    - heatmap_path - тепловая карта по всем 15 монетам (treasury_heatmap.py) -
+      генерируется КАЖДЫЙ раз, когда есть хотя бы один тир.
+    - composition_path - диаграмма состава корзины (treasury_composition_chart.py) -
+      генерируется РЕДКО, раз в config.TREASURY_COMPOSITION_INTERVAL_POSTS
+      постов (состав статичен между ребалансировками).
+
+    Любая из трёх картинок может быть None (недостаточно данных или
+    ошибка построения) - публикация текста при этом не блокируется,
+    см. main.try_publish_treasury_post.
 
     Сейчас оба текста идентичны - ссылка на Telegram-канал в пост для
     Binance Square НЕ добавляется (площадка блокирует такие посты
@@ -156,6 +168,25 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
     if result.total_pct is None:
         logger.warning("Treasury Index: не удалось посчитать ни один тир - пропускаю публикацию")
         return None
+
+    # Тепловая карта - КАЖДЫЙ пост (не зависит от BTC/сравнения - строится
+    # из тех же result.tiers, что уже посчитаны выше).
+    try:
+        heatmap_path = treasury_heatmap.generate_treasury_heatmap(result)
+    except Exception:
+        logger.exception("Не удалось построить тепловую карту Treasury Index - публикую без неё")
+        heatmap_path = None
+
+    # Диаграмма состава - РЕДКО (раз в TREASURY_COMPOSITION_INTERVAL_POSTS
+    # постов) - состав между ребалансировками не меняется, показывать
+    # его каждый раз избыточно.
+    composition_path = None
+    post_count = queue_manager.increment_treasury_post_count()
+    if post_count % config.TREASURY_COMPOSITION_INTERVAL_POSTS == 0:
+        try:
+            composition_path = treasury_composition_chart.generate_composition_chart()
+        except Exception:
+            logger.exception("Не удалось построить диаграмму состава Treasury Index - публикую без неё")
 
     index_block = format_index_block(result)
     allowed_numbers = _extract_numbers(index_block) | {period_hours}
@@ -243,7 +274,7 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
 
     logger.info("Сгенерирован пост Treasury Index (%s%%, лидер %s): %s",
                 total_sign + str(result.total_pct), lt.key if lt else "нет", binance_text[:150].replace("\n", " "))
-    return binance_text, telegram_text, result, chart_path
+    return binance_text, telegram_text, result, chart_path, heatmap_path, composition_path
 
 
 _MIN_HOOK_CHARS = 10

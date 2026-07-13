@@ -360,6 +360,20 @@ def append_coin_periods(tiers: list) -> dict:
     return history
 
 
+def get_treasury_post_count() -> int:
+    """Счётчик постов Treasury Index - используется, чтобы диаграмма
+    состава (treasury_composition_chart.py) появлялась не на каждый
+    пост, а раз в config.TREASURY_COMPOSITION_INTERVAL_POSTS постов
+    (см. treasury_generator.generate_treasury_post)."""
+    return _get("treasury_post_count", 0)
+
+
+def increment_treasury_post_count() -> int:
+    count = get_treasury_post_count() + 1
+    _set("treasury_post_count", count)
+    return count
+
+
 # --- Ряд доходностей по периодам (для index_volatility.py) ---
 # update_treasury_history хранит только ТЕКУЩЕЕ кумулятивное значение -
 # этого достаточно для "с запуска +X%", но недостаточно для волатильности

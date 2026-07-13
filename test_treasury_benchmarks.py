@@ -218,6 +218,22 @@ class _FakeCoin:
         self.pct = pct
 
 
+def test_treasury_post_count_starts_at_zero(monkeypatch):
+    monkeypatch.setattr(queue_manager, "_get", lambda key, default: default)
+    assert queue_manager.get_treasury_post_count() == 0
+
+
+def test_increment_treasury_post_count_advances_by_one(monkeypatch):
+    monkeypatch.setattr(queue_manager, "get_treasury_post_count", lambda: 13)
+    saved = {}
+    monkeypatch.setattr(queue_manager, "_set", lambda key, value: saved.__setitem__(key, value))
+
+    count = queue_manager.increment_treasury_post_count()
+
+    assert count == 14
+    assert saved["treasury_post_count"] == 14
+
+
 if __name__ == "__main__":
     import sys
     import types

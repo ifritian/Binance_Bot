@@ -189,6 +189,12 @@ TELEGRAM_AMA_JITTER_HOURS = float(os.environ.get("TELEGRAM_AMA_JITTER_HOURS", "1
 # человек.
 REBALANCE_REVIEW_INTERVAL_HOURS = float(os.environ.get("REBALANCE_REVIEW_INTERVAL_HOURS", "720"))
 REBALANCE_REVIEW_JITTER_HOURS = float(os.environ.get("REBALANCE_REVIEW_JITTER_HOURS", "24"))
+
+# Диаграмма состава корзины (treasury_composition_chart.py) - появляется
+# не на каждый пост Treasury Index, а раз в N постов (14 постов при
+# цикле в 12ч ~= раз в неделю) - состав статичен между ребалансировками,
+# показывать его каждый раз избыточно.
+TREASURY_COMPOSITION_INTERVAL_POSTS = int(os.environ.get("TREASURY_COMPOSITION_INTERVAL_POSTS", "14"))
 ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
 
 DB_PATH = BASE_DIR / "bot_state.db"
