@@ -27,10 +27,12 @@ import logging
 import re
 from typing import Optional
 
+import cliche_filter
 import config
 from chart_generator import fetch_klines
 from groq_client import call_groq
 from post_format import BLUESKY_CHAR_LIMIT, DISCLAIMER
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ _SYSTEM_PROMPT = """Ты пишешь короткий "экстренный" п
 
 Лимит - 200 символов на весь ответ, уложись сам. Без хэштегов и ссылок -
 добавятся отдельно. Отвечай только текстом реакции, без пояснений и
-без кавычек."""
+без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 # Резервируем место под "🚨 " в начале и "\n\n" + DISCLAIMER в конце.
 _MAX_TAKE_CHARS = BLUESKY_CHAR_LIMIT - len(DISCLAIMER) - 2 - len("🚨 ")
@@ -120,5 +122,9 @@ def validate_emergency_post(text: str, spike: dict) -> tuple:
 
     if len(text) > BLUESKY_CHAR_LIMIT:
         return False, f"Текст длиннее лимита Bluesky ({BLUESKY_CHAR_LIMIT}): {len(text)}"
+
+    cliche_ok, found = cliche_filter.check_cliches(text)
+    if not cliche_ok:
+        return False, f"В тексте есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""

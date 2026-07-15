@@ -18,12 +18,14 @@ import logging
 import re
 import time
 
+import cliche_filter
 from groq_client import call_groq
 from loss_review_generator import classify_miss
 import outcome_tracker
 import post_format
 import queue_manager
 import strategy_tuner
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,7 @@ _SYSTEM_PROMPT = """Ты пишешь короткий хук (вводную ф
 Можно вообще не называть цифры в хуке (они и так есть в блоке ниже).
 
 НЕ добавляй сам дисклеймер и НЕ дублируй числовой блок. Отвечай только
-текстом хука на русском языке, без пояснений и без кавычек."""
+текстом хука на русском языке, без пояснений и без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 _NUMBER_RE = re.compile(r"[+-]?\d+\.?\d*")
 
@@ -162,5 +164,9 @@ def validate_accuracy_hook(hook: str, allowed_numbers: set[float]) -> tuple[bool
     suspicious = find_suspicious_english_words(hook)
     if suspicious:
         return False, f"В хуке есть посторонние английские слова: {', '.join(suspicious[:5])}"
+
+    cliche_ok, found = cliche_filter.check_cliches(hook)
+    if not cliche_ok:
+        return False, f"В хуке есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""

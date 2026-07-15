@@ -11,6 +11,7 @@
 """
 import re
 
+import cliche_filter
 from post_format import DISCLAIMER
 from signal_parser import RsiSignal
 
@@ -74,6 +75,10 @@ def validate_post_text(text: str, signal: RsiSignal) -> tuple[bool, str]:
     if suspicious:
         return False, f"В тексте похоже есть посторонние английские слова (смешение языков): {', '.join(suspicious[:5])}"
 
+    cliche_ok, found = cliche_filter.check_cliches(text)
+    if not cliche_ok:
+        return False, f"В тексте есть шаблонные ИИ-фразы: {', '.join(found)}"
+
     return True, ""
 
 
@@ -93,5 +98,9 @@ def validate_image_post_text(text: str) -> tuple[bool, str]:
     suspicious = find_suspicious_english_words(text)
     if suspicious:
         return False, f"В тексте похоже есть посторонние английские слова (смешение языков): {', '.join(suspicious[:5])}"
+
+    cliche_ok, found = cliche_filter.check_cliches(text)
+    if not cliche_ok:
+        return False, f"В тексте есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""

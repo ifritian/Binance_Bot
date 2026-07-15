@@ -22,9 +22,11 @@ import logging
 import re
 from typing import Optional
 
+import cliche_filter
 from groq_client import call_groq
 from opinion_generator import THEMES, calc_theme_stats, pick_theme  # ротация темы - тот же алгоритм, что и у opinion
 from post_format import BLUESKY_CHAR_LIMIT, DISCLAIMER
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ _SYSTEM_PROMPT = """Ты пишешь короткий "хот-тейк" для 
 
 Пиши хлёстко и коротко - у тебя жёсткий лимит в 220 символов на весь
 ответ, уложись в него сам. Без хэштегов и ссылок - они добавятся
-отдельно. Отвечай только текстом тезиса, без пояснений и без кавычек."""
+отдельно. Отвечай только текстом тезиса, без пояснений и без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 # Лимит на сам тезис (без дисклеймера) - оставляем запас под
 # "\n\n" + DISCLAIMER, чтобы итоговый пост гарантированно укладывался в
@@ -121,5 +123,9 @@ def validate_hot_take(text: str, allowed_numbers: set) -> tuple:
 
     if len(text) > BLUESKY_CHAR_LIMIT:
         return False, f"Текст длиннее лимита Bluesky ({BLUESKY_CHAR_LIMIT}): {len(text)}"
+
+    cliche_ok, found = cliche_filter.check_cliches(text)
+    if not cliche_ok:
+        return False, f"В тексте есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""

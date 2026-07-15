@@ -24,8 +24,10 @@ import logging
 import re
 from typing import Optional
 
+import cliche_filter
 from groq_client import call_groq
 import outcome_tracker
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ _SYSTEM_PROMPT = """Ты пишешь короткий блок "Контекс�
 
 Не добавляй дисклеймер - он будет добавлен отдельно после твоего блока.
 Разговорный, но содержательный тон, без канцелярита. Отвечай только
-текстом блока, без пояснений и без кавычек."""
+текстом блока, без пояснений и без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 
 def _to_float(value) -> float:
@@ -117,5 +119,9 @@ def validate_extended_context(text: str, allowed_numbers: set) -> tuple:
     unknown = [n for n in numbers if not any(abs(n - a) < 0.1 for a in allowed_numbers)]
     if unknown:
         return False, f"В блоке 'Контекст' есть числа, не подтверждённые данными: {unknown}"
+
+    cliche_ok, found = cliche_filter.check_cliches(text)
+    if not cliche_ok:
+        return False, f"В блоке 'Контекст' есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""

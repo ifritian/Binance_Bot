@@ -26,8 +26,10 @@ import logging
 import re
 from typing import Optional
 
+import cliche_filter
 from groq_client import call_groq
 from post_format import DISCLAIMER
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +150,7 @@ _SYSTEM_PROMPT = """Ты пишешь пост для образовательн
 
 Не добавляй дисклеймер и не добавляй заголовок - оба будут добавлены
 отдельно. Отвечай только текстом самого объяснения, без пояснений и без
-кавычек."""
+кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 
 def get_topic(index: int) -> dict:
@@ -186,5 +188,9 @@ def validate_glossary_post(text: str, topic: dict) -> tuple:
 
     if DISCLAIMER.lower() not in text.lower():
         return False, "В тексте отсутствует дисклеймер"
+
+    cliche_ok, found = cliche_filter.check_cliches(text)
+    if not cliche_ok:
+        return False, f"В тексте есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""

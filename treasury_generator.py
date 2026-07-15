@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 import config
+import cliche_filter
 from groq_client import call_groq
 import index_health_monitor
 import index_volatility
@@ -22,6 +23,7 @@ import queue_manager
 import treasury_chart
 import treasury_composition_chart
 import treasury_heatmap
+import voice_guidelines
 from treasury_index import (
     TreasuryIndexResult, compute_breadth, compute_index, fetch_market_benchmark_pct,
     fetch_reference_change_pct, format_breadth_line, format_index_block, leading_tier,
@@ -50,7 +52,7 @@ Treasury Index - собственного инфраструктурного к�
 качественная рефлексия тоже подходит.
 
 НЕ добавляй сам дисклеймер и НЕ дублируй числовой блок. Отвечай только
-текстом хука, без пояснений и без кавычек."""
+текстом хука, без пояснений и без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 
 def _extract_numbers(text: str) -> set[float]:
@@ -295,4 +297,9 @@ def validate_treasury_hook(hook: str, allowed_numbers: set[float]) -> tuple[bool
     unknown = [n for n in numbers if not any(abs(n - a) < 0.05 for a in allowed_numbers)]
     if unknown:
         return False, f"В хуке есть числа не из посчитанных данных: {unknown}"
+
+    cliche_ok, found = cliche_filter.check_cliches(hook)
+    if not cliche_ok:
+        return False, f"В хуке есть шаблонные ИИ-фразы: {', '.join(found)}"
+
     return True, ""

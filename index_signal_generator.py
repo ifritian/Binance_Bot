@@ -15,11 +15,13 @@ post_format.assemble_index_management_post - те же цифры, что в о�
 import logging
 import re
 
+import cliche_filter
 from groq_client import call_groq
 import post_format
 from signal_parser import RsiSignal
 import treasury_index
 from validator import find_suspicious_english_words
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ $CASHTAG в начале, уместный эмодзи (не более 1-2).
 НЕ упоминай конкретные числа/уровни/RSI - они будут добавлены отдельным
 блоком после твоего текста. НЕ добавляй сам дисклеймер.
 
-Отвечай только текстом хука, без пояснений и без кавычек."""
+Отвечай только текстом хука, без пояснений и без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 _NUMBER_RE = re.compile(r"[+-]?\d+\.?\d*")
 _MIN_HOOK_CHARS = 10
@@ -70,6 +72,10 @@ def _validate_hook(hook: str) -> tuple[bool, str]:
     suspicious = find_suspicious_english_words(hook)
     if suspicious:
         return False, f"В хуке есть посторонние английские слова: {', '.join(suspicious[:5])}"
+
+    cliche_ok, found = cliche_filter.check_cliches(hook)
+    if not cliche_ok:
+        return False, f"В хуке есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""
 

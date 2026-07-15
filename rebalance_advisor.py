@@ -29,10 +29,12 @@ import statistics
 from typing import Optional
 
 import config
+import cliche_filter
 import queue_manager
 from groq_client import call_groq
 from post_format import DISCLAIMER
 from treasury_index import BASKET
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +131,7 @@ _SYSTEM_PROMPT = """Ты пишешь отчёт-ПРЕДЛОЖЕНИЕ по п�
   индекса.
 
 4-8 предложений. Не добавляй дисклеймер - он будет добавлен отдельно.
-Отвечай только текстом отчёта, без заголовка, без пояснений и без кавычек."""
+Отвечай только текстом отчёта, без заголовка, без пояснений и без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 
 def build_rebalance_report(candidates: list) -> Optional[str]:
@@ -145,6 +147,11 @@ def build_rebalance_report(candidates: list) -> Optional[str]:
 
     if len(body.strip()) < 30:
         logger.warning("Отчёт по ребалансировке пустой/слишком короткий (%r) - пропускаю", body)
+        return None
+
+    cliche_ok, found = cliche_filter.check_cliches(body)
+    if not cliche_ok:
+        logger.warning("Отчёт по ребалансировке содержит шаблонные ИИ-фразы (%s) - пропускаю", found)
         return None
 
     tickers_line = ", ".join(f"${c['ticker']}" for c in candidates)

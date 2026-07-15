@@ -25,6 +25,7 @@ from groq_client import call_groq
 from image_analyzer import ImageInsight
 from post_format import HOOK_MODES, assemble_post, assemble_signal_post
 from signal_parser import RsiSignal
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ _BASE_SIGNAL_SYSTEM_PROMPT = f"""Ты пишешь короткий ХУК дл�
 НЕ добавляй сам никакой дисклеймер и никакие фразы про "не финансовая
 рекомендация" - это будет добавлено отдельно после твоего текста.
 
-Отвечай только текстом хука, без пояснений и без кавычек вокруг текста."""
+Отвечай только текстом хука, без пояснений и без кавычек вокруг текста.""" + voice_guidelines.STYLE_DIRECTIVE
 
 _BASE_IMAGE_SYSTEM_PROMPT = f"""Ты пишешь короткий ХУК для поста на Binance Square в фирменном стиле автора.
 Стиль: 1-3 коротких предложения, тикер как $CASHTAG в начале, разговорный тон,
@@ -91,7 +92,7 @@ _BASE_IMAGE_SYSTEM_PROMPT = f"""Ты пишешь короткий ХУК для
 НЕ добавляй сам никакой дисклеймер и никакие фразы про "не финансовая
 рекомендация" - это будет добавлено отдельно после твоего текста.
 
-Отвечай только текстом хука, без пояснений и без кавычек вокруг текста."""
+Отвечай только текстом хука, без пояснений и без кавычек вокруг текста.""" + voice_guidelines.STYLE_DIRECTIVE
 
 
 def generate_post_text(signal: RsiSignal, hook_mode: str) -> tuple[str, str]:

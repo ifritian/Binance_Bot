@@ -15,9 +15,11 @@ import re
 from pathlib import Path
 from typing import Optional
 
+import cliche_filter
 from chart_generator import generate_chart_image
 from groq_client import GroqRateLimited, call_groq
 from post_format import DISCLAIMER, assemble_post
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ _SYSTEM_PROMPT = """Ты пишешь еженедельную статью-св
 
 ЗАГОЛОВОК: <короткий цепляющий заголовок, одна строка, не длиннее 70 символов>
 СТАТЬЯ:
-<текст статьи без заголовка>"""
+<текст статьи без заголовка>""" + voice_guidelines.STYLE_DIRECTIVE
 
 # Дополнительный акцент в зависимости от того, как сложилась неделя -
 # добавляется к базовому промпту, чтобы статья не звучала одинаково
@@ -224,5 +226,9 @@ def validate_article_text(title: str, body: str, history: list[dict]) -> tuple[b
 
     if unknown:
         return False, f"В статье есть числа, не из истории дайджестов: {unknown}"
+
+    cliche_ok, found = cliche_filter.check_cliches(body)
+    if not cliche_ok:
+        return False, f"В статье есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""

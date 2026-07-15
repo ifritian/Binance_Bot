@@ -16,11 +16,13 @@ import logging
 import random
 from typing import Optional
 
+import cliche_filter
 import requests
 
 from chart_generator import fetch_klines
 from groq_client import call_groq
 from post_format import DISCLAIMER, assemble_post
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +53,7 @@ _SYSTEM_PROMPT = """Ты пишешь личный пост-мнение для 
 НЕ добавляй сам никакой дисклеймер - это будет добавлено отдельно
 после твоего текста.
 
-Отвечай только текстом поста, без пояснений и без кавычек."""
+Отвечай только текстом поста, без пояснений и без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 
 def pick_theme(last_theme: Optional[str]) -> str:
@@ -186,5 +188,9 @@ def validate_opinion_post_text(text: str, allowed_numbers: set[float]) -> tuple[
 
     if DISCLAIMER.lower() not in text.lower():
         return False, "В тексте отсутствует дисклеймер"
+
+    cliche_ok, found = cliche_filter.check_cliches(text)
+    if not cliche_ok:
+        return False, f"В тексте есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""

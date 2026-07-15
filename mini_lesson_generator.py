@@ -23,8 +23,10 @@ import random
 import re
 from typing import Optional
 
+import cliche_filter
 from groq_client import call_groq
 from post_format import BLUESKY_CHAR_LIMIT, DISCLAIMER
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +60,7 @@ _SYSTEM_PROMPT = """Ты пишешь короткий образователь�
 "сейчас"/"сегодня".
 
 Лимит - 220 символов на весь ответ, уложись сам. Без хэштегов и ссылок -
-добавятся отдельно. Отвечай только текстом поста, без пояснений и кавычек."""
+добавятся отдельно. Отвечай только текстом поста, без пояснений и кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
 
 _MAX_LESSON_CHARS = BLUESKY_CHAR_LIMIT - len(DISCLAIMER) - 2
 
@@ -116,5 +118,9 @@ def validate_mini_lesson(text: str) -> tuple:
     match = _SUSPICIOUS_PRICE_CLAIM.search(text)
     if match:
         return False, f"Похоже на утверждение о конкретной цене актива: {match.group(0)!r}"
+
+    cliche_ok, found = cliche_filter.check_cliches(text)
+    if not cliche_ok:
+        return False, f"В тексте есть шаблонные ИИ-фразы: {', '.join(found)}"
 
     return True, ""
