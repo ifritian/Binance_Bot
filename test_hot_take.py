@@ -92,6 +92,33 @@ def test_validate_hot_take_rejects_over_length():
     assert "лимита" in reason
 
 
+def test_generate_hot_take_injects_hook_mode_into_prompt(monkeypatch):
+    monkeypatch.setattr(hot_take_generator, "calc_theme_stats", lambda theme: _fake_single_stats())
+    captured_system_prompts = []
+    monkeypatch.setattr(
+        hot_take_generator, "call_groq",
+        lambda system, user, **k: captured_system_prompts.append(system) or "Тезис против консенсуса.",
+    )
+
+    hot_take_generator.generate_hot_take("BTC", hook_mode="technician")
+
+    assert hot_take_generator.HOOK_MODES["technician"] in captured_system_prompts[0]
+
+
+def test_generate_hot_take_without_hook_mode_uses_neutral_prompt(monkeypatch):
+    monkeypatch.setattr(hot_take_generator, "calc_theme_stats", lambda theme: _fake_single_stats())
+    captured_system_prompts = []
+    monkeypatch.setattr(
+        hot_take_generator, "call_groq",
+        lambda system, user, **k: captured_system_prompts.append(system) or "Тезис против консенсуса.",
+    )
+
+    hot_take_generator.generate_hot_take("BTC")
+
+    for mode_text in hot_take_generator.HOOK_MODES.values():
+        assert mode_text not in captured_system_prompts[0]
+
+
 def test_validate_hot_take_passes_valid_text():
     text = f"$BTC вырос на 5.5% - и это совсем не то, что кажется.\n\n{post_format.DISCLAIMER}"
     ok, reason = hot_take_generator.validate_hot_take(text, {5.5})

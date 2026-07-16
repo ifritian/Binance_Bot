@@ -141,7 +141,7 @@ def test_try_publish_hot_take_publishes_only_to_bluesky(monkeypatch):
     monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
     monkeypatch.setattr(main.queue_manager, "get_last_hot_take_theme", lambda: None)
     monkeypatch.setattr(main.hot_take_generator, "pick_theme", lambda last: "BTC")
-    monkeypatch.setattr(main.hot_take_generator, "generate_hot_take", lambda theme: ("текст хот-тейка", {5.5}))
+    monkeypatch.setattr(main.hot_take_generator, "generate_hot_take", lambda theme, hook_mode=None: ("текст хот-тейка", {5.5}))
     monkeypatch.setattr(main.hot_take_generator, "validate_hot_take", lambda text, nums: (True, ""))
 
     binance_calls = []

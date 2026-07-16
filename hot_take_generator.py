@@ -25,7 +25,7 @@ from typing import Optional
 import cliche_filter
 from groq_client import call_groq
 from opinion_generator import THEMES, calc_theme_stats, pick_theme  # ротация темы - тот же алгоритм, что и у opinion
-from post_format import BLUESKY_CHAR_LIMIT, DISCLAIMER
+from post_format import BLUESKY_CHAR_LIMIT, DISCLAIMER, HOOK_MODES
 import voice_guidelines
 
 logger = logging.getLogger(__name__)
@@ -55,14 +55,23 @@ _SYSTEM_PROMPT = """Ты пишешь короткий "хот-тейк" для 
 _MAX_TAKE_CHARS = BLUESKY_CHAR_LIMIT - len(DISCLAIMER) - 2
 
 
-def generate_hot_take(theme: str) -> Optional[tuple]:
+def generate_hot_take(theme: str, hook_mode: Optional[str] = None) -> Optional[tuple]:
     """Возвращает (текст поста для Bluesky, набор разрешённых чисел),
-    либо None, если не удалось получить данные по теме."""
+    либо None, если не удалось получить данные по теме.
+
+    hook_mode - один из post_format.HOOK_MODES ("яркие авторские
+    голоса", те же, что и у валютных сигналов/поста-мнения) - хот-тейк
+    в разных голосах звучит по-разному даже при одинаковой контрарной
+    формулировке задачи. Если None - нейтральный промпт без персоны,
+    как раньше."""
     stats = calc_theme_stats(theme)
     if stats is None:
         return None
 
     label = THEMES[theme]["label"]
+    system_prompt = _SYSTEM_PROMPT
+    if hook_mode is not None:
+        system_prompt = f"{_SYSTEM_PROMPT}\n\n{HOOK_MODES[hook_mode]}"
 
     if "single" in stats:
         s = stats["single"]
@@ -86,7 +95,7 @@ def generate_hot_take(theme: str) -> Optional[tuple]:
         )
         allowed_numbers = set(stats["breakdown"].values()) | {avg}
 
-    take = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=200, temperature=1.0)
+    take = call_groq(system_prompt, user_prompt, max_tokens=200, temperature=1.0)
 
     # Хук не должен быть пустым/почти пустым - та же подстраховка, что и
     # в opinion_generator/index_signal_generator (call_groq уже

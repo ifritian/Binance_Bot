@@ -525,9 +525,10 @@ def try_publish_opinion_post() -> None:
     logger.info("Окно публикации (мнение) открыто - генерирую пост")
 
     theme = opinion_generator.pick_theme(queue_manager.get_last_opinion_theme())
+    hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
 
     try:
-        result = opinion_generator.generate_opinion_post(theme)
+        result = opinion_generator.generate_opinion_post(theme, hook_mode=hook_mode)
     except groq_client.GroqRateLimited as e:
         backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
         logger.warning("Groq rate limit на посте-мнении - жду %.1fч перед следующей попыткой", backoff_hours)
@@ -558,6 +559,7 @@ def try_publish_opinion_post() -> None:
         return
 
     queue_manager.set_last_opinion_theme(theme)
+    queue_manager.set_last_hook_mode(hook_mode)
 
     logger.info("Опубликовано (мнение): %s", published_result)
     _crosspost_to_telegram(post_text)
@@ -590,9 +592,10 @@ def try_publish_hot_take() -> None:
     logger.info("Окно публикации (хот-тейк, Bluesky) открыто - генерирую пост")
 
     theme = hot_take_generator.pick_theme(queue_manager.get_last_hot_take_theme())
+    hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
 
     try:
-        result = hot_take_generator.generate_hot_take(theme)
+        result = hot_take_generator.generate_hot_take(theme, hook_mode=hook_mode)
     except groq_client.GroqRateLimited as e:
         backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
         logger.warning("Groq rate limit на хот-тейке - жду %.1fч перед следующей попыткой", backoff_hours)
@@ -624,6 +627,7 @@ def try_publish_hot_take() -> None:
 
     logger.info("Опубликован хот-тейк (тема %s) в Bluesky", theme)
     queue_manager.set_last_hot_take_theme(theme)
+    queue_manager.set_last_hook_mode(hook_mode)
     queue_manager.set_last_post_time("hot_take")
     queue_manager.roll_new_jitter("hot_take", config.HOT_TAKE_JITTER_HOURS * 3600)
 

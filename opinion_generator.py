@@ -21,7 +21,7 @@ import requests
 
 from chart_generator import fetch_klines
 from groq_client import call_groq
-from post_format import DISCLAIMER, assemble_post
+from post_format import DISCLAIMER, HOOK_MODES, assemble_post
 import voice_guidelines
 
 logger = logging.getLogger(__name__)
@@ -124,14 +124,24 @@ def calc_theme_stats(theme: str) -> Optional[dict]:
     return {"breakdown": breakdown, "avg_pct": avg_pct}
 
 
-def generate_opinion_post(theme: str) -> Optional[tuple[str, set[float]]]:
+def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Optional[tuple]:
     """Возвращает (готовый текст поста, набор разрешённых чисел для
-    проверки), либо None, если не удалось получить данные."""
+    проверки), либо None, если не удалось получить данные.
+
+    hook_mode - один из post_format.HOOK_MODES (тот же словарь "ярких
+    авторских голосов", что используется для валютных сигналов в
+    text_generator.py) - пост-мнение как раз то место, где выраженная
+    личная интонация уместнее всего. Если None (например, старый код
+    вызывает без параметра) - используется нейтральный системный промпт
+    без персоны, как раньше."""
     stats = calc_theme_stats(theme)
     if stats is None:
         return None
 
     label = THEMES[theme]["label"]
+    system_prompt = _SYSTEM_PROMPT
+    if hook_mode is not None:
+        system_prompt = f"{_SYSTEM_PROMPT}\n\n{HOOK_MODES[hook_mode]}"
 
     if "single" in stats:
         s = stats["single"]
@@ -158,7 +168,7 @@ def generate_opinion_post(theme: str) -> Optional[tuple[str, set[float]]]:
         )
         allowed_numbers = set(stats["breakdown"].values()) | {avg}
 
-    hook = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=400, temperature=0.9)
+    hook = call_groq(system_prompt, user_prompt, max_tokens=400, temperature=0.9)
 
     # Хук не должен быть пустым/почти пустым - без этой проверки
     # assemble_post() тихо собрал бы пост из одного дисклеймера, без
