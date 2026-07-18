@@ -54,6 +54,7 @@ import telegram_publisher
 import text_generator
 import treasury_generator
 import validator
+import voice_memory
 import volatility_alert
 
 logging.basicConfig(
@@ -145,6 +146,12 @@ def _publish_signal(signal) -> bool:
     published, bluesky_ref = _do_publish(post_text, [chart_path], signal.ticker, hook=hook, signal=signal)
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
+        # Валютные сигналы не привязаны к "теме" в смысле voice_memory
+        # (там это BTC/ETH/market для opinion/hot_take) - record_post
+        # здесь только пополняет общий анти-повтор зачинов (без theme/pct,
+        # continuity_block валютным сигналам не нужен - там уже есть
+        # честная точная привязка к цифрам сетапа).
+        voice_memory.record_post(post_text)
         # Ставим сигнал на трекинг результата ПОСЛЕ публикации - если
         # пост не вышел, аудитория его не видела, трекать нечего.
         try:
@@ -199,6 +206,7 @@ def _publish_image_insight(insight) -> bool:
     published, _bluesky_ref = _do_publish(post_text, [image_path], insight.ticker)
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
+        voice_memory.record_post(post_text)
     return published
 
 
@@ -544,7 +552,7 @@ def try_publish_opinion_post() -> None:
         queue_manager.set_retry_backoff("opinion", 1)
         return
 
-    post_text, allowed_numbers = result
+    post_text, allowed_numbers, headline_pct = result
     ok, reason = opinion_generator.validate_opinion_post_text(post_text, allowed_numbers)
     if not ok:
         logger.error("Пост-мнение не прошёл проверку, публикация отменена: %s", reason)
@@ -558,6 +566,7 @@ def try_publish_opinion_post() -> None:
         queue_manager.set_retry_backoff("opinion", 1)
         return
 
+    voice_memory.record_post(post_text, theme=theme, pct=headline_pct)
     queue_manager.set_last_opinion_theme(theme)
     queue_manager.set_last_hook_mode(hook_mode)
 
@@ -611,7 +620,7 @@ def try_publish_hot_take() -> None:
         queue_manager.set_retry_backoff("hot_take", 1)
         return
 
-    post_text, allowed_numbers = result
+    post_text, allowed_numbers, headline_pct = result
     ok, reason = hot_take_generator.validate_hot_take(post_text, allowed_numbers)
     if not ok:
         logger.error("Хот-тейк не прошёл проверку, публикация отменена: %s", reason)
@@ -626,6 +635,7 @@ def try_publish_hot_take() -> None:
         return
 
     logger.info("Опубликован хот-тейк (тема %s) в Bluesky", theme)
+    voice_memory.record_post(post_text, theme=theme, pct=headline_pct)
     queue_manager.set_last_hot_take_theme(theme)
     queue_manager.set_last_hook_mode(hook_mode)
     queue_manager.set_last_post_time("hot_take")

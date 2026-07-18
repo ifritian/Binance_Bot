@@ -38,9 +38,10 @@ def test_generate_opinion_post_includes_disclaimer(monkeypatch):
     result = opinion_generator.generate_opinion_post("BTC")
 
     assert result is not None
-    text, allowed_numbers = result
+    text, allowed_numbers, headline_pct = result
     assert post_format.DISCLAIMER in text
     assert 5.5 in allowed_numbers
+    assert headline_pct == 5.5
 
 
 def test_generate_opinion_post_injects_hook_mode_into_prompt(monkeypatch):
@@ -79,7 +80,7 @@ def test_generate_opinion_post_falls_back_on_empty_llm_response(monkeypatch):
     # Не None - в отличие от hot_take/mini_lesson, opinion_generator
     # подставляет нейтральный хук-заглушку вместо пропуска окна целиком.
     assert result is not None
-    text, _ = result
+    text, _, _ = result
     assert post_format.DISCLAIMER in text
 
 

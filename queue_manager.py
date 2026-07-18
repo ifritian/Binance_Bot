@@ -374,6 +374,49 @@ def increment_treasury_post_count() -> int:
     return count
 
 
+# --- Память о недавних зачинах постов (см. post_memory.py) ---
+_RECENT_OPENERS_MAX = 12
+
+
+def get_recent_post_openers() -> list:
+    return _get("recent_post_openers", [])
+
+
+def append_recent_post_opener(opener: str) -> list:
+    openers = get_recent_post_openers()
+    openers.append(opener)
+    if len(openers) > _RECENT_OPENERS_MAX:
+        openers = openers[-_RECENT_OPENERS_MAX:]
+    _set("recent_post_openers", openers)
+    return openers
+
+
+def get_recent_openers() -> list:
+    """Последние N зачинов (первое предложение) опубликованных постов -
+    по ВСЕМ форматам сразу (currency-сигнал/opinion/hot_take), не
+    отдельно по каждому. См. voice_memory.py - используется, чтобы
+    новый пост не начинался так же, как недавние, даже если это разные
+    форматы."""
+    return _get("recent_openers", [])
+
+
+def set_recent_openers(openers: list) -> None:
+    _set("recent_openers", openers)
+
+
+def get_theme_post_history() -> dict:
+    """{theme: {"pct", "stance_summary", "timestamp"}} - последняя
+    реальная точка данных по каждой теме (BTC/ETH/market), после
+    публикации поста-мнения/хот-тейка на эту тему. См. voice_memory.py -
+    используется для честной преемственности ("как я говорил раньше")
+    без выдумывания истории, которой не было."""
+    return _get("theme_post_history", {})
+
+
+def set_theme_post_history(history: dict) -> None:
+    _set("theme_post_history", history)
+
+
 # --- Ряд доходностей по периодам (для index_volatility.py) ---
 # update_treasury_history хранит только ТЕКУЩЕЕ кумулятивное значение -
 # этого достаточно для "с запуска +X%", но недостаточно для волатильности
@@ -745,6 +788,16 @@ def append_closed_outcomes(new_items: list[dict]) -> None:
     if len(items) > _CLOSED_OUTCOMES_MAX:
         items = items[-_CLOSED_OUTCOMES_MAX:]
     _set("closed_outcomes", items)
+
+
+def get_recent_post_openers() -> list:
+    """Опенеры (первые символы) последних опубликованных постов across
+    ВСЕХ форматов - см. post_memory.py (anti-repetition guard)."""
+    return _get("recent_post_openers", [])
+
+
+def set_recent_post_openers(openers: list) -> None:
+    _set("recent_post_openers", openers)
 
 
 # --- Троттлинг алертов владельцу (alerting.py) ---

@@ -18,6 +18,7 @@ from typing import Optional
 
 import cliche_filter
 import requests
+import voice_memory
 
 from chart_generator import fetch_klines
 from groq_client import call_groq
@@ -154,6 +155,7 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
             f"Напиши личное мнение/наблюдение об этом движении рынка."
         )
         allowed_numbers = {s["pct"], s["amplitude_pct"], round(s["current_price"], 2)}
+        headline_pct = s["pct"]
     else:
         breakdown_lines = "\n".join(
             f"  ${t}: {'+' if pct >= 0 else ''}{pct}%" for t, pct in stats["breakdown"].items()
@@ -167,6 +169,9 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
             f"упомянуть как отдельные активы, так и общую картину."
         )
         allowed_numbers = set(stats["breakdown"].values()) | {avg}
+        headline_pct = avg
+
+    user_prompt += voice_memory.anti_repeat_block() + voice_memory.continuity_block(theme, label)
 
     hook = call_groq(system_prompt, user_prompt, max_tokens=400, temperature=0.9)
 
@@ -181,7 +186,7 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
 
     text = assemble_post(hook)
     logger.info("Сгенерирован пост-мнение (тема %s, числа: %s): %s", theme, allowed_numbers, text)
-    return text, allowed_numbers
+    return text, allowed_numbers, headline_pct
 
 
 def validate_opinion_post_text(text: str, allowed_numbers: set[float]) -> tuple[bool, str]:

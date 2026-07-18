@@ -33,7 +33,7 @@ def test_generate_hot_take_single_theme_uses_real_pct(monkeypatch):
     result = hot_take_generator.generate_hot_take("BTC")
 
     assert result is not None
-    text, allowed_numbers = result
+    text, allowed_numbers, headline_pct = result
     assert allowed_numbers == {5.5}
     assert post_format.DISCLAIMER in text
     assert "Все празднуют рост" in text
@@ -46,7 +46,7 @@ def test_generate_hot_take_basket_theme_allows_each_ticker_and_avg(monkeypatch):
     result = hot_take_generator.generate_hot_take("market")
 
     assert result is not None
-    _, allowed_numbers = result
+    _, allowed_numbers, _ = result
     assert allowed_numbers == {5.5, -2.1, 8.0, 1.0, 3.1}
 
 
@@ -66,7 +66,7 @@ def test_generate_hot_take_truncates_overly_long_llm_response(monkeypatch):
     result = hot_take_generator.generate_hot_take("BTC")
 
     assert result is not None
-    text, _ = result
+    text, _, _ = result
     assert len(text) <= post_format.BLUESKY_CHAR_LIMIT
     assert "…" in text
 

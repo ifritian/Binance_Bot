@@ -141,7 +141,7 @@ def test_try_publish_hot_take_publishes_only_to_bluesky(monkeypatch):
     monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
     monkeypatch.setattr(main.queue_manager, "get_last_hot_take_theme", lambda: None)
     monkeypatch.setattr(main.hot_take_generator, "pick_theme", lambda last: "BTC")
-    monkeypatch.setattr(main.hot_take_generator, "generate_hot_take", lambda theme, hook_mode=None: ("текст хот-тейка", {5.5}))
+    monkeypatch.setattr(main.hot_take_generator, "generate_hot_take", lambda theme, hook_mode=None: ("текст хот-тейка", {5.5}, 5.5))
     monkeypatch.setattr(main.hot_take_generator, "validate_hot_take", lambda text, nums: (True, ""))
 
     binance_calls = []
@@ -544,6 +544,61 @@ def test_try_publish_rebalance_report_publishes_when_candidates_found(monkeypatc
     main.try_publish_rebalance_report()
 
     assert calls == ["текст отчёта"]
+
+
+def test_publish_signal_records_post_opener_in_voice_memory(monkeypatch):
+    from signal_parser import RsiSignal
+
+    signal = RsiSignal(
+        ticker="BEAT", timeframe="15m", strategy="RSI + Bollinger Touch",
+        direction="Шорт", current_price="2.225", rsi_now="81.74", score="89",
+        quality="Conservative", entry_low="2.205", entry_high="2.2178",
+        invalidation="2.2371", target="2.1729", change_24h="+35.67%",
+        volume="57.67M", rsi_live="82.64", created_at="2026-06-23 22:44:59 EEST",
+        description="desc", raw_text="raw",
+    )
+
+    monkeypatch.setattr(main.post_format, "pick_hook_mode", lambda last: "technician")
+    monkeypatch.setattr(main.text_generator, "generate_post_text", lambda s, mode: ("текст поста", "хук"))
+    monkeypatch.setattr(main.validator, "validate_post_text", lambda text, s: (True, ""))
+    monkeypatch.setattr(main.chart_generator, "generate_chart_image", lambda *a, **k: "fake_chart.png")
+    monkeypatch.setattr(main, "_do_publish", lambda *a, **k: (True, None))
+    monkeypatch.setattr(main.outcome_tracker, "record_signal_outcome", lambda *a, **k: None)
+
+    calls = []
+    monkeypatch.setattr(main.voice_memory, "record_post", lambda text, **k: calls.append(text))
+
+    published = main._publish_signal(signal)
+
+    assert published is True
+    assert calls == ["текст поста"]
+
+
+def test_publish_signal_does_not_record_when_publish_fails(monkeypatch):
+    from signal_parser import RsiSignal
+
+    signal = RsiSignal(
+        ticker="BEAT", timeframe="15m", strategy="RSI + Bollinger Touch",
+        direction="Шорт", current_price="2.225", rsi_now="81.74", score="89",
+        quality="Conservative", entry_low="2.205", entry_high="2.2178",
+        invalidation="2.2371", target="2.1729", change_24h="+35.67%",
+        volume="57.67M", rsi_live="82.64", created_at="2026-06-23 22:44:59 EEST",
+        description="desc", raw_text="raw",
+    )
+
+    monkeypatch.setattr(main.post_format, "pick_hook_mode", lambda last: "technician")
+    monkeypatch.setattr(main.text_generator, "generate_post_text", lambda s, mode: ("текст поста", "хук"))
+    monkeypatch.setattr(main.validator, "validate_post_text", lambda text, s: (True, ""))
+    monkeypatch.setattr(main.chart_generator, "generate_chart_image", lambda *a, **k: "fake_chart.png")
+    monkeypatch.setattr(main, "_do_publish", lambda *a, **k: (False, None))
+
+    calls = []
+    monkeypatch.setattr(main.voice_memory, "record_post", lambda text, **k: calls.append(text))
+
+    published = main._publish_signal(signal)
+
+    assert published is False
+    assert calls == []
 
 
 if __name__ == "__main__":

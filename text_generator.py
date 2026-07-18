@@ -26,6 +26,7 @@ from image_analyzer import ImageInsight
 from post_format import HOOK_MODES, assemble_post, assemble_signal_post
 from signal_parser import RsiSignal
 import voice_guidelines
+import voice_memory
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ def generate_post_text(signal: RsiSignal, hook_mode: str) -> tuple[str, str]:
 
 Напиши хук в стиле автора - живая реакция на этот сетап, без упоминания
 конкретных цифр уровней входа/стопа/тейка/RSI/score (они будут добавлены
-отдельно)."""
+отдельно).""" + voice_memory.anti_repeat_block()
 
     hook = call_groq(system_prompt, user_prompt, max_tokens=300, temperature=0.8)
     text = assemble_signal_post(hook, signal)
@@ -133,7 +134,7 @@ def generate_post_text_from_image(insight: ImageInsight, hook_mode: str) -> str:
 Наблюдение: {insight.note}
 
 Напиши хук в стиле автора. Никаких чисел и процентов - только
-качественное наблюдение."""
+качественное наблюдение.""" + voice_memory.anti_repeat_block()
 
     hook = call_groq(system_prompt, user_prompt, max_tokens=300, temperature=0.8)
     text = assemble_post(hook)

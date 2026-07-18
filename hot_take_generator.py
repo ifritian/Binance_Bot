@@ -26,6 +26,7 @@ import cliche_filter
 from groq_client import call_groq
 from opinion_generator import THEMES, calc_theme_stats, pick_theme  # ротация темы - тот же алгоритм, что и у opinion
 from post_format import BLUESKY_CHAR_LIMIT, DISCLAIMER, HOOK_MODES
+import voice_memory
 import voice_guidelines
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ def generate_hot_take(theme: str, hook_mode: Optional[str] = None) -> Optional[t
             f"Напиши хот-тейк - тезис против общего рыночного консенсуса по этому движению."
         )
         allowed_numbers = {s["pct"]}
+        headline_pct = s["pct"]
     else:
         breakdown_lines = "\n".join(
             f"  ${t}: {'+' if pct >= 0 else ''}{pct}%" for t, pct in stats["breakdown"].items()
@@ -94,6 +96,9 @@ def generate_hot_take(theme: str, hook_mode: Optional[str] = None) -> Optional[t
             f"Напиши хот-тейк - тезис против общего рыночного консенсуса по рынку в целом."
         )
         allowed_numbers = set(stats["breakdown"].values()) | {avg}
+        headline_pct = avg
+
+    user_prompt += voice_memory.anti_repeat_block() + voice_memory.continuity_block(theme, label)
 
     take = call_groq(system_prompt, user_prompt, max_tokens=200, temperature=1.0)
 
@@ -113,7 +118,7 @@ def generate_hot_take(theme: str, hook_mode: Optional[str] = None) -> Optional[t
 
     text = f"{take}\n\n{DISCLAIMER}"
     logger.info("Сгенерирован хот-тейк (тема %s, числа: %s): %s", theme, allowed_numbers, text)
-    return text, allowed_numbers
+    return text, allowed_numbers, headline_pct
 
 
 def validate_hot_take(text: str, allowed_numbers: set) -> tuple:
