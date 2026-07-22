@@ -77,6 +77,9 @@ def _fetch_universe() -> list[tuple[str, float]]:
             continue
         if any(bad in symbol for bad in _EXCLUDED_SUBSTRINGS):
             continue
+        ticker = symbol.removesuffix("USDT")
+        if ticker in config.EXCLUDED_TICKERS:
+            continue
         try:
             quote_volume = float(row["quoteVolume"])
         except (KeyError, ValueError, TypeError):
@@ -280,6 +283,49 @@ def _build_signal(symbol: str, candles: list[_Candle], quote_volume: float) -> R
     )
 
 
+def _is_actively_trading(symbol: str) -> bool:
+    """Доп. проверка статуса листинга через /exchangeInfo - строже, чем
+    /ticker/24hr, который использует _fetch_universe().
+
+    Баг, который эта функция чинит: data-api.binance.vision - публичное
+    зеркало, и его /ticker/24hr иногда продолжает отдавать объём/данные
+    по паре ЕЩЁ ДОЛГО ПОСЛЕ реального делистинга с Binance (например,
+    PHBUSDT делистнут 27 мая 2026, но зеркало отдавало по нему объём и
+    свечи ещё в июле) - из-за этого сканер предлагает сигналы по парам,
+    которых уже не существует для реальной торговли. /exchangeInfo -
+    авторитетный "снимок" статуса (TRADING/BREAK/HALT и т.п.) и обычно
+    актуализируется вместе с самим делистингом, в отличие от рыночной
+    статистики.
+
+    Используем ТОТ ЖЕ домен (data-api.binance.vision), не api.binance.com -
+    последний геоблокирован на раннерах, ради чего сканер и переехал на
+    зеркало (см. docstring модуля). При сетевой ошибке/неожиданном
+    ответе - True (не блокируем сигнал из-за сбоя самой проверки, та же
+    философия, что и в chart_generator.symbol_exists)."""
+    try:
+        resp = requests.get(f"{_BASE_URL}/exchangeInfo", params={"symbol": symbol}, timeout=10)
+    except requests.RequestException as e:
+        logger.warning("Не удалось проверить статус листинга %s: %s", symbol, e)
+        return True
+
+    if resp.status_code in (400, 404):
+        logger.info("Сканер: %s не торгуется на Binance (exchangeInfo status %d) - отсеян", symbol, resp.status_code)
+        return False
+    if not resp.ok:
+        return True
+
+    try:
+        symbols = resp.json().get("symbols", [])
+        status = symbols[0]["status"] if symbols else None
+    except (ValueError, KeyError, IndexError):
+        return True
+
+    if status is not None and status != "TRADING":
+        logger.info("Сканер: %s имеет статус '%s' (не TRADING) - отсеян", symbol, status)
+        return False
+    return True
+
+
 def run_scan() -> int:
     """Сканирует рынок и кладёт найденные сигналы в очередь бота.
     Возвращает количество добавленных сигналов."""
@@ -297,6 +343,13 @@ def run_scan() -> int:
         ticker = symbol.replace("USDT", "")
         signal = _build_signal(symbol, candles, quote_volume)
         if signal is None:
+            continue
+
+        if not _is_actively_trading(symbol):
+            # Пара всё ещё встречается в /ticker/24hr зеркала (иногда
+            # неделями/месяцами после реального делистинга), но
+            # /exchangeInfo подтверждает, что торговать ей уже нельзя -
+            # не даём такому сигналу дойти до очереди/публикации.
             continue
 
         direction_key = "short" if "перекуплен" in signal.direction else "long"

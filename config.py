@@ -59,7 +59,7 @@ BINANCE_SQUARE_ENDPOINT = f"{BINANCE_SQUARE_BASE_V1}/content/add"
 # --- Groq (генерация текста) ---
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
-GROQ_VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+GROQ_VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
 
 # --- Поведение бота ---
 MIN_POST_INTERVAL_HOURS = float(os.environ.get("MIN_POST_INTERVAL_HOURS", "2"))
@@ -70,6 +70,17 @@ MIN_POST_INTERVAL_HOURS = float(os.environ.get("MIN_POST_INTERVAL_HOURS", "2"))
 # 70 = нижняя граница качества "Moderate" в scanner._score_and_quality -
 # раньше было 90 ("Conservative"), при текущей формуле почти недостижимо.
 MIN_SIGNAL_SCORE_TO_PUBLISH = int(os.environ.get("MIN_SIGNAL_SCORE_TO_PUBLISH", "70"))
+
+# Ручной денай-лист тикеров (без USDT, через запятую, например "PHB,FLOKI") -
+# для монет, которые формально проходят фильтр по объёму (scanner.
+# MIN_QUOTE_VOLUME_24H), но по своей природе слишком тонкие/волатильные и
+# из-за этого непропорционально часто залетают в экстремальный RSI,
+# вытесняя более качественные сетапы. Полностью убираются из сканирования
+# в scanner._fetch_universe - сигналов по ним не будет вообще, а не
+# просто с более низким приоритетом.
+EXCLUDED_TICKERS = {
+    t.strip().upper() for t in os.environ.get("EXCLUDED_TICKERS", "").split(",") if t.strip()
+}
 
 # За сколько минут до открытия окна публикации "валюта" (и пока оно уже
 # открыто) бот переходит в "активный" режим: на каждом тике дёргает

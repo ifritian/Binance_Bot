@@ -79,7 +79,9 @@ def generate_hot_take(theme: str, hook_mode: Optional[str] = None) -> Optional[t
         sign = "+" if s["pct"] >= 0 else ""
         user_prompt = (
             f"Тема: {label}\n"
-            f"Изменение цены за последние 2 дня: {sign}{s['pct']}%.\n\n"
+            f"Изменение цены за последние 48 часов (2 дня): {sign}{s['pct']}%.\n\n"
+            f"Если упоминаешь период времени - используй ТОЧНО '48 часов' или '2 дня', "
+            f"не пересчитывай по-своему (не '24 часа', не 'сутки').\n\n"
             f"Напиши хот-тейк - тезис против общего рыночного консенсуса по этому движению."
         )
         allowed_numbers = {s["pct"]}
@@ -91,8 +93,10 @@ def generate_hot_take(theme: str, hook_mode: Optional[str] = None) -> Optional[t
         avg = stats["avg_pct"]
         user_prompt = (
             f"Тема: {label}\n"
-            f"Изменение по каждому активу за последние 2 дня:\n{breakdown_lines}\n"
+            f"Изменение по каждому активу за последние 48 часов (2 дня):\n{breakdown_lines}\n"
             f"Средний % по корзине: {'+' if avg >= 0 else ''}{avg}%.\n\n"
+            f"Если упоминаешь период времени - используй ТОЧНО '48 часов' или '2 дня', "
+            f"не пересчитывай по-своему (не '24 часа', не 'сутки').\n\n"
             f"Напиши хот-тейк - тезис против общего рыночного консенсуса по рынку в целом."
         )
         allowed_numbers = set(stats["breakdown"].values()) | {avg}
