@@ -99,7 +99,7 @@ def generate_extended_context(signal, hook: str) -> Optional[tuple]:
         "Напиши блок 'Контекст'."
     )
 
-    context = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=350, temperature=0.8)
+    context = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=450, temperature=0.8)
 
     if len(context.strip()) < 15:
         logger.warning("Блок 'Контекст' пустой/слишком короткий (%r) - публикую без него", context)

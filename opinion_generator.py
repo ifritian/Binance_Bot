@@ -177,7 +177,7 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
 
     user_prompt += voice_memory.anti_repeat_block() + voice_memory.continuity_block(theme, label)
 
-    hook = call_groq(system_prompt, user_prompt, max_tokens=400, temperature=0.9)
+    hook = call_groq(system_prompt, user_prompt, max_tokens=500, temperature=0.9)
 
     # Хук не должен быть пустым/почти пустым - без этой проверки
     # assemble_post() тихо собрал бы пост из одного дисклеймера, без

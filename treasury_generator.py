@@ -257,7 +257,7 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
 
     # GroqRateLimited намеренно НЕ ловится здесь - пробрасывается в main.py,
     # чтобы использовать общий backoff по Retry-After (как в article/opinion).
-    hook = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=250, temperature=0.9)
+    hook = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=350, temperature=0.9)
 
     ok, reason = validate_treasury_hook(hook, allowed_numbers)
     if not ok:

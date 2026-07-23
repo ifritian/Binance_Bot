@@ -115,7 +115,7 @@ def generate_post_text(signal: RsiSignal, hook_mode: str) -> tuple[str, str]:
 конкретных цифр уровней входа/стопа/тейка/RSI/score (они будут добавлены
 отдельно).""" + voice_memory.anti_repeat_block()
 
-    hook = call_groq(system_prompt, user_prompt, max_tokens=300, temperature=0.8)
+    hook = call_groq(system_prompt, user_prompt, max_tokens=400, temperature=0.8)
     text = assemble_signal_post(hook, signal)
     logger.info("Сгенерирован текст поста для %s (режим %s): %s", signal.ticker, hook_mode, text)
     return text, hook
@@ -136,7 +136,7 @@ def generate_post_text_from_image(insight: ImageInsight, hook_mode: str) -> str:
 Напиши хук в стиле автора. Никаких чисел и процентов - только
 качественное наблюдение.""" + voice_memory.anti_repeat_block()
 
-    hook = call_groq(system_prompt, user_prompt, max_tokens=300, temperature=0.8)
+    hook = call_groq(system_prompt, user_prompt, max_tokens=400, temperature=0.8)
     text = assemble_post(hook)
     logger.info("Сгенерирован текст поста по картинке для %s (режим %s): %s", insight.ticker, hook_mode, text)
     return text

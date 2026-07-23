@@ -118,11 +118,13 @@ def analyze_chart_image(image_url: str, photo_file_id: Optional[str] = None) -> 
             )
 
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 429 and attempt < max_retries - 1:
+            status = e.response.status_code
+            retryable = status == 429 or 500 <= status < 600
+            if retryable and attempt < max_retries - 1:
                 delay = base_delay * (2 ** attempt)  # 2, 4, 8 секунд
                 logger.warning(
-                    "Ошибка 429, повторяю попытку %d/%d через %dс",
-                    attempt + 1, max_retries, delay,
+                    "Ошибка %d, повторяю попытку %d/%d через %dс",
+                    status, attempt + 1, max_retries, delay,
                 )
                 time.sleep(delay)
                 continue
