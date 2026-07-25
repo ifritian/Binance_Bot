@@ -102,6 +102,10 @@ MINI_LESSON_INTERVAL_HOURS = float(os.environ.get("MINI_LESSON_INTERVAL_HOURS", 
 # Формат "Вопрос аудитории" - тоже только Bluesky, раз в неделю
 AUDIENCE_QUESTION_INTERVAL_HOURS = float(os.environ.get("AUDIENCE_QUESTION_INTERVAL_HOURS", "168"))
 ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
+# Формат "Промо" - ТОЛЬКО Binance Square (см. binance_promo_generator.py),
+# своё расписание, смещённое от остальных Square-форматов (opinion/
+# article), чтобы не выходить в одно и то же окно каждый раз.
+BINANCE_PROMO_INTERVAL_HOURS = float(os.environ.get("BINANCE_PROMO_INTERVAL_HOURS", "72"))
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))
 
 # --- Treasury Index (собственный инфраструктурный индекс, см. treasury_index.py) ---
@@ -169,6 +173,7 @@ OPINION_JITTER_HOURS = float(os.environ.get("OPINION_JITTER_HOURS", "4"))
 HOT_TAKE_JITTER_HOURS = float(os.environ.get("HOT_TAKE_JITTER_HOURS", "6"))
 MINI_LESSON_JITTER_HOURS = float(os.environ.get("MINI_LESSON_JITTER_HOURS", "8"))
 AUDIENCE_QUESTION_JITTER_HOURS = float(os.environ.get("AUDIENCE_QUESTION_JITTER_HOURS", "12"))
+BINANCE_PROMO_JITTER_HOURS = float(os.environ.get("BINANCE_PROMO_JITTER_HOURS", "8"))
 
 # --- Формат "Экстренный" (Bluesky) - см. volatility_alert.py ---
 # Порог движения $BTC за окно ниже, при превышении которого считаем это
