@@ -44,6 +44,25 @@ BLUESKY_APP_PASSWORD = os.environ.get("BLUESKY_APP_PASSWORD", "")
 # исключением, а не нормой.
 BLUESKY_TEASER_PROBABILITY = float(os.environ.get("BLUESKY_TEASER_PROBABILITY", "0.25"))
 
+# Вероятность добавить CTA-строку про выгоду/фичи Binance Square к посту
+# на Square (см. post_format.maybe_binance_cta) - не 100%, иначе каждый
+# пост выглядел бы как реклама и мог бы триггернуть модерацию.
+BINANCE_CTA_PROBABILITY = float(os.environ.get("BINANCE_CTA_PROBABILITY", "0.2"))
+
+# Случайная задержка (в минутах) перед отложенным кросспостом в
+# Telegram/Bluesky после публикации на Binance Square (см.
+# main._schedule_crossposts) - каждая площадка получает свою
+# независимую задержку в этом диапазоне, чтобы порядок публикации
+# между площадками не был всегда одинаковым/механическим.
+CROSSPOST_DELAY_MIN_MINUTES = float(os.environ.get("CROSSPOST_DELAY_MIN_MINUTES", "5"))
+CROSSPOST_DELAY_MAX_MINUTES = float(os.environ.get("CROSSPOST_DELAY_MAX_MINUTES", "30"))
+
+# Через сколько часов зависшая запись в очереди отложенных кросспостов
+# считается устаревшей и удаляется (см. queue_manager.prune_stale_crossposts) -
+# защита от бесконечного накопления в bot_state.db, если площадка была
+# настроена в момент постановки в очередь, но перестала быть настроена.
+CROSSPOST_STALE_HOURS = float(os.environ.get("CROSSPOST_STALE_HOURS", "24"))
+
 # Твой Telegram USER_ID для слушания личных сообщений (опционально)
 # Если заполнено - бот будет принимать сигналы и из личных сообщений от тебя
 YOUR_USER_ID = os.environ.get("YOUR_USER_ID")
