@@ -5,7 +5,13 @@
 (визуальное качество не тестируется автоматически). Реальных сетевых
 запросов нет - composition chart рисует по статичному BASKET, heatmap -
 по переданным (сконструированным вручную) данным.
+
+Отдельно (класс TestSquarify ниже) - тесты на сам алгоритм раскладки
+treemap (treasury_heatmap._squarify) в изоляции от matplotlib/рендеринга -
+геометрия (площадь, отсутствие наложений, попадание в границы холста)
+проверяется числами, а не глазами по картинке.
 """
+import math
 from pathlib import Path
 
 from treasury_index import TreasuryIndexResult, TierResult, CoinChange, BASKET
@@ -82,6 +88,70 @@ def test_generate_composition_chart_produces_file(tmp_path, monkeypatch):
     assert path == out_path
     assert path.exists()
     assert path.stat().st_size > 0
+
+
+# ============================================================
+# _squarify - геометрия раскладки treemap, в изоляции от рендеринга
+# ============================================================
+
+def test_squarify_preserves_total_area():
+    """Сумма площадей всех прямоугольников должна точно совпасть с
+    площадью холста - иначе где-то остаются "дыры" или прямоугольники
+    налезают друг на друга."""
+    sizes = treasury_heatmap._normalize_sizes([20, 15, 10, 10, 8, 7, 7, 5, 5, 3, 2.5, 2.5, 2, 1.5, 1.5], 100.0, 50.0)
+    rects = treasury_heatmap._squarify(sizes, 0.0, 0.0, 100.0, 50.0)
+
+    assert len(rects) == len(sizes)
+    total_area = sum(w * h for _, _, w, h in rects)
+    assert math.isclose(total_area, 100.0 * 50.0, rel_tol=1e-6)
+
+
+def test_squarify_rects_stay_within_canvas_bounds():
+    sizes = treasury_heatmap._normalize_sizes([20, 15, 10, 10, 8, 7, 7, 5, 5, 3, 2.5, 2.5, 2, 1.5, 1.5], 100.0, 50.0)
+    rects = treasury_heatmap._squarify(sizes, 0.0, 0.0, 100.0, 50.0)
+
+    for x, y, w, h in rects:
+        assert w > 0 and h > 0
+        assert x >= -1e-6 and y >= -1e-6
+        assert x + w <= 100.0 + 1e-6
+        assert y + h <= 50.0 + 1e-6
+
+
+def test_squarify_larger_weight_gets_larger_area():
+    """Не буквальная геометрия, а сам смысл задачи - монета с бОльшим
+    весом должна получить площадь строго больше, чем монета с меньшим
+    весом (нет причин для инверсии при разумной раскладке)."""
+    sizes = treasury_heatmap._normalize_sizes([20, 15, 10, 10, 8, 7, 7, 5, 5, 3, 2.5, 2.5, 2, 1.5, 1.5], 100.0, 50.0)
+    rects = treasury_heatmap._squarify(sizes, 0.0, 0.0, 100.0, 50.0)
+    areas = [w * h for _, _, w, h in rects]
+
+    assert areas[0] > areas[1] > areas[2]  # SOL (20) > AVAX (15) > NEAR/ARB (10)
+    assert areas[0] > areas[-1]  # SOL (20) намного больше PENDLE (1.5)
+
+
+def test_squarify_single_size_fills_whole_canvas():
+    rects = treasury_heatmap._squarify([100.0 * 50.0], 0.0, 0.0, 100.0, 50.0)
+    assert rects == [(0.0, 0.0, 100.0, 50.0)]
+
+
+def test_squarify_empty_sizes_returns_empty_list():
+    assert treasury_heatmap._squarify([], 0.0, 0.0, 100.0, 50.0) == []
+
+
+def test_normalize_sizes_matches_canvas_area():
+    normalized = treasury_heatmap._normalize_sizes([1, 1, 2], dx=10.0, dy=10.0)
+    assert math.isclose(sum(normalized), 100.0, rel_tol=1e-9)
+    assert normalized == [25.0, 25.0, 50.0]
+
+
+def test_flatten_coins_sorted_by_weight_descending():
+    result = _make_result({c["ticker"]: 1.0 for coins in BASKET.values() for c in coins})
+    flat = treasury_heatmap._flatten_coins(result)
+
+    weights = [c["weight"] for c in flat]
+    assert weights == sorted(weights, reverse=True)
+    assert flat[0]["ticker"] == "SOL"  # самый большой вес в корзине (20.0)
+    assert {c["ticker"] for c in flat} == {c["ticker"] for coins in BASKET.values() for c in coins}
 
 
 if __name__ == "__main__":
