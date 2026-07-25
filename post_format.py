@@ -18,6 +18,33 @@ REFERRAL_LINK = "https://www.binance.com/register?ref=ES7YTYML"
 REFERRAL_LINE = f"Открыть аккаунт на Binance: {REFERRAL_LINK}"
 
 
+# Короткие CTA-строки про выгоду/фичи именно площадки Binance Square -
+# добавляются НЕ в каждый пост-сигнал (см. maybe_binance_cta ниже и
+# config.BINANCE_CTA_PROBABILITY), а с вероятностью, чтобы не выглядеть
+# спамом. В отличие от REFERRAL_LINE (та даёт конкретную реферальную
+# ссылку) - это качественные фразы БЕЗ конкретных цифр по комиссиям (у
+# бота нет доступа к актуальной официальной тарифной сетке Binance,
+# см. также binance_promo_generator.py) - фиксированный список, не LLM,
+# чтобы не рисковать выдуманными процентами.
+_BINANCE_CTA_LINES = [
+    "Торгуй прямо здесь, на Square - без лишних переключений между приложениями, и с одними из самых низких комиссий на рынке.",
+    "Напоминание: Binance - одна из самых выгодных по комиссиям площадок для активной торговли, а Square прямо внутри приложения.",
+    "Если ещё не подписан(а) - жми подписку на Square, чтобы не пропускать сетапы прямо в ленте Binance.",
+]
+
+
+def maybe_binance_cta() -> str | None:
+    """Возвращает случайную CTA-строку (см. _BINANCE_CTA_LINES) с
+    вероятностью config.BINANCE_CTA_PROBABILITY, либо None. Используется
+    ТОЛЬКО в тексте, который уходит на Binance Square (main._do_publish) -
+    Telegram/Bluesky получают свой собственный текст без этой строки,
+    формат площадок теперь осознанно разный, а не одна и та же копия."""
+    import random
+    if random.random() >= config.BINANCE_CTA_PROBABILITY:
+        return None
+    return random.choice(_BINANCE_CTA_LINES)
+
+
 def telegram_channel_line() -> str | None:
     """Строка со ссылкой на наш Telegram-канал (config.TELEGRAM_PUBLISH_CHANNEL) -
     добавляется в посты на Binance Square, чтобы читатели могли перейти
@@ -316,6 +343,42 @@ def build_bluesky_win_reveal(record: dict) -> tuple[str, list]:
         f"Разборы сетапов и вход/стоп/тейк по каждому - здесь:\n\n{links_block}"
     )
     return text, link_facets
+
+
+# --- Формат "Забрали профит!" (ТОЛЬКО Binance Square) ---
+# Реакция на сигнал, закрывшийся в плюс (result == "win", см.
+# outcome_tracker.check_open_outcomes) - см. win_celebration_generator.py
+# за системным промптом/генерацией хука. Как и у assemble_signal_post -
+# хук (эмоция, от LLM) и фактический блок цифр (вход/выход/результат,
+# собран КОДОМ из closed-record) разделены: LLM физически не может
+# исказить результат, потому что не пишет ни одного числа сама -
+# win_celebration_generator.validate_win_celebration_hook отбраковывает
+# хук, если в нём вообще есть цифры.
+
+
+def win_celebration_lines(record: dict) -> list:
+    """Строки с фактическим результатом сделки - вынесено отдельно от
+    assemble_win_celebration_post по той же причине, что и
+    signal_setup_lines от assemble_signal_post (переиспользование без
+    риска разъехаться цифрами, если формат когда-нибудь тоже станет
+    многосоставным, как Bluesky-тред)."""
+    direction_emoji = "🔴" if record["direction"] == "short" else "🟢"
+    direction_ru = "шорт" if record["direction"] == "short" else "лонг"
+    pnl_str = f"{record['pnl_pct']:+.2f}%"
+    return [
+        f"{direction_emoji} ${record['ticker']} ({direction_ru}, {record['strategy']})",
+        f"Вход: {record['entry']:g} -> Выход: {record['exit_price']:g}",
+        f"Результат: {pnl_str} за {record['hours_to_close']:g}ч",
+    ]
+
+
+def assemble_win_celebration_post(hook: str, record: dict) -> str:
+    """Хук (эмоция, от LLM, БЕЗ единой цифры) + блок результата (собран
+    кодом из closed-record, см. win_celebration_lines) + дисклеймер.
+    record - один элемент closed_records из outcome_tracker.check_open_outcomes
+    (result == "win")."""
+    block = "\n".join(win_celebration_lines(record))
+    return f"{hook.strip()}\n\n{block}\n\n{DISCLAIMER}"
 
 
 # --- Авторские голоса - для разнообразия постов ---

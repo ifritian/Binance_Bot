@@ -10,6 +10,7 @@ SQLite выбран по той же причине, что и в проекте
 import json
 import sqlite3
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import asdict
 from typing import Optional
@@ -189,6 +190,27 @@ def get_last_hot_take_theme() -> Optional[str]:
 
 def set_last_hot_take_theme(theme: str) -> None:
     _set("last_hot_take_theme", theme)
+
+
+def get_last_win_celebration_angle() -> Optional[str]:
+    """Ротация эмоционального фокуса поста 'Забрали профит!' (см.
+    win_celebration_generator._ANGLES) - отдельно от остальных ротаций,
+    публикуется НЕ по расписанию, а сразу при закрытии сделки в плюс."""
+    return _get("last_win_celebration_angle", None)
+
+
+def set_last_win_celebration_angle(angle: str) -> None:
+    _set("last_win_celebration_angle", angle)
+
+
+def get_last_binance_promo_theme() -> Optional[str]:
+    """Ротация фокуса промо-поста Binance Square (комиссии/фичи Square/
+    удобство площадки) - своя, отдельная от opinion/hot_take/mini_lesson."""
+    return _get("last_binance_promo_theme", None)
+
+
+def set_last_binance_promo_theme(theme: str) -> None:
+    _set("last_binance_promo_theme", theme)
 
 
 def get_last_mini_lesson_topic() -> Optional[str]:
@@ -778,6 +800,35 @@ def replace_open_outcomes(items: list[dict]) -> None:
     _set("open_outcomes", items)
 
 
+def attach_bluesky_ref_to_outcome(ticker: str, bluesky_ref: dict) -> bool:
+    """Дозаписывает bluesky_ref в уже созданную (открытую) запись
+    трекинга результата - нужна, потому что кроспост в Bluesky теперь
+    ОТЛОЖЕН (см. main._schedule_crossposts), а запись в open_outcomes
+    создаётся сразу после публикации на Binance Square, ещё без ссылки
+    на Bluesky-пост.
+
+    Ищет среди открытых записей по данному тикеру ту, у которой
+    bluesky_ref ещё не проставлен, и берёт САМУЮ СВЕЖУЮ (по
+    published_at) - на случай, если по одному тикеру одновременно
+    открыто несколько сделок. Возвращает True, если нашлась и
+    обновилась подходящая запись, иначе False (например, сделка уже
+    успела закрыться раньше, чем кроспост состоялся - тогда 'До/После'
+    в Bluesky для неё просто не будет, публикация на Square этим не
+    затрагивается)."""
+    items = get_open_outcomes()
+    candidates = [
+        (idx, item) for idx, item in enumerate(items)
+        if item.get("ticker") == ticker and not item.get("bluesky_ref")
+    ]
+    if not candidates:
+        return False
+
+    idx, _ = max(candidates, key=lambda pair: pair[1].get("published_at", 0))
+    items[idx]["bluesky_ref"] = bluesky_ref
+    _set("open_outcomes", items)
+    return True
+
+
 def get_closed_outcomes() -> list[dict]:
     return _get("closed_outcomes", [])
 
@@ -877,3 +928,110 @@ def get_retry_backoff_remaining_seconds(post_type: str) -> Optional[float]:
         return None
     remaining = retry_after - time.time()
     return remaining if remaining > 0 else None
+
+# --- Отложенный кроспостинг (разведение Telegram/Bluesky по времени) ---
+# Раньше кроспост в Telegram и Bluesky публиковался СРАЗУ ЖЕ после
+# основного поста на Binance Square, синхронно, в одном тике. Теперь
+# main._schedule_crossposts кладёт сюда запись с "временем публикации"
+# в будущем (см. config.CROSSPOST_DELAY_MIN_MINUTES/MAX_MINUTES) - сам
+# GitHub Actions тик крутится раз в 10 минут (см. .github/workflows/
+# bot.yml), поэтому запись переживает несколько запусков подряд, пока её
+# время не наступит - именно поэтому картинка хранится тут же в виде
+# base64 (не путём к файлу - файл на диске не переживёт следующий запуск
+# Actions, там свежий checkout репозитория).
+_CROSSPOST_QUEUE_MAX = 20
+
+
+def _get_crosspost_queue() -> list[dict]:
+    return _get("crosspost_queue", [])
+
+
+def _set_crosspost_queue(queue: list[dict]) -> None:
+    _set("crosspost_queue", queue)
+
+
+def push_pending_crosspost(platform: str, due_ts: float, data: dict) -> str:
+    """Кладёт отложенный кроспост в очередь, возвращает его id.
+
+    platform - "telegram" или "bluesky". data - всё, что нужно
+    main._process_pending_crossposts для реальной публикации (текст,
+    картинка в base64, тикер, hook, сигнал как dict и т.п.) - должно
+    быть JSON-сериализуемо."""
+    queue = _get_crosspost_queue()
+    entry_id = uuid.uuid4().hex
+    queue.append({
+        "id": entry_id,
+        "platform": platform,
+        "due_ts": due_ts,
+        "queued_at": time.time(),
+        "attempts": 0,
+        "data": data,
+    })
+    if len(queue) > _CROSSPOST_QUEUE_MAX:
+        dropped = queue.pop(0)
+        import logging
+        logging.getLogger("queue_manager").warning(
+            "Очередь отложенных кроспостов переполнена (>%d) - старейшая запись (%s/%s) выброшена",
+            _CROSSPOST_QUEUE_MAX, dropped.get("platform"), dropped.get("data", {}).get("ticker"),
+        )
+    _set_crosspost_queue(queue)
+    return entry_id
+
+
+def get_due_crossposts() -> list[dict]:
+    """Записи, чьё время публикации уже наступило (due_ts <= сейчас).
+    Порядок площадок между собой не гарантирован - каждой при постановке
+    в очередь выставляется своя случайная задержка (см.
+    main._schedule_crossposts), поэтому какая раньше "созреет" - зависит
+    от розыгрыша, а не от фиксированного порядка кода."""
+    now = time.time()
+    return [item for item in _get_crosspost_queue() if item["due_ts"] <= now]
+
+
+def remove_crosspost(entry_id: str) -> None:
+    queue = _get_crosspost_queue()
+    queue = [item for item in queue if item.get("id") != entry_id]
+    _set_crosspost_queue(queue)
+
+
+def register_failed_crosspost(entry_id: str, max_attempts: int = 3) -> bool:
+    """Как register_failed_attempt для основной очереди - увеличивает
+    счётчик попыток, выбрасывает запись из очереди при превышении
+    лимита. Возвращает True, если запись была выброшена."""
+    queue = _get_crosspost_queue()
+    for item in queue:
+        if item.get("id") == entry_id:
+            item["attempts"] = item.get("attempts", 0) + 1
+            dropped = item["attempts"] > max_attempts
+            if dropped:
+                queue = [i for i in queue if i.get("id") != entry_id]
+            _set_crosspost_queue(queue)
+            return dropped
+    return False
+
+
+def prune_stale_crossposts(max_age_hours: float) -> int:
+    """Удаляет зависшие записи (например, площадка была настроена в
+    момент постановки в очередь, но перестала быть настроена/токен
+    протух) старше max_age_hours - защита от бесконечного накопления в
+    bot_state.db. Возвращает число удалённых записей."""
+    queue = _get_crosspost_queue()
+    if not queue:
+        return 0
+
+    cutoff = time.time() - max_age_hours * 3600
+    kept = [item for item in queue if item.get("queued_at", 0) >= cutoff]
+    dropped_count = len(queue) - len(kept)
+    if dropped_count:
+        _set_crosspost_queue(kept)
+    return dropped_count
+
+
+def pending_crosspost_summary() -> list[str]:
+    """Короткое описание очереди для диагностики (check_state.py)."""
+    out = []
+    for item in _get_crosspost_queue():
+        eta_min = max((item["due_ts"] - time.time()) / 60, 0)
+        ticker = item.get("data", {}).get("ticker", "?")
+        out.append(f"{item['platform']}:{ticker} (через ~{eta_min:.0f} мин, попыток={item.get('attempts', 0)})")
+    return out
