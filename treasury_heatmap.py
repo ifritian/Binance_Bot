@@ -34,7 +34,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch
+from matplotlib.patches import FancyBboxPatch, Circle
+from matplotlib.transforms import Bbox
 
 import config
 
@@ -91,26 +92,41 @@ def _layout_row(sizes: list, x: float, y: float, dx: float, dy: float) -> list:
     свободной области - если сторона по x короче (dx < dy), ряд идёт
     вертикальной полосой (постоянная ширина, монеты друг под другом),
     иначе горизонтальной полосой (постоянная высота, монеты друг
-    за другом)."""
+    за другом).
+
+    Критично: сумма размеров вдоль оси, по которой двигаемся между
+    монетами ряда, должна В ТОЧНОСТИ покрыть dy (для dx>=dy) или dx
+    (для dx<dy) - иначе _leftover ниже (который просто вычитает
+    занятую полосу из dx/dy) посчитает свободной область, часть
+    которой на самом деле уже занята текущим рядом, и следующий ряд
+    ляжет поверх него. Это ровно то, что раньше приводило к
+    перекрывающимся плашкам на карте: монеты внутри ряда двигались
+    по x (общей "ширине"), а не по y (каждая своей высотой) - сумма
+    высот НЕ давала dy, и часть области оставалась невидимо занятой
+    сразу двумя рядами."""
     covered = sum(sizes)
     if dx >= dy:
-        # свободная область "широкая" - ряд идёт горизонтальной полосой
-        # фиксированной высоты у левого края
+        # свободная область "широкая" - ряд занимает фиксированную
+        # ШИРИНУ (=covered/dy) и тянется вертикальной полосой на всю
+        # высоту dy: монеты стоят друг под другом, каждая своей
+        # высотой (сумма высот по построению точно равна dy).
         width = covered / dy
-        rects, cx = [], x
+        rects, cy = [], y
         for s in sizes:
             h = s / width
-            rects.append((cx, y, width, h))
-            cx += width
+            rects.append((x, cy, width, h))
+            cy += h
         return rects
-    # свободная область "высокая" - ряд идёт вертикальной полосой
-    # фиксированной ширины у верхнего края
+    # свободная область "высокая" - ряд занимает фиксированную ВЫСОТУ
+    # (=covered/dx) и тянется горизонтальной полосой на всю ширину dx:
+    # монеты стоят друг за другом, каждая своей шириной (сумма ширин
+    # по построению точно равна dx).
     height = covered / dx
-    rects, cy = [], y
+    rects, cx = [], x
     for s in sizes:
         w = s / height
-        rects.append((x, cy, w, height))
-        cy += height
+        rects.append((cx, y, w, height))
+        cx += w
     return rects
 
 
@@ -159,6 +175,92 @@ def _squarify(sizes: list, x: float, y: float, dx: float, dy: float) -> list:
     nx, ny, ndx, ndy = _leftover(current, x, y, dx, dy)
     rects.extend(_squarify(remaining, nx, ny, ndx, ndy))
     return rects
+
+
+# Минимальный читаемый размер шрифта (в pt) - ниже него подпись скорее
+# мешает, чем помогает, лучше вообще её не показывать (см. _place_label).
+_MIN_READABLE_FONTSIZE = 5.0
+
+# На сколько "ужимаем" реальные габариты плашки перед тем, как в них
+# что-то вписывать - без этого текст мог бы формально "влезать" впритык
+# к рамке плашки, что выглядит так же тесно/криво, как и лёгкий overflow.
+_TEXT_PADDING_FACTOR = 0.86
+
+
+def _clip_to_tile(artist, ax, rx: float, ry: float, rw: float, rh: float) -> None:
+    """Жёстко обрезает artist (текст) по границам ЕГО СОБСТВЕННОЙ плашки
+    в display-координатах (пиксели финального рендера) - страховка на
+    случай, если измерение текста (см. _fit_text_in_box) немного
+    ошиблось: лучше едва заметно обрезанная буква с краю, чем текст,
+    заезжающий на соседний остров, как было в старой версии карты."""
+    corners = ax.transData.transform([(rx, ry), (rx + rw, ry + rh)])
+    x0, x1 = sorted((corners[0, 0], corners[1, 0]))
+    y0, y1 = sorted((corners[0, 1], corners[1, 1]))
+    artist.set_clip_on(True)
+    artist.set_clip_box(Bbox.from_extents(x0, y0, x1, y1))
+
+
+def _fit_text_in_box(
+    ax, renderer, text_str: str, cx: float, cy: float,
+    max_width_data: float, max_height_data: float,
+    max_fontsize: float, **text_kwargs,
+):
+    """Создаёт текстовый объект и подбирает для него РЕАЛЬНЫЙ (измеренный
+    рендерером, а не оценённый на глаз по short_side, как раньше)
+    размер шрифта так, чтобы отрендеренный текст помещался в прямоугольник
+    max_width_data x max_height_data (в тех же условных единицах холста,
+    что и сама плашка). Если текст не помещается даже на минимальном
+    читаемом размере - текст удаляется, вызывающий код показывает
+    что-то более короткое (или не показывает вообще, если совсем нечего).
+
+    Возвращает (text_or_None, fontsize)."""
+    max_w_px, max_h_px = ax.transData.transform(
+        (max_width_data, max_height_data)
+    ) - ax.transData.transform((0, 0))
+    max_w_px, max_h_px = abs(max_w_px), abs(max_h_px)
+
+    fontsize = max_fontsize
+    txt = ax.text(cx, cy, text_str, fontsize=fontsize, **text_kwargs)
+    while True:
+        bbox = txt.get_window_extent(renderer=renderer)
+        if bbox.width <= max_w_px and bbox.height <= max_h_px:
+            return txt, fontsize
+        if fontsize <= _MIN_READABLE_FONTSIZE:
+            txt.remove()
+            return None, 0.0
+        fontsize = max(fontsize * 0.88, _MIN_READABLE_FONTSIZE)
+        txt.set_fontsize(fontsize)
+
+
+def _draw_warning_badge(ax, rx: float, ry: float, rw: float, rh: float) -> None:
+    """Рисует значок аномалии в правом верхнем углу плашки - тёмный
+    кружок с золотым "!" ФИКСИРОВАННОГО, всегда контрастного вида,
+    независимо от цвета самой плашки и от того, как ужался авто-подгон
+    текста тикера/%. Раньше "⚠️" был просто приклеен к строке процента
+    (см. старую версию) - на маленьких плашках или при длинном тикере
+    он сливался с текстом и был еле различим. Теперь это отдельный
+    элемент, который не зависит от auto-fit текста и всегда одного и
+    того же вида - его видно и на самой мелкой, и на самой крупной
+    плашке одинаково однозначно."""
+    short_side = min(rw, rh)
+    if short_side < 2.2:
+        # Плашка совсем крошечная - золотая рамка тайла (см. edgecolor
+        # в generate_treasury_heatmap) уже сигнализирует про аномалию,
+        # значок только замусорил бы и без того тесное место.
+        return
+
+    radius = max(min(short_side * 0.16, 1.7), 0.55)
+    bx = rx + rw - radius * 1.35
+    by = ry + radius * 1.35
+    badge = Circle(
+        (bx, by), radius,
+        facecolor="#3A2E00", edgecolor="#FFD700", linewidth=1.2, zorder=5,
+    )
+    ax.add_patch(badge)
+    ax.text(
+        bx, by, "!", ha="center", va="center",
+        fontsize=max(radius * 11, 7), fontweight="bold", color="#FFD700", zorder=6,
+    )
 
 
 def _tile_color(pct: Optional[float]) -> tuple:
@@ -213,56 +315,14 @@ def generate_treasury_heatmap(result) -> Optional[Path]:
         fig.patch.set_facecolor(_BG_COLOR)
         ax.set_facecolor(_BG_COLOR)
 
-        for coin, (x, y, w, h) in zip(coins, rects):
-            # Небольшой зазор со всех сторон вместо плашек впритык -
-            # но не больше половины меньшей стороны, иначе совсем
-            # маленькие плашки (низкий вес) схлопнутся в точку.
-            gap = min(_TILE_GAP, w * 0.15, h * 0.15)
-            rx, ry, rw, rh = x + gap, y + gap, w - 2 * gap, h - 2 * gap
-            if rw <= 0 or rh <= 0:
-                continue
-
-            color = _tile_color(coin["pct"])
-            rounding = max(min(rw, rh) * 0.06, 0.15)
-            rect = FancyBboxPatch(
-                (rx, ry), rw, rh,
-                boxstyle=f"round,pad=0,rounding_size={rounding}",
-                linewidth=1.3 if coin["suspicious"] else 0.8,
-                edgecolor="#FFD700" if coin["suspicious"] else _TIER_ACCENT.get(coin["tier_key"], _BG_COLOR),
-                facecolor=color,
-            )
-            ax.add_patch(rect)
-
-            # Размер шрифта и то, что вообще влезает (тикер / тикер+%),
-            # зависят от МЕНЬШЕЙ стороны плашки - крупные монеты (SOL,
-            # AVAX) получают крупный текст как на образце, мелкие -
-            # компактную подпись без потери читаемости.
-            short_side = min(rw, rh)
-            cx, cy = rx + rw / 2, ry + rh / 2
-            pct_str = f"{coin['pct']:+.1f}%" if coin["pct"] is not None else "н/д"
-            marker = " ⚠️" if coin["suspicious"] else ""
-
-            if short_side >= 9:
-                ticker_fs = min(15 + short_side * 0.9, 34)
-                pct_fs = min(9 + short_side * 0.35, 16)
-                ax.text(cx, cy + short_side * 0.14, f"${coin['ticker']}",
-                        ha="center", va="center", fontsize=ticker_fs, fontweight="bold", color=_TEXT_COLOR)
-                ax.text(cx, cy - short_side * 0.22, f"{pct_str}{marker}",
-                        ha="center", va="center", fontsize=pct_fs, color=_TEXT_COLOR)
-            elif short_side >= 4:
-                ax.text(cx, cy + rh * 0.12, f"${coin['ticker']}",
-                        ha="center", va="center", fontsize=max(short_side * 1.15, 7),
-                        fontweight="bold", color=_TEXT_COLOR)
-                ax.text(cx, cy - rh * 0.22, pct_str,
-                        ha="center", va="center", fontsize=max(short_side * 0.9, 6), color=_TEXT_COLOR)
-            elif short_side >= 1.8:
-                # Совсем маленькая плашка (низковесные монеты tier3) -
-                # только тикер, без % (не влезет читаемо в обе строки).
-                ax.text(cx, cy, coin["ticker"], ha="center", va="center",
-                        fontsize=max(short_side * 1.4, 5.5), fontweight="bold", color=_TEXT_COLOR)
-            # Ещё меньше - оставляем плашку голой (только цвет), подпись
-            # была бы нечитаемой кашей - площадь и цвет уже несут сигнал.
-
+        # Оси/заголовок/шапку с процентами по тирам фиксируем ДО того,
+        # как будем мерить и вписывать подписи монет - tight_layout ниже
+        # меняет итоговое положение осей на холсте (под заголовок и
+        # шапку), а нам для честного измерения текста (см.
+        # _fit_text_in_box/_clip_to_tile) нужны уже ФИНАЛЬНЫЕ
+        # display-координаты плашек, а не те, что были бы до подгонки
+        # layout'а - иначе поймали бы ту же рассинхронизацию, из-за
+        # которой подписи и вылезали за края плашек раньше.
         ax.set_xlim(0, _CANVAS_W)
         ax.set_ylim(0, _CANVAS_H)
         ax.invert_yaxis()  # самые крупные монеты - сверху, как в примере, а не снизу
@@ -286,7 +346,108 @@ def generate_treasury_heatmap(result) -> Optional[Path]:
             )
 
         _CHARTS_DIR.mkdir(exist_ok=True)
-        fig.tight_layout(rect=(0, 0, 1, 0.93))
+        # Нижний отступ резервируем только если он реально нужен (есть
+        # хотя бы одна аномальная монета) - иначе обычный пост без
+        # предупреждений не терял бы впустую место под карту.
+        bottom_margin = 0.06 if result.suspicious else 0.0
+        fig.tight_layout(rect=(0, bottom_margin, 1, 0.93))
+        # Финализирует расположение осей на холсте и даёт renderer,
+        # которым _fit_text_in_box реально измеряет отрисованный текст -
+        # без этого шага get_window_extent() вернул бы координаты по
+        # ещё не готовому layout'у.
+        renderer = fig.canvas.get_renderer()
+
+        for coin, (x, y, w, h) in zip(coins, rects):
+            # Небольшой зазор со всех сторон вместо плашек впритык -
+            # но не больше половины меньшей стороны, иначе совсем
+            # маленькие плашки (низкий вес) схлопнутся в точку.
+            gap = min(_TILE_GAP, w * 0.15, h * 0.15)
+            rx, ry, rw, rh = x + gap, y + gap, w - 2 * gap, h - 2 * gap
+            if rw <= 0 or rh <= 0:
+                continue
+
+            color = _tile_color(coin["pct"])
+            rounding = max(min(rw, rh) * 0.06, 0.15)
+            rect = FancyBboxPatch(
+                (rx, ry), rw, rh,
+                boxstyle=f"round,pad=0,rounding_size={rounding}",
+                linewidth=1.3 if coin["suspicious"] else 0.8,
+                edgecolor="#FFD700" if coin["suspicious"] else _TIER_ACCENT.get(coin["tier_key"], _BG_COLOR),
+                facecolor=color,
+            )
+            ax.add_patch(rect)
+
+            # Верхняя граница размера шрифта, от которой стартует
+            # подгонка (см. _fit_text_in_box) - зависит от МЕНЬШЕЙ
+            # стороны плашки, как и раньше, но теперь это только
+            # ОТПРАВНАЯ точка: реальный размер ниже подбирается по
+            # фактически измеренному тексту, а не берётся как есть, так
+            # что длинные тикеры (AVAX, PENDLE, DYDX...) в узких плашках
+            # больше не вылезают за её границы.
+            short_side = min(rw, rh)
+            cx, cy = rx + rw / 2, ry + rh / 2
+            pct_str = f"{coin['pct']:+.1f}%" if coin["pct"] is not None else "н/д"
+
+            pad_w, pad_h = rw * _TEXT_PADDING_FACTOR, rh * _TEXT_PADDING_FACTOR
+
+            if short_side >= 4:
+                # Тикер сверху, % снизу - каждая строка получает свою
+                # половину высоты плашки под измерение, чтобы линии
+                # гарантированно не наезжали друг на друга по вертикали.
+                ticker_max_fs = min(15 + short_side * 0.9, 34) if short_side >= 9 else max(short_side * 1.15, 7)
+                pct_max_fs = min(9 + short_side * 0.35, 16) if short_side >= 9 else max(short_side * 0.9, 6)
+
+                ticker_txt, ticker_fs = _fit_text_in_box(
+                    ax, renderer, f"${coin['ticker']}", cx, cy + rh * 0.22,
+                    pad_w, pad_h * 0.42, ticker_max_fs,
+                    ha="center", va="center", fontweight="bold", color=_TEXT_COLOR,
+                )
+                if ticker_txt is not None:
+                    _clip_to_tile(ticker_txt, ax, rx, ry, rw, rh)
+
+                pct_txt, _ = _fit_text_in_box(
+                    ax, renderer, pct_str, cx, cy - rh * 0.22,
+                    pad_w, pad_h * 0.34, pct_max_fs,
+                    ha="center", va="center", color=_TEXT_COLOR,
+                )
+                if pct_txt is not None:
+                    _clip_to_tile(pct_txt, ax, rx, ry, rw, rh)
+
+                # Если даже тикер (более короткая строка) не влез хотя
+                # бы на минимальном читаемом размере - плашка слишком
+                # тесная для двух строк, пробуем один только тикер по
+                # центру (см. ветку ниже), а не оставляем пустоту.
+                if ticker_txt is None and short_side >= 1.8:
+                    solo_txt, _ = _fit_text_in_box(
+                        ax, renderer, coin["ticker"], cx, cy,
+                        pad_w, pad_h, max(short_side * 1.4, 5.5),
+                        ha="center", va="center", fontweight="bold", color=_TEXT_COLOR,
+                    )
+                    if solo_txt is not None:
+                        _clip_to_tile(solo_txt, ax, rx, ry, rw, rh)
+            elif short_side >= 1.8:
+                # Совсем маленькая плашка (низковесные монеты tier3) -
+                # только тикер, без % (не влезет читаемо в обе строки).
+                solo_txt, _ = _fit_text_in_box(
+                    ax, renderer, coin["ticker"], cx, cy,
+                    pad_w, pad_h, max(short_side * 1.4, 5.5),
+                    ha="center", va="center", fontweight="bold", color=_TEXT_COLOR,
+                )
+                if solo_txt is not None:
+                    _clip_to_tile(solo_txt, ax, rx, ry, rw, rh)
+            # Ещё меньше - оставляем плашку голой (только цвет), подпись
+            # была бы нечитаемой кашей - площадь и цвет уже несут сигнал.
+
+            if coin["suspicious"]:
+                _draw_warning_badge(ax, rx, ry, rw, rh)
+
+        if result.suspicious:
+            fig.text(
+                0.01, 0.01,
+                "⚠ выброс/аномалия - исключено из расчёта среднего тира",
+                color="#FFD700", fontsize=9, ha="left", va="bottom",
+            )
+
         fig.savefig(_OUT_PATH, facecolor=fig.get_facecolor())
         plt.close(fig)
     except Exception:
