@@ -107,6 +107,77 @@ def test_one_bad_record_does_not_block_the_rest(monkeypatch):
     assert "ok-reply" in calls
 
 
+# ============================================================
+# main._publish_win_celebrations - формат "Забрали профит!" (Binance
+# Square). LLM (win_celebration_generator.call_groq) и публикация
+# (binance_publisher.publish_post) замокан - проверяем только логику
+# принятия решений (кого публикуем, что пропускаем, что не роняет tick).
+# ============================================================
+
+def test_win_celebrations_publishes_only_for_win_records(monkeypatch):
+    monkeypatch.setattr(main.win_celebration_generator, "generate_win_celebration_hook", lambda angle: "Невероятно!")
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
+
+    records = [
+        _closed_record(ticker="LOSS1", result="loss", hours_to_close=3.0),
+        _closed_record(ticker="WIN1", result="win", hours_to_close=4.5),
+        _closed_record(ticker="TIMEOUT1", result="timeout", hours_to_close=48.0),
+    ]
+    main._publish_win_celebrations(records)
+
+    assert len(calls) == 1
+    assert "$WIN1" in calls[0]
+    assert "Невероятно!" in calls[0]
+
+
+def test_win_celebrations_skips_when_hook_generation_fails(monkeypatch):
+    monkeypatch.setattr(main.win_celebration_generator, "generate_win_celebration_hook", lambda angle: None)
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
+
+    main._publish_win_celebrations([_closed_record(ticker="WIN1", result="win", hours_to_close=4.5)])
+
+    assert calls == []
+
+
+def test_win_celebrations_skips_when_hook_fails_validation(monkeypatch):
+    monkeypatch.setattr(main.win_celebration_generator, "generate_win_celebration_hook", lambda angle: "Заработал 7%!")
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
+
+    main._publish_win_celebrations([_closed_record(ticker="WIN1", result="win", hours_to_close=4.5)])
+
+    # Реальный validate_win_celebration_hook (не замокан) должен отбраковать
+    # хук с цифрой - публикации быть не должно.
+    assert calls == []
+
+
+def test_win_celebrations_one_bad_record_does_not_block_the_rest(monkeypatch):
+    def _fake_hook(angle):
+        return "Невероятно!"
+
+    monkeypatch.setattr(main.win_celebration_generator, "generate_win_celebration_hook", _fake_hook)
+
+    calls = []
+
+    def _fake_publish(text, **kwargs):
+        if "BAD" in text:
+            raise main.binance_publisher.PublishError("boom")
+        calls.append(text)
+
+    monkeypatch.setattr(main.binance_publisher, "publish_post", _fake_publish)
+
+    records = [
+        _closed_record(ticker="BAD", result="win", hours_to_close=1.0),
+        _closed_record(ticker="GOOD", result="win", hours_to_close=2.0),
+    ]
+    main._publish_win_celebrations(records)
+
+    assert len(calls) == 1
+    assert "$GOOD" in calls[0]
+
+
 def test_try_publish_hot_take_skips_when_bluesky_not_configured(monkeypatch):
     monkeypatch.setattr(config, "BLUESKY_HANDLE", "")
     monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "")

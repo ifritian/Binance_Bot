@@ -15,10 +15,14 @@ main.py - точка входа.
 каждом тике; для opinion/article новый контент генерируется "с нуля"
 в момент публикации, без отдельной очереди.
 """
+import base64
 import logging
 import mimetypes
 import random
 import sys
+import tempfile
+import time
+from dataclasses import asdict
 from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -27,6 +31,7 @@ import article_generator
 import accuracy_report_generator
 import alerting
 import audience_question_generator
+import binance_promo_generator
 import binance_publisher
 import bluesky_publisher
 import chart_generator
@@ -56,6 +61,7 @@ import treasury_generator
 import validator
 import voice_memory
 import volatility_alert
+import win_celebration_generator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -214,13 +220,21 @@ def _do_publish(
     post_text: str, image_paths, ticker: str | None = None, hook: str | None = None, signal=None
 ) -> tuple:
     """Возвращает (published: bool, bluesky_ref: dict | None) -
-    bluesky_ref - {uri, cid} корневого поста в Bluesky (обычного или
-    первого поста треда "сильного сетапа"), если кросспост туда
-    состоялся - нужен вызывающему коду (main._publish_signal) для
-    outcome_tracker.record_signal_outcome (формат "До/После" отвечает
-    именно в этот пост, см. main._post_outcome_updates_to_bluesky)."""
+    bluesky_ref ВСЕГДА None здесь: кросспост в Bluesky теперь отложен
+    (см. _schedule_crossposts) и публикуется на одном из следующих
+    тиков, а не синхронно внутри этого вызова. Когда отложенный кроспост
+    реально состоится, ссылка на него дозаписывается в уже созданную
+    запись трекинга результата через
+    queue_manager.attach_bluesky_ref_to_outcome (см.
+    _publish_scheduled_bluesky) - формат "До/После" по-прежнему работает,
+    просто привязка происходит чуть позже, а не в момент этого вызова."""
+    binance_text = post_text
+    cta = post_format.maybe_binance_cta()
+    if cta:
+        binance_text = f"{post_text}\n\n{cta}"
+
     try:
-        result = binance_publisher.publish_post(post_text, image_paths=image_paths)
+        result = binance_publisher.publish_post(binance_text, image_paths=image_paths)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации: %s", e)
         return False, None
@@ -228,9 +242,8 @@ def _do_publish(
     logger.info("Опубликовано (валюта): %s", result)
     image_path = image_paths[0] if image_paths else None
     telegram_text = _build_extended_telegram_text(post_text, signal, hook) if (signal is not None and hook) else post_text
-    _crosspost_to_telegram(telegram_text, image_path)
-    bluesky_ref = _crosspost_to_bluesky(post_text, image_path, ticker=ticker, hook=hook, signal=signal)
-    return True, bluesky_ref
+    _schedule_crossposts(post_text, telegram_text, image_path, ticker, hook, signal)
+    return True, None
 
 
 def _build_extended_telegram_text(post_text: str, signal, hook: str) -> str:
@@ -359,6 +372,169 @@ def _crosspost_to_bluesky(
         return None
 
 
+# ============================================================
+# Отложенный кроспостинг сигналов (разведение площадок по времени)
+# ============================================================
+#
+# Раньше _do_publish кросспостил (через _crosspost_to_telegram и
+# _crosspost_to_bluesky выше) СРАЗУ ЖЕ после публикации на Binance
+# Square - все три площадки получали пост в одну и ту же минуту.
+# Функции ниже вместо этого кладут кроспост в очередь bot_state.db с
+# случайной задержкой (config.CROSSPOST_DELAY_MIN/MAX_MINUTES) и
+# публикуют его на одном из следующих тиков, когда время наступит - см.
+# _process_pending_crossposts, вызывается из tick().
+#
+# Другие форматы (мнение, treasury, статья, отчёты) по-прежнему
+# кросспостятся синхронно через _crosspost_to_telegram/_crosspost_to_bluesky
+# выше - они публикуются намного реже сигналов, разводить их по времени
+# отдельная задача (можно сделать следующим шагом при необходимости).
+
+
+def _b64_to_tempfile(image_b64: str, content_type: str | None) -> Path:
+    """Обратная операция base64.b64encode в _schedule_crossposts -
+    файл на диске от исходной публикации (chart_generator/image_analyzer)
+    не переживает следующий запуск GitHub Actions (свежий checkout), а
+    отложенный кроспост может публиковаться через несколько запусков -
+    поэтому картинка хранится в очереди как base64 и восстанавливается
+    во временный файл только непосредственно перед отправкой в Telegram
+    (Bot API sendPhoto ожидает путь к файлу, в отличие от Bluesky, куда
+    можно грузить сырые байты напрямую - см. _publish_scheduled_bluesky)."""
+    ext = mimetypes.guess_extension(content_type or "image/png") or ".png"
+    charts_dir = config.BASE_DIR / "charts"
+    charts_dir.mkdir(exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext, dir=charts_dir)
+    tmp.write(base64.b64decode(image_b64))
+    tmp.close()
+    return Path(tmp.name)
+
+
+def _schedule_crossposts(
+    post_text: str, telegram_text: str, image_path, ticker: str | None, hook: str | None, signal
+) -> None:
+    """Кладёт кроспост в Telegram и в Bluesky в очередь отложенной
+    публикации - каждая площадка получает свою НЕЗАВИСИМУЮ случайную
+    задержку в диапазоне config.CROSSPOST_DELAY_MIN_MINUTES..
+    CROSSPOST_DELAY_MAX_MINUTES, так что порядок площадок между собой
+    каждый раз разный (иногда раньше "созреет" Telegram, иногда Bluesky).
+
+    Полностью опционально по каждой площадке, как и раньше - если
+    площадка не настроена, запись просто не добавляется в очередь."""
+    image_b64 = None
+    content_type = "image/png"
+    if image_path is not None:
+        path = Path(image_path)
+        content_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        image_b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+
+    now = time.time()
+
+    if telegram_publisher.is_configured():
+        delay_seconds = random.uniform(config.CROSSPOST_DELAY_MIN_MINUTES, config.CROSSPOST_DELAY_MAX_MINUTES) * 60
+        due_ts = now + delay_seconds
+        queue_manager.push_pending_crosspost("telegram", due_ts, {
+            "text": telegram_text,
+            "image_b64": image_b64,
+            "content_type": content_type,
+            "ticker": ticker,
+        })
+        logger.info("Кросспост в Telegram (%s) отложен на ~%.0f мин", ticker, delay_seconds / 60)
+
+    if bluesky_publisher.is_configured():
+        delay_seconds = random.uniform(config.CROSSPOST_DELAY_MIN_MINUTES, config.CROSSPOST_DELAY_MAX_MINUTES) * 60
+        due_ts = now + delay_seconds
+        queue_manager.push_pending_crosspost("bluesky", due_ts, {
+            "text": post_text,
+            "image_b64": image_b64,
+            "content_type": content_type,
+            "ticker": ticker,
+            "hook": hook,
+            "signal": asdict(signal) if signal is not None else None,
+        })
+        logger.info("Кросспост в Bluesky (%s) отложен на ~%.0f мин", ticker, delay_seconds / 60)
+
+
+def _publish_scheduled_telegram(data: dict) -> None:
+    if not telegram_publisher.is_configured():
+        return
+
+    image_path = None
+    if data.get("image_b64"):
+        image_path = _b64_to_tempfile(data["image_b64"], data.get("content_type"))
+
+    telegram_publisher.publish_post(data["text"], image_path)
+    logger.info("Отложенный кросспост в Telegram опубликован (%s)", data.get("ticker"))
+
+
+def _publish_scheduled_bluesky(data: dict) -> None:
+    if not bluesky_publisher.is_configured():
+        return
+
+    text = data["text"]
+    ticker = data.get("ticker")
+    hook = data.get("hook")
+    signal = signal_parser.RsiSignal(**data["signal"]) if data.get("signal") else None
+
+    image_bytes = base64.b64decode(data["image_b64"]) if data.get("image_b64") else None
+    content_type = data.get("content_type") or "image/png"
+
+    bluesky_ref = None
+    if signal is not None and hook is not None and post_format.is_strong_setup(signal):
+        posts = post_format.build_bluesky_thread_signal(hook, signal)
+        results = bluesky_publisher.publish_thread(posts, image_bytes=image_bytes, image_content_type=content_type)
+        logger.info(
+            "Опубликован отложенный Bluesky-тред \"сильный сетап\" для %s (score=%s)",
+            signal.ticker, signal.score,
+        )
+        bluesky_ref = bluesky_publisher.thread_ref(results[0]) if results else None
+    else:
+        if image_bytes and random.random() < config.BLUESKY_TEASER_PROBABILITY:
+            bluesky_text, link_facets = post_format.build_bluesky_teaser(ticker=ticker)
+        else:
+            bluesky_text, link_facets = post_format.build_bluesky_post(text, ticker=ticker)
+        result = bluesky_publisher.publish_post(
+            bluesky_text, image_bytes=image_bytes, image_content_type=content_type, link_facets=link_facets,
+        )
+        bluesky_ref = bluesky_publisher.thread_ref(result)
+
+    logger.info("Отложенный кросспост в Bluesky опубликован (%s)", ticker)
+
+    # Привязываем ссылку к уже созданной записи трекинга результата
+    # (см. _do_publish/outcome_tracker.record_signal_outcome) - только
+    # для сигналов (image insight не трекается по результату).
+    if bluesky_ref and ticker and signal is not None:
+        queue_manager.attach_bluesky_ref_to_outcome(ticker, bluesky_ref)
+
+
+def _process_pending_crossposts() -> None:
+    """Вызывается каждый тик - публикует все отложенные кроспосты, чьё
+    время уже наступило (см. queue_manager.get_due_crossposts). Ошибка
+    на одной записи не должна ронять остальные - каждая обрабатывается
+    в своём try/except, с ограниченным числом повторных попыток
+    (register_failed_crosspost), как у основной очереди сигналов."""
+    due = queue_manager.get_due_crossposts()
+    for item in due:
+        platform = item["platform"]
+        data = item["data"]
+        try:
+            if platform == "telegram":
+                _publish_scheduled_telegram(data)
+            elif platform == "bluesky":
+                _publish_scheduled_bluesky(data)
+            else:
+                logger.warning("Неизвестная площадка в очереди отложенных кроспостов: %s", platform)
+            queue_manager.remove_crosspost(item["id"])
+        except Exception as e:
+            logger.warning("Отложенный кросспост (%s, %s) не удался: %s", platform, data.get("ticker"), e)
+            dropped = queue_manager.register_failed_crosspost(item["id"])
+            if dropped:
+                logger.warning(
+                    "Отложенный кросспост (%s, %s) выброшен из очереди после превышения лимита попыток",
+                    platform, data.get("ticker"),
+                )
+
+    queue_manager.prune_stale_crossposts(config.CROSSPOST_STALE_HOURS)
+
+
 def _post_outcome_updates_to_bluesky(closed_records: list) -> None:
     """Форматы "До/После" и "Win-reveal" - вызывается из tick() сразу
     после outcome_tracker.check_open_outcomes() для каждой ТОЛЬКО ЧТО
@@ -404,6 +580,40 @@ def _post_outcome_updates_to_bluesky(closed_records: list) -> None:
             except bluesky_publisher.BlueskyPublishError as e:
                 logger.warning("Win-reveal в Bluesky для %s не удался: %s", record["ticker"], e)
 
+
+def _publish_win_celebrations(closed_records: list) -> None:
+    """Формат "Забрали профит!" (см. win_celebration_generator.py) -
+    ТОЛЬКО Binance Square, на КАЖДУЮ сделку, закрывшуюся в плюс в этом
+    тике. Вызывается из tick() сразу после _post_outcome_updates_to_bluesky
+    (тот же список closed_records, что и там - один и тот же источник
+    "что только что закрылось", просто два независимых формата на двух
+    площадках).
+
+    Как и остальные "бонусные", не критичные для основной публикации
+    форматы (Bluesky win-reveal/До-После, промо-посты) - ошибка на
+    одной записи логируется и не должна ронять остальные/весь tick()."""
+    for record in closed_records:
+        if record.get("result") != "win":
+            continue
+        try:
+            angle = win_celebration_generator.pick_angle(queue_manager.get_last_win_celebration_angle())
+            hook = win_celebration_generator.generate_win_celebration_hook(angle)
+            if hook is None:
+                continue
+
+            ok, reason = win_celebration_generator.validate_win_celebration_hook(hook)
+            if not ok:
+                logger.warning("Хук 'Забрали профит!' для %s не прошёл проверку (%s) - пропускаю", record["ticker"], reason)
+                continue
+
+            post_text = post_format.assemble_win_celebration_post(hook, record)
+            binance_publisher.publish_post(post_text)
+            queue_manager.set_last_win_celebration_angle(angle)
+            logger.info("Опубликован пост 'Забрали профит!' для %s (%+.2f%%)", record["ticker"], record["pnl_pct"])
+        except binance_publisher.PublishError as e:
+            logger.warning("Пост 'Забрали профит!' для %s не удался: %s", record["ticker"], e)
+        except Exception:
+            logger.exception("Неожиданная ошибка при публикации 'Забрали профит!' для %s", record.get("ticker"))
 
 
 def try_publish_currency_post() -> None:
@@ -580,6 +790,68 @@ def try_publish_opinion_post() -> None:
 # ============================================================
 # Формат "Хот-тейк" - ТОЛЬКО Bluesky (см. hot_take_generator.py)
 # ============================================================
+
+# ============================================================
+# Формат "Промо" - ТОЛЬКО Binance Square (см. binance_promo_generator.py)
+# ============================================================
+
+def try_publish_binance_promo() -> None:
+    """Как try_publish_hot_take, но зеркально: публикует ТОЛЬКО на
+    Binance Square, минуя Telegram/Bluesky целиком - это
+    площадочно-специфичный формат про выгоду/удобство самой площадки
+    (комиссии, Square как соцсеть), а не про рыночный сигнал."""
+    seconds_elapsed = queue_manager.seconds_since_last_post("binance_promo")
+    min_seconds = config.BINANCE_PROMO_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("binance_promo")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("binance_promo"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+
+    logger.info("Окно публикации (промо, Binance Square) открыто - генерирую пост")
+
+    theme = binance_promo_generator.pick_theme(queue_manager.get_last_binance_promo_theme())
+    hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
+
+    try:
+        text = binance_promo_generator.generate_binance_promo(theme, hook_mode=hook_mode)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на промо-посте - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("binance_promo", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации промо-поста: %s", e)
+        queue_manager.set_retry_backoff("binance_promo", 1)
+        return
+
+    if text is None:
+        logger.warning("Не удалось сгенерировать промо-пост (тема %s) - пропускаю до следующего окна", theme)
+        queue_manager.set_retry_backoff("binance_promo", 1)
+        return
+
+    ok, reason = binance_promo_generator.validate_binance_promo(text)
+    if not ok:
+        logger.error("Промо-пост не прошёл проверку, публикация отменена: %s", reason)
+        queue_manager.set_retry_backoff("binance_promo", 1)
+        return
+
+    post_text = binance_promo_generator.assemble_binance_promo(text)
+
+    try:
+        binance_publisher.publish_post(post_text)
+    except binance_publisher.PublishError as e:
+        logger.warning("Публикация промо-поста на Binance Square не удалась: %s", e)
+        queue_manager.set_retry_backoff("binance_promo", 1)
+        return
+
+    logger.info("Опубликован промо-пост (фокус %s) на Binance Square", theme)
+    voice_memory.record_post(post_text)
+    queue_manager.set_last_binance_promo_theme(theme)
+    queue_manager.set_last_hook_mode(hook_mode)
+    queue_manager.set_last_post_time("binance_promo")
+    queue_manager.roll_new_jitter("binance_promo", config.BINANCE_PROMO_JITTER_HOURS * 3600)
+
 
 def try_publish_hot_take() -> None:
     """В отличие от остальных try_publish_* - публикует ТОЛЬКО в
@@ -1251,6 +1523,7 @@ def tick() -> None:
                     outcome_summary["closed"], outcome_summary["still_open"],
                 )
                 _post_outcome_updates_to_bluesky(outcome_summary["closed_records"])
+                _publish_win_celebrations(outcome_summary["closed_records"])
         except Exception:
             logger.exception("Ошибка проверки открытых результатов - пропускаю до следующего тика")
 
@@ -1265,6 +1538,11 @@ def tick() -> None:
             _check_dead_mans_switch()
         except Exception:
             logger.exception("Ошибка проверки dead man's switch - пропускаю до следующего тика")
+
+        try:
+            _process_pending_crossposts()
+        except Exception:
+            logger.exception("Ошибка обработки отложенных кроспостов - пропускаю до следующего тика")
 
         queue_manager.prune_expired_index_signals(config.INDEX_SIGNAL_MAX_AGE_HOURS)
         try:
@@ -1301,6 +1579,7 @@ def tick() -> None:
 
         try_publish_emergency_post()
         try_publish_currency_post()
+        try_publish_binance_promo()
         try_publish_opinion_post()
         try_publish_hot_take()
         try_publish_mini_lesson()
