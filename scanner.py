@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 import requests
 
 import config
+import multi_timeframe
 import queue_manager
 import strategy_tuner
 from signal_parser import RsiSignal
@@ -354,6 +355,17 @@ def run_scan() -> int:
 
         direction_key = "short" if "перекуплен" in signal.direction else "long"
         if queue_manager.was_recently_alerted(ticker, direction_key, ALERT_COOLDOWN_HOURS):
+            continue
+
+        # Подтверждение старшими таймфреймами (1ч/4ч/1д, см.
+        # multi_timeframe.py) - ПОСЛЕ дешёвых проверок выше (листинг,
+        # cooldown), чтобы три дополнительных запроса свечей не тратились
+        # впустую на сигнал, который и так не пойдёт дальше. Может
+        # изменить score/quality сигнала (согласие/конфликт со старшими
+        # ТФ) или отклонить сигнал целиком (veto при сильном конфликте) -
+        # см. docstring multi_timeframe.refine_signal.
+        signal = multi_timeframe.refine_signal(signal, symbol)
+        if signal is None:
             continue
 
         if int(signal.score) <= strategy_tuner.get_effective_min_score(signal.strategy, config.MIN_SIGNAL_SCORE_TO_PUBLISH):

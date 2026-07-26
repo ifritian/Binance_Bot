@@ -25,6 +25,7 @@ import logging
 
 import requests
 
+import multi_timeframe
 import queue_manager
 import scanner
 import strategy_tuner
@@ -108,6 +109,13 @@ def run_index_scan() -> int:
         # тикера с обычным сканером (SOL и там, и там) не мешало друг другу.
         if queue_manager.was_recently_alerted(f"index:{signal.ticker}", direction_key,
                                                config.INDEX_SIGNAL_ALERT_COOLDOWN_HOURS):
+            continue
+
+        # Подтверждение старшими таймфреймами (1ч/4ч/1д) - та же логика,
+        # что и в scanner.run_scan (см. multi_timeframe.py), только для
+        # заведомо более узкой вселенной (15 монет индекса вместо 150).
+        signal = multi_timeframe.refine_signal(signal, symbol)
+        if signal is None:
             continue
 
         if int(signal.score) <= strategy_tuner.get_effective_min_score(signal.strategy, config.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH):
