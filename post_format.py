@@ -4,6 +4,7 @@
 чтобы дисклеймер и структура были одинаковыми во всех форматах.
 """
 import config
+import signal_parser
 
 # Фиксированная фраза дисклеймера - меняй только здесь.
 DISCLAIMER = "Информационный пост, не финансовая рекомендация."
@@ -108,19 +109,18 @@ def assemble_index_management_post(hook: str, signal, tier_label: str, weight: f
     signal - RsiSignal (из index_signal_scanner.py). tier_label/weight -
     из treasury_index.find_coin_by_ticker(signal.ticker).
     """
-    is_buy = "перепрод" in signal.direction.lower()
+    is_buy = signal_parser.is_long_direction(signal.direction)
     emoji = "🟢" if is_buy else "🔴"
     action = "Докупка доли" if is_buy else "Частичная фиксация доли"
     range_label = "Диапазон для докупки" if is_buy else "Диапазон для фиксации"
-    rsi_state = "перепроданность" if is_buy else "перекупленность"
 
     lines = [
         f"{tier_label} | вес в индексе: {weight:g}%",
-        f"RSI: {signal.rsi_now} ({rsi_state})",
+        f"{signal.strategy} | RSI: {signal.rsi_now}",
         "",
         f"Действие: {emoji} {action}",
         f"{range_label}: {signal.entry_low} - {signal.entry_high}",
-        f"Ориентир возврата к среднему: {signal.target}",
+        f"Ориентир: {signal.target}",
         f"Пересмотреть тезис, если цена уйдёт за: {signal.invalidation}",
     ]
     block = "\n".join(lines)

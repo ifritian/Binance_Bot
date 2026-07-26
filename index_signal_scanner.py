@@ -28,6 +28,8 @@ import requests
 import multi_timeframe
 import queue_manager
 import scanner
+import signal_parser
+import strategies
 import strategy_tuner
 import treasury_index
 
@@ -85,9 +87,52 @@ def _resolve_symbol_and_candles(coin: dict):
     return None
 
 
+def _process_index_signal_candidate(signal, symbol: str, coin: dict, config) -> bool:
+    """Общий конвейер для ОДНОГО кандидата (RSI/Bollinger или любая
+    стратегия из strategies.ADDITIONAL_STRATEGIES) в разрезе Treasury
+    Index - зеркало scanner._process_signal_candidate, но со своим
+    cooldown-namespace ("index:") и отдельной очередью
+    (push_pending_index_signal), плюс обогащением описания тиром/весом
+    монеты в индексе (нужно генератору поста, см. index_signal_generator.py)."""
+    direction_key = "long" if signal_parser.is_long_direction(signal.direction) else "short"
+    # Отдельный namespace ("index:") в cooldown - чтобы совпадение
+    # тикера с обычным сканером (SOL и там, и там) не мешало друг другу.
+    if queue_manager.was_recently_alerted(f"index:{signal.ticker}", direction_key,
+                                           config.INDEX_SIGNAL_ALERT_COOLDOWN_HOURS):
+        return False
+
+    # Подтверждение старшими таймфреймами (1ч/4ч/1д) - та же логика,
+    # что и в scanner.run_scan (см. multi_timeframe.py), только для
+    # заведомо более узкой вселенной (15 монет индекса вместо 150).
+    refined = multi_timeframe.refine_signal(signal, symbol)
+    if refined is None:
+        return False
+    signal = refined
+
+    if int(signal.score) <= strategy_tuner.get_effective_min_score(signal.strategy, config.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH):
+        return False
+
+    # Обогащаем описание контекстом индекса - пригодится генератору
+    # поста, чтобы объяснить, почему это важно именно для управления
+    # корзиной (тир и вес), а не просто "тикер перепродан".
+    signal.description += f" [Индекс: {coin['tier_label']}, вес {coin['weight']:g}% корзины]"
+
+    queue_manager.push_pending_index_signal(signal)
+    queue_manager.mark_alerted(f"index:{signal.ticker}", direction_key)
+    logger.info(
+        "Индекс-сканер: новый сигнал %s %s (%s, %s, score %s)",
+        signal.ticker, signal.direction, signal.strategy, coin["tier_label"], signal.score,
+    )
+    return True
+
+
 def run_index_scan() -> int:
     """Сканирует только монеты Treasury Index, кладёт найденные сигналы
-    в отдельную очередь. Возвращает число добавленных сигналов."""
+    в отдельную очередь. Возвращает число добавленных сигналов.
+
+    Как и scanner.run_scan - пробует RSI/Bollinger И все стратегии из
+    strategies.ADDITIONAL_STRATEGIES на одних и тех же уже полученных
+    свечах (без лишних сетевых запросов)."""
     import config
 
     quote_volumes = _fetch_quote_volumes()
@@ -100,39 +145,14 @@ def run_index_scan() -> int:
         symbol, candles = resolved
         quote_volume = quote_volumes.get(symbol, 0.0)
 
-        signal = scanner._build_signal(symbol, candles, quote_volume)
-        if signal is None:
-            continue  # RSI сейчас не в экстремальной зоне - по этой монете сейчас нечего сказать
+        candidates = [scanner._build_signal(symbol, candles, quote_volume)]
+        for build_extra_signal in strategies.ADDITIONAL_STRATEGIES:
+            candidates.append(build_extra_signal(symbol, candles, quote_volume))
+        candidates = [c for c in candidates if c is not None]
 
-        direction_key = "short" if "перекуплен" in signal.direction else "long"
-        # Отдельный namespace ("index:") в cooldown - чтобы совпадение
-        # тикера с обычным сканером (SOL и там, и там) не мешало друг другу.
-        if queue_manager.was_recently_alerted(f"index:{signal.ticker}", direction_key,
-                                               config.INDEX_SIGNAL_ALERT_COOLDOWN_HOURS):
-            continue
-
-        # Подтверждение старшими таймфреймами (1ч/4ч/1д) - та же логика,
-        # что и в scanner.run_scan (см. multi_timeframe.py), только для
-        # заведомо более узкой вселенной (15 монет индекса вместо 150).
-        signal = multi_timeframe.refine_signal(signal, symbol)
-        if signal is None:
-            continue
-
-        if int(signal.score) <= strategy_tuner.get_effective_min_score(signal.strategy, config.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH):
-            continue
-
-        # Обогащаем описание контекстом индекса - пригодится генератору
-        # поста, чтобы объяснить, почему это важно именно для управления
-        # корзиной (тир и вес), а не просто "тикер перепродан".
-        signal.description += f" [Индекс: {coin['tier_label']}, вес {coin['weight']:g}% корзины]"
-
-        queue_manager.push_pending_index_signal(signal)
-        queue_manager.mark_alerted(f"index:{signal.ticker}", direction_key)
-        added += 1
-        logger.info(
-            "Индекс-сканер: новый сигнал %s %s (%s, score %s)",
-            signal.ticker, signal.direction, coin["tier_label"], signal.score,
-        )
+        for signal in candidates:
+            if _process_index_signal_candidate(signal, symbol, coin, config):
+                added += 1
 
     if added:
         logger.info("Индекс-сканер: добавлено %d новых сигналов", added)

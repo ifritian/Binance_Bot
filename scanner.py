@@ -27,7 +27,9 @@ import requests
 import config
 import multi_timeframe
 import queue_manager
+import strategies
 import strategy_tuner
+import signal_parser
 from signal_parser import RsiSignal
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,9 @@ class _Candle:
     high: float
     low: float
     close: float
+    volume: float = 0.0  # объём в quote-валюте (USDT) этой свечи - используется
+                          # strategies.py для подтверждения пробоя объёмом,
+                          # исходный RSI/Bollinger расчёт его не использует
 
 
 def _fetch_universe() -> list[tuple[str, float]]:
@@ -106,7 +111,13 @@ def _fetch_klines(symbol: str, limit: int = 100) -> list[_Candle]:
         logger.debug("Не удалось получить свечи %s: %s", symbol, e)
         return []
 
-    return [_Candle(open=float(r[1]), high=float(r[2]), low=float(r[3]), close=float(r[4])) for r in rows]
+    return [
+        _Candle(
+            open=float(r[1]), high=float(r[2]), low=float(r[3]), close=float(r[4]),
+            volume=float(r[7]) if len(r) > 7 else 0.0,  # объём в quote-валюте (USDT)
+        )
+        for r in rows
+    ]
 
 
 def _calc_rsi_series(closes: list[float], period: int = RSI_PERIOD) -> list[float]:
@@ -327,9 +338,65 @@ def _is_actively_trading(symbol: str) -> bool:
     return True
 
 
+def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_score_cfg: int) -> bool:
+    """Общий конвейер обработки ОДНОГО кандидата - неважно, от базовой
+    RSI/Bollinger (см. _build_signal выше) или от любой стратегии из
+    strategies.ADDITIONAL_STRATEGIES: cooldown -> подтверждение старшими
+    ТФ (multi_timeframe.refine_signal) -> порог публикации -> очередь.
+    Возвращает True, если сигнал был добавлен в очередь.
+
+    Ключ cooldown - (ticker, direction), БЕЗ учёта стратегии: если в
+    один и тот же тик сразу две разные стратегии сигналят "SOL, лонг" -
+    после первой же успешно добавленной публикация второй такой же по
+    направлению станет избыточной (читателю не нужны два почти
+    одинаковых поста подряд про один и тот же тикер/направление) - её
+    отфильтрует тот же cooldown, что защищает и от повторов одной и той
+    же стратегии."""
+    direction_key = "long" if signal_parser.is_long_direction(signal.direction) else "short"
+    if queue_manager.was_recently_alerted(ticker, direction_key, ALERT_COOLDOWN_HOURS):
+        return False
+
+    # Подтверждение старшими таймфреймами (1ч/4ч/1д, см.
+    # multi_timeframe.py) - может изменить score/quality сигнала
+    # (согласие/конфликт со старшими ТФ) или отклонить сигнал целиком
+    # (veto при сильном конфликте).
+    refined = multi_timeframe.refine_signal(signal, symbol)
+    if refined is None:
+        return False
+    signal = refined
+
+    if int(signal.score) <= strategy_tuner.get_effective_min_score(signal.strategy, min_score_cfg):
+        # Сигнал есть, но он не пройдёт порог публикации (см.
+        # config.MIN_SIGNAL_SCORE_TO_PUBLISH, с поправкой strategy_tuner -
+        # если у ЭТОЙ стратегии статистически слабый win-rate, порог для
+        # неё временно строже) - не кладём его в очередь и НЕ ставим
+        # cooldown, чтобы на следующем тике, если сетап станет более
+        # выраженным, сигнал по этому же тикеру мог пройти порог и быть
+        # учтён. Раньше такие сигналы всё равно копились в очереди и
+        # просто вытесняли друг друга при переполнении (>30), никогда не
+        # доходя до публикации.
+        return False
+
+    queue_manager.push_pending_signal(signal)
+    queue_manager.mark_alerted(ticker, direction_key)
+    logger.info(
+        "Сканер: новый сигнал %s %s (%s, score %s)",
+        ticker, signal.direction, signal.strategy, signal.score,
+    )
+    return True
+
+
 def run_scan() -> int:
     """Сканирует рынок и кладёт найденные сигналы в очередь бота.
-    Возвращает количество добавленных сигналов."""
+    Возвращает количество добавленных сигналов.
+
+    Пробует НЕСКОЛЬКО независимых стратегий на одних и тех же уже
+    полученных свечах - базовую RSI/Bollinger (_build_signal) и все из
+    strategies.ADDITIONAL_STRATEGIES (MACD Crossover, Donchian Breakout
+    и т.п.). Стратегии не обязаны совпадать друг с другом - сигнал от
+    ЛЮБОЙ из них независимо проходит дальше (см. _process_signal_candidate).
+    Это НЕ увеличивает число сетевых запросов - все стратегии работают
+    на одном и том же наборе свечей одного fetch'а на символ."""
     universe = _fetch_universe()
     if not universe:
         logger.warning("Сканер: не удалось получить список пар - пропускаю тик")
@@ -341,52 +408,24 @@ def run_scan() -> int:
         if not candles:
             continue
 
-        ticker = symbol.replace("USDT", "")
-        signal = _build_signal(symbol, candles, quote_volume)
-        if signal is None:
-            continue
+        candidates = [_build_signal(symbol, candles, quote_volume)]
+        for build_extra_signal in strategies.ADDITIONAL_STRATEGIES:
+            candidates.append(build_extra_signal(symbol, candles, quote_volume))
+        candidates = [c for c in candidates if c is not None]
+        if not candidates:
+            continue  # ни одна стратегия ничего не нашла по этой паре прямо сейчас
 
         if not _is_actively_trading(symbol):
             # Пара всё ещё встречается в /ticker/24hr зеркала (иногда
             # неделями/месяцами после реального делистинга), но
             # /exchangeInfo подтверждает, что торговать ей уже нельзя -
-            # не даём такому сигналу дойти до очереди/публикации.
+            # не даём ни одному из кандидатов дойти до очереди/публикации.
             continue
 
-        direction_key = "short" if "перекуплен" in signal.direction else "long"
-        if queue_manager.was_recently_alerted(ticker, direction_key, ALERT_COOLDOWN_HOURS):
-            continue
-
-        # Подтверждение старшими таймфреймами (1ч/4ч/1д, см.
-        # multi_timeframe.py) - ПОСЛЕ дешёвых проверок выше (листинг,
-        # cooldown), чтобы три дополнительных запроса свечей не тратились
-        # впустую на сигнал, который и так не пойдёт дальше. Может
-        # изменить score/quality сигнала (согласие/конфликт со старшими
-        # ТФ) или отклонить сигнал целиком (veto при сильном конфликте) -
-        # см. docstring multi_timeframe.refine_signal.
-        signal = multi_timeframe.refine_signal(signal, symbol)
-        if signal is None:
-            continue
-
-        if int(signal.score) <= strategy_tuner.get_effective_min_score(signal.strategy, config.MIN_SIGNAL_SCORE_TO_PUBLISH):
-            # Сигнал есть, но он не пройдёт порог публикации (см.
-            # config.MIN_SIGNAL_SCORE_TO_PUBLISH, с поправкой
-            # strategy_tuner - если у ЭТОЙ стратегии статистически слабый
-            # win-rate, порог для неё временно строже) - не кладём его в
-            # очередь и НЕ ставим cooldown, чтобы на следующем тике, если
-            # RSI/Bollinger станут более выраженными, сигнал по этому же
-            # тикеру мог пройти порог и быть учтён. Раньше такие сигналы
-            # всё равно копились в очереди и просто вытесняли друг друга
-            # при переполнении (>30), никогда не доходя до публикации.
-            continue
-
-        queue_manager.push_pending_signal(signal)
-        queue_manager.mark_alerted(ticker, direction_key)
-        added += 1
-        logger.info(
-            "Сканер: новый сигнал %s %s (RSI %.1f, score %s)",
-            ticker, signal.direction, float(signal.rsi_now), signal.score,
-        )
+        ticker = symbol.replace("USDT", "")
+        for signal in candidates:
+            if _process_signal_candidate(signal, symbol, ticker, config.MIN_SIGNAL_SCORE_TO_PUBLISH):
+                added += 1
 
     if added:
         logger.info("Сканер: добавлено %d новых сигналов в очередь", added)

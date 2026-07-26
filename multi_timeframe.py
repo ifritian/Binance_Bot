@@ -34,6 +34,8 @@ from typing import Optional
 
 import requests
 
+import signal_parser
+
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://data-api.binance.vision/api/v3"
@@ -132,9 +134,10 @@ def fetch_htf_snapshot(symbol: str) -> dict:
     return snapshot
 
 
-def evaluate_confluence(oversold: bool, htf_snapshot: dict) -> tuple[int, bool, str]:
-    """Сверяет направление 15м-сигнала (oversold=True - лонг/перепроданность,
-    False - шорт/перекупленность) со снимком старших ТФ.
+def evaluate_confluence(is_long: bool, htf_snapshot: dict) -> tuple[int, bool, str]:
+    """Сверяет направление сигнала (is_long=True - лонг, любая причина:
+    перепроданность по RSI, бычье пересечение MACD, пробой диапазона
+    вверх и т.п.; False - шорт) со снимком старших ТФ.
 
     "За" сигнал - тренд этого ТФ совпадает по направлению сделки (up для
     лонга, down для шорта). "Против" - тренд направлен в обратную
@@ -150,8 +153,8 @@ def evaluate_confluence(oversold: bool, htf_snapshot: dict) -> tuple[int, bool, 
     - note - короткая человекочитаемая строка для description сигнала
       (прозрачность для читателя поста - видно, ПОЧЕМУ score именно
       такой, а не просто цифра из ниоткуда)."""
-    wanted_trend = "up" if oversold else "down"
-    against_trend = "down" if oversold else "up"
+    wanted_trend = "up" if is_long else "down"
+    against_trend = "down" if is_long else "up"
 
     confirming, conflicting = [], []
     for tf, data in htf_snapshot.items():
@@ -198,13 +201,13 @@ def refine_signal(signal, symbol: str):
     сетевой сбой) - сигнал возвращается БЕЗ ИЗМЕНЕНИЙ: лучше сигнал без
     HTF-подтверждения, чем полное отсутствие сигнала из-за временного
     сбоя вспомогательной проверки."""
-    oversold = "перепроданность" in signal.direction or "Лонг" in signal.direction
+    is_long = signal_parser.is_long_direction(signal.direction)
 
     htf_snapshot = fetch_htf_snapshot(symbol)
     if not htf_snapshot:
         return signal
 
-    adjustment, veto, note = evaluate_confluence(oversold, htf_snapshot)
+    adjustment, veto, note = evaluate_confluence(is_long, htf_snapshot)
     if veto:
         logger.info(
             "HTF veto: %s %s (score был %s) отклонён - %s",

@@ -18,6 +18,7 @@ import re
 import cliche_filter
 from groq_client import call_groq
 import post_format
+import signal_parser
 from signal_parser import RsiSignal
 import treasury_index
 from validator import find_suspicious_english_words
@@ -81,9 +82,9 @@ def _validate_hook(hook: str) -> tuple[bool, str]:
 
 
 def _fallback_hook(signal: RsiSignal) -> str:
-    if "перепрод" in signal.direction.lower():
-        return f"${signal.ticker} сейчас в зоне перепроданности по RSI - в рамках Treasury Index может быть удобный момент для докупки доли."
-    return f"${signal.ticker} сейчас в зоне перекупленности по RSI - в рамках Treasury Index можно рассмотреть частичную фиксацию доли."
+    if signal_parser.is_long_direction(signal.direction):
+        return f"${signal.ticker} даёт сигнал ({signal.strategy}) - в рамках Treasury Index может быть удобный момент для докупки доли."
+    return f"${signal.ticker} даёт сигнал ({signal.strategy}) - в рамках Treasury Index можно рассмотреть частичную фиксацию доли."
 
 
 def generate_index_signal_post(signal: RsiSignal) -> str:

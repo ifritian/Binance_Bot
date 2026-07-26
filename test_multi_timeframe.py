@@ -51,7 +51,7 @@ def test_classify_trend_none_when_not_enough_data():
 
 def test_confluence_all_confirming_long():
     snapshot = {"1h": {"trend": "up", "rsi": 55}, "4h": {"trend": "up", "rsi": 52}, "1d": {"trend": "up", "rsi": 60}}
-    adjustment, veto, note = mtf.evaluate_confluence(oversold=True, htf_snapshot=snapshot)
+    adjustment, veto, note = mtf.evaluate_confluence(is_long=True, htf_snapshot=snapshot)
     assert adjustment == 3 * mtf.CONFLUENCE_BONUS_PER_TF
     assert veto is False
     assert "подтверждено" in note
@@ -59,7 +59,7 @@ def test_confluence_all_confirming_long():
 
 def test_confluence_single_conflict_no_veto():
     snapshot = {"1h": {"trend": "down", "rsi": 40}, "4h": {"trend": "neutral", "rsi": 48}, "1d": {"trend": "neutral", "rsi": 50}}
-    adjustment, veto, note = mtf.evaluate_confluence(oversold=True, htf_snapshot=snapshot)
+    adjustment, veto, note = mtf.evaluate_confluence(is_long=True, htf_snapshot=snapshot)
     assert adjustment == -mtf.CONFLUENCE_PENALTY_PER_TF
     assert veto is False
     assert "против" in note
@@ -67,27 +67,27 @@ def test_confluence_single_conflict_no_veto():
 
 def test_confluence_two_conflicts_triggers_veto():
     snapshot = {"4h": {"trend": "down", "rsi": 35}, "1d": {"trend": "down", "rsi": 38}}
-    adjustment, veto, note = mtf.evaluate_confluence(oversold=True, htf_snapshot=snapshot)
+    adjustment, veto, note = mtf.evaluate_confluence(is_long=True, htf_snapshot=snapshot)
     assert veto is True
 
 
 def test_confluence_mixed_note():
     snapshot = {"1h": {"trend": "up", "rsi": 55}, "4h": {"trend": "down", "rsi": 40}}
-    adjustment, veto, note = mtf.evaluate_confluence(oversold=True, htf_snapshot=snapshot)
+    adjustment, veto, note = mtf.evaluate_confluence(is_long=True, htf_snapshot=snapshot)
     assert "смешанная" in note
     assert veto is False  # только 1 против - ниже VETO_MIN_CONFLICTING_TF
 
 
 def test_confluence_short_direction_wants_downtrend():
     snapshot = {"4h": {"trend": "down", "rsi": 45}, "1d": {"trend": "down", "rsi": 40}}
-    adjustment, veto, note = mtf.evaluate_confluence(oversold=False, htf_snapshot=snapshot)
+    adjustment, veto, note = mtf.evaluate_confluence(is_long=False, htf_snapshot=snapshot)
     assert adjustment == 2 * mtf.CONFLUENCE_BONUS_PER_TF
     assert veto is False
 
 
 def test_confluence_neutral_only_no_adjustment():
     snapshot = {"1h": {"trend": "neutral", "rsi": 50}, "4h": {"trend": "neutral", "rsi": 49}}
-    adjustment, veto, note = mtf.evaluate_confluence(oversold=True, htf_snapshot=snapshot)
+    adjustment, veto, note = mtf.evaluate_confluence(is_long=True, htf_snapshot=snapshot)
     assert adjustment == 0
     assert veto is False
     assert note == "старшие ТФ нейтральны"
