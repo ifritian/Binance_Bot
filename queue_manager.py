@@ -1027,6 +1027,39 @@ def prune_stale_crossposts(max_age_hours: float) -> int:
     return dropped_count
 
 
+# --- Предохранители риска фьючерсов (risk_guard.py) ---
+# Тот же key-value store bot_state.db, что и весь остальной модуль -
+# отдельная таблица тут не нужна (см. _SCHEMA наверху файла).
+
+def get_risk_daily_baseline(day_key: str) -> Optional[float]:
+    """Баланс кошелька, зафиксированный при ПЕРВОЙ проверке за
+    UTC-день day_key (например '2026-07-29') - точка отсчёта для
+    дневного лимита убытка (см. risk_guard._daily_loss_pct). None,
+    если сегодня ещё не проверяли ни разу."""
+    return _get(f"risk_daily_baseline:{day_key}", None)
+
+
+def set_risk_daily_baseline(day_key: str, balance: float) -> None:
+    _set(f"risk_daily_baseline:{day_key}", balance)
+
+
+def get_kill_switch() -> Optional[dict]:
+    """{'reason': str, 'tripped_at': timestamp}, если предохранитель
+    (дневной лимит убытка или серия убытков подряд - см. risk_guard.py)
+    сработал, иначе None. Сознательно НЕ привязан к дню/сессии - раз
+    взведённый kill switch остаётся взведённым, пока его явно не снимут
+    (см. clear_kill_switch), даже после наступления нового UTC-дня."""
+    return _get("risk_kill_switch", None)
+
+
+def set_kill_switch(reason: str) -> None:
+    _set("risk_kill_switch", {"reason": reason, "tripped_at": time.time()})
+
+
+def clear_kill_switch() -> None:
+    _set("risk_kill_switch", None)
+
+
 def pending_crosspost_summary() -> list[str]:
     """Короткое описание очереди для диагностики (check_state.py)."""
     out = []

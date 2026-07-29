@@ -250,6 +250,53 @@ MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH = int(os.environ.get("MIN_INDEX_SIGNAL_SCORE_T
 INDEX_SIGNAL_ALERT_COOLDOWN_HOURS = float(os.environ.get("INDEX_SIGNAL_ALERT_COOLDOWN_HOURS", "12"))
 INDEX_SIGNAL_MAX_AGE_HOURS = float(os.environ.get("INDEX_SIGNAL_MAX_AGE_HOURS", "2"))
 
+# --- Futures-исполнение (testnet-первым делом, см. futures_client.py/
+# futures_executor.py) - ЭТО НЕ ГЕНЕРАЦИЯ ПОСТОВ, а реальное управление
+# позициями (пусть пока и на учебном счёте). Ключи ОБЯЗАНЫ иметь права
+# ТОЛЬКО на торговлю (никогда не вывод средств) и никогда не должны
+# попадать в git/логи - только через переменные окружения/GitHub Secrets.
+#
+# BINANCE_FUTURES_USE_TESTNET по умолчанию True - ОСОЗНАННЫЙ выбор:
+# переключение на реальные деньги требует явно выставить
+# BINANCE_FUTURES_USE_TESTNET=false, а не происходит само по себе из-за
+# забытой/дефолтной переменной окружения.
+BINANCE_FUTURES_API_KEY = os.environ.get("BINANCE_FUTURES_API_KEY", "")
+BINANCE_FUTURES_API_SECRET = os.environ.get("BINANCE_FUTURES_API_SECRET", "")
+BINANCE_FUTURES_USE_TESTNET = os.environ.get("BINANCE_FUTURES_USE_TESTNET", "true").strip().lower() != "false"
+BINANCE_FUTURES_RECV_WINDOW_MS = int(os.environ.get("BINANCE_FUTURES_RECV_WINDOW_MS", "5000"))
+
+# Риск-менеджмент по умолчанию - консервативные значения, которые
+# ПОЛЬЗОВАТЕЛЬ должен осознанно увеличивать, а не наоборот.
+BINANCE_FUTURES_DEFAULT_LEVERAGE = int(os.environ.get("BINANCE_FUTURES_DEFAULT_LEVERAGE", "3"))
+# % от баланса, которым рискуем на ОДНУ сделку (не размер позиции целиком,
+# а именно риск = сколько потеряем, если сработает стоп) - см.
+# futures_executor.calc_position_size.
+BINANCE_FUTURES_RISK_PCT_PER_TRADE = float(os.environ.get("BINANCE_FUTURES_RISK_PCT_PER_TRADE", "1.0"))
+
+# --- Предохранители риска ПОВЕРХ отдельной сделки (см. risk_guard.py) ---
+# BINANCE_FUTURES_RISK_PCT_PER_TRADE выше ограничивает риск ОДНОЙ
+# сделки - но ничто не мешает открыть сколько угодно таких (по
+# отдельности правильно посчитанных) позиций подряд. Эти три лимита -
+# про СУММАРНУЮ картину. risk_guard.check_new_position_allowed
+# вызывается futures_executor.open_protected_position ПЕРВЫМ делом, до
+# единого API-вызова на биржу - именно это делает автоматический вход
+# по сигналу (без ручного подтверждения на каждую сделку) безопасным.
+#
+# Максимум ОДНОВРЕМЕННО открытых позиций (across всех символов) - сверх
+# него новая позиция не откроется, пока одна из текущих не закроется
+# (это НЕ взводит kill switch ниже - самоустраняется само).
+BINANCE_FUTURES_MAX_OPEN_POSITIONS = int(os.environ.get("BINANCE_FUTURES_MAX_OPEN_POSITIONS", "3"))
+# Дневной лимит убытка в % от баланса на начало UTC-дня (фиксируется
+# при первой проверке за день - см. risk_guard._daily_loss_pct). При
+# достижении risk_guard ВЗВОДИТ kill switch - блокирует ВСЕ новые
+# позиции, пока кто-то осознанно не снимет его (risk_guard_cli.py
+# reset). Специально НЕ снимается сам по себе на следующий день.
+BINANCE_FUTURES_MAX_DAILY_LOSS_PCT = float(os.environ.get("BINANCE_FUTURES_MAX_DAILY_LOSS_PCT", "5.0"))
+# Сколько убыточных сделок ПОДРЯД (по факту закрытия на бирже - см.
+# risk_guard._consecutive_losses) взводят kill switch так же, как
+# дневной лимит выше.
+BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES = int(os.environ.get("BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES", "3"))
+
 
 def validate_config() -> list[str]:
     """Возвращает список незаполненных обязательных переменных."""
