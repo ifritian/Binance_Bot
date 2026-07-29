@@ -10,3 +10,8 @@ __pycache__/
 # Виртуальное окружение
 .venv/
 venv/
+
+# Состояние futures-бота - НЕ то же самое, что bot_state.db постинг-бота
+# (тот коммитит сам GitHub Actions) - см. futures_state.py про то, почему
+# это чисто локальный runtime-файл, а не история для коммитов.
+futures_state.db

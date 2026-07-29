@@ -339,12 +339,20 @@ def _is_actively_trading(symbol: str) -> bool:
 
 
 def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_score_cfg: int,
-                               on_signal_accepted=None) -> bool:
+                               on_signal_accepted=None, state=queue_manager) -> bool:
     """Общий конвейер обработки ОДНОГО кандидата - неважно, от базовой
     RSI/Bollinger (см. _build_signal выше) или от любой стратегии из
     strategies.ADDITIONAL_STRATEGIES: cooldown -> подтверждение старшими
     ТФ (multi_timeframe.refine_signal) -> порог публикации -> очередь.
     Возвращает True, если сигнал был добавлен в очередь.
+
+    state - модуль (или любой объект с той же тройкой методов:
+    was_recently_alerted/mark_alerted/push_pending_signal), который
+    хранит cooldown и очередь. По умолчанию queue_manager (bot_state.db,
+    постинг-бот) - поведение на 100% совпадает со старым. futures_auto_trade.py
+    передаёт сюда futures_state (futures_state.db) - у futures-бота СВОЙ
+    cooldown, независимый от постинг-бота (см. docstring futures_state.py
+    про то, почему у двух ботов разное состояние, но общий код сканера).
 
     on_signal_accepted(signal, symbol) - опциональный колбэк, вызывается
     ПОСЛЕ того, как сигнал прошёл ВСЕ те же фильтры, что и для публикации
@@ -352,11 +360,10 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
     futures_signal_bridge.py/futures_auto_trade.py, который передаёт сюда
     колбэк, открывающий защищённую позицию по прошедшему фильтры сигналу.
     scanner.py сознательно НИЧЕГО не знает о futures/риск-предохранителях -
-    это ответственность колбэка, не этого модуля (тот же сканер
-    переиспользуется index_signal_scanner.py, которому futures вообще не
-    касается). Ошибка внутри колбэка НЕ должна ронять весь тик сканирования
-    (одна плохая позиция не должна останавливать сканирование остальных
-    150 пар) - см. try/except вокруг вызова.
+    это ответственность колбэка, не этого модуля. Ошибка внутри колбэка НЕ
+    должна ронять весь тик сканирования (одна плохая позиция не должна
+    останавливать сканирование остальных 150 пар) - см. try/except вокруг
+    вызова.
 
     Ключ cooldown - (ticker, direction), БЕЗ учёта стратегии: если в
     один и тот же тик сразу две разные стратегии сигналят "SOL, лонг" -
@@ -366,7 +373,7 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
     отфильтрует тот же cooldown, что защищает и от повторов одной и той
     же стратегии."""
     direction_key = "long" if signal_parser.is_long_direction(signal.direction) else "short"
-    if queue_manager.was_recently_alerted(ticker, direction_key, ALERT_COOLDOWN_HOURS):
+    if state.was_recently_alerted(ticker, direction_key, ALERT_COOLDOWN_HOURS):
         return False
 
     # Подтверждение старшими таймфреймами (1ч/4ч/1д, см.
@@ -390,8 +397,8 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
         # доходя до публикации.
         return False
 
-    queue_manager.push_pending_signal(signal)
-    queue_manager.mark_alerted(ticker, direction_key)
+    state.push_pending_signal(signal)
+    state.mark_alerted(ticker, direction_key)
     logger.info(
         "Сканер: новый сигнал %s %s (%s, score %s)",
         ticker, signal.direction, signal.strategy, signal.score,
@@ -410,13 +417,14 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
     return True
 
 
-def run_scan(on_signal_accepted=None) -> int:
+def run_scan(on_signal_accepted=None, state=queue_manager) -> int:
     """Сканирует рынок и кладёт найденные сигналы в очередь бота.
     Возвращает количество добавленных сигналов.
 
-    on_signal_accepted - см. docstring _process_signal_candidate. По
-    умолчанию None - поведение полностью совпадает со старым (только
-    публикация в очередь, без каких-либо побочных действий).
+    on_signal_accepted/state - см. docstring _process_signal_candidate.
+    По умолчанию (queue_manager, None) поведение полностью совпадает со
+    старым - только публикация в очередь постинг-бота, без побочных
+    действий.
 
     Пробует НЕСКОЛЬКО независимых стратегий на одних и тех же уже
     полученных свечах - базовую RSI/Bollinger (_build_signal) и все из
@@ -453,7 +461,7 @@ def run_scan(on_signal_accepted=None) -> int:
         ticker = symbol.replace("USDT", "")
         for signal in candidates:
             if _process_signal_candidate(signal, symbol, ticker, config.MIN_SIGNAL_SCORE_TO_PUBLISH,
-                                          on_signal_accepted=on_signal_accepted):
+                                          on_signal_accepted=on_signal_accepted, state=state):
                 added += 1
 
     if added:

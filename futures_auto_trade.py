@@ -21,6 +21,14 @@ risk_guard.py). Это то, ради чего затевался весь пр�
 3. risk_guard.py (см. config.BINANCE_FUTURES_MAX_*) - максимум открытых
    позиций, дневной лимит убытка, серия убытков подряд - те же самые
    предохранители, что и у ручного входа через futures_testnet_demo.py.
+4. ПОЛНОСТЬЮ ОТДЕЛЬНОЕ СОСТОЯНИЕ от постинг-бота (см. futures_state.py) -
+   этот скрипт вызывает scanner.run_scan(state=futures_state), поэтому
+   ни kill switch/baseline (risk_guard.py), ни cooldown сканирования
+   рынка НИКОГДА не пишутся в bot_state.db (тот коммитит и пушит сам
+   постинг-бот через GitHub Actions - раньше это создавало конфликты
+   git, если оба бота писали в один и тот же файл). Значит и очередь
+   постов (queue_manager.push_pending_signal) сюда НЕ попадает -
+   futures-бот не публикует посты, только торгует.
 
 Использование:
     export BINANCE_FUTURES_API_KEY=...      # testnet-ключ
@@ -40,6 +48,7 @@ import sys
 
 import config
 import futures_signal_bridge
+import futures_state
 import risk_guard
 import scanner
 from futures_client import FuturesClient, TESTNET_BASE_URL, FuturesApiError
@@ -91,11 +100,11 @@ def main() -> int:
         if result is not None:
             executed.append(result)
 
-    added_to_queue = scanner.run_scan(on_signal_accepted=_on_signal_accepted)
+    signals_accepted = scanner.run_scan(on_signal_accepted=_on_signal_accepted, state=futures_state)
 
     logger.info(
-        "Готово: %d сигнал(ов) добавлено в очередь постов, %d позици(й) реально открыто%s",
-        added_to_queue, len(executed),
+        "Готово: %d сигнал(ов) прошли фильтры сканера, %d позици(й) реально открыто%s",
+        signals_accepted, len(executed),
         f", {len(skipped_dry_run)} прошли бы фильтр (dry-run)" if not args.live else "",
     )
     for result in executed:

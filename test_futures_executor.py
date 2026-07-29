@@ -285,7 +285,7 @@ def test_no_risk_limits_means_no_guard_calls():
 def test_risk_limits_blocked_prevents_any_exchange_call(monkeypatch):
     # Kill switch взведён -> check_new_position_allowed отказывает СРАЗУ,
     # ни один метод биржи (set_leverage и дальше) не должен вызваться.
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch",
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch",
                          lambda: {"reason": "тест", "tripped_at": 0})
     client = _FakeClient(balance=10_000, mark_price=100.0)
     limits = risk_guard.RiskLimits(max_open_positions=3, max_daily_loss_pct=5.0, max_consecutive_losses=3)
@@ -304,9 +304,9 @@ def test_risk_limits_blocked_prevents_any_exchange_call(monkeypatch):
 
 
 def test_risk_limits_allowed_proceeds_to_normal_flow(monkeypatch):
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
     client = _FakeClient(balance=10_000, mark_price=100.0)
     limits = risk_guard.RiskLimits(max_open_positions=3, max_daily_loss_pct=5.0, max_consecutive_losses=3)
     result = fe.open_protected_position(

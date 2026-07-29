@@ -235,6 +235,15 @@ ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
 DB_PATH = BASE_DIR / "bot_state.db"
 LOG_PATH = BASE_DIR / "bot.log"
 
+# Отдельный файл состояния futures-бота (risk_guard.py/futures_state.py) -
+# СОЗНАТЕЛЬНО не bot_state.db. bot_state.db коммитит и пушит сам GitHub
+# Actions постинг-бота (см. .github/workflows/bot.yml) - если futures-бот
+# (запускаемый отдельно, локально/по своему расписанию) писал бы туда же,
+# локальные изменения регулярно конфликтовали бы с тем, что успел запушить
+# workflow между запусками (см. futures_state.py про разделение состояния
+# двух ботов). FUTURES_DB_PATH намеренно НЕ в git (см. .gitignore).
+FUTURES_DB_PATH = BASE_DIR / "futures_state.db"
+
 # --- Сигналы по монетам Treasury Index (index_signal_scanner.py) ---
 # Тот же RSI/Bollinger сканер, что и scanner.py, но вселенная - только
 # 15 монет индекса, не весь рынок. Идея: подписчикам, которые следят

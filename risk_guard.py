@@ -12,7 +12,8 @@ calc_position_size). Каждая позиция по отдельности м�
 3. Серия убыточных сделок ПОДРЯД (по факту закрытия на бирже).
 
 Лимиты 2 и 3 при срабатывании ВЗВОДЯТ kill switch (см.
-queue_manager.set_kill_switch) - персистентный (bot_state.db) флаг
+futures_state.set_kill_switch) - персистентный (см. futures_state.py -
+СВОЙ отдельный файл состояния, НЕ bot_state.db постинг-бота) флаг
 "торговля остановлена", который НЕ снимается сам по себе - ни на
 следующий UTC-день, ни при следующей прибыльной сделке. Снять его можно
 только осознанно: `python3 risk_guard_cli.py reset`, посмотрев вначале,
@@ -37,7 +38,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-import queue_manager
+import futures_state
 
 logger = logging.getLogger(__name__)
 
@@ -70,11 +71,11 @@ def _daily_loss_pct(client, asset: str = "USDT") -> tuple[float, float, float]:
     модуля) - и дальше не пересчитывается до следующего дня, даже если
     эту функцию вызвать снова позже в тот же день."""
     day_key = _utc_day_key()
-    baseline = queue_manager.get_risk_daily_baseline(day_key)
+    baseline = futures_state.get_risk_daily_baseline(day_key)
     current = client.get_wallet_balance(asset)
     if baseline is None:
         baseline = current
-        queue_manager.set_risk_daily_baseline(day_key, baseline)
+        futures_state.set_risk_daily_baseline(day_key, baseline)
         logger.info("risk_guard: зафиксирован дневной baseline на %s: %.4f %s", day_key, baseline, asset)
     if baseline <= 0:
         return 0.0, baseline, current
@@ -122,7 +123,7 @@ def _evaluate_and_maybe_trip(client, limits: RiskLimits) -> tuple[Optional[dict]
 
     Возвращает (kill_switch_после_проверки, loss_pct, baseline, current,
     streak)."""
-    kill_switch = queue_manager.get_kill_switch()
+    kill_switch = futures_state.get_kill_switch()
 
     loss_pct, baseline, current = _daily_loss_pct(client)
     if kill_switch is None and loss_pct >= limits.max_daily_loss_pct:
@@ -130,14 +131,14 @@ def _evaluate_and_maybe_trip(client, limits: RiskLimits) -> tuple[Optional[dict]
             f"дневной убыток {loss_pct:.2f}% >= лимита {limits.max_daily_loss_pct:.2f}% "
             f"(baseline {baseline:.2f} -> сейчас {current:.2f})"
         )
-        queue_manager.set_kill_switch(reason)
+        futures_state.set_kill_switch(reason)
         kill_switch = {"reason": reason, "tripped_at": time.time()}
         logger.error("risk_guard: KILL SWITCH ВЗВЕДЁН (дневной лимит убытка): %s", reason)
 
     streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20))
     if kill_switch is None and streak >= limits.max_consecutive_losses:
         reason = f"{streak} убыточных сделок подряд (лимит {limits.max_consecutive_losses})"
-        queue_manager.set_kill_switch(reason)
+        futures_state.set_kill_switch(reason)
         kill_switch = {"reason": reason, "tripped_at": time.time()}
         logger.error("risk_guard: KILL SWITCH ВЗВЕДЁН (серия убытков подряд): %s", reason)
 
@@ -150,7 +151,7 @@ def check_new_position_allowed(client, limits: RiskLimits) -> Optional[str]:
     оборачивает результат в ExecutionError на своей стороне,
     единообразно с остальными отказами до входа (недостаточный баланс
     и т.п.)."""
-    kill_switch = queue_manager.get_kill_switch()
+    kill_switch = futures_state.get_kill_switch()
     if kill_switch is not None:
         return (
             f"KILL SWITCH ВЗВЕДЁН ({kill_switch['reason']}) - новые позиции заблокированы, "

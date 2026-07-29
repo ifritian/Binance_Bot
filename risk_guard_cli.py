@@ -6,7 +6,7 @@ risk_guard.py): посмотреть текущее состояние (откр
 осознанно СНЯТЬ уже взведённый kill switch.
 
 НИКОГДА не открывает/не закрывает позиции сам - только читает состояние
-(status) и снимает один флаг в bot_state.db (reset, с подтверждением).
+(status) и снимает один флаг в futures_state.db (свой файл, НЕ bot_state.db постинг-бота) (reset, с подтверждением).
 
 Использует те же переменные окружения, что и futures_testnet_demo.py/
 main.py (BINANCE_FUTURES_USE_TESTNET и т.п., см. config.py) - т.е. по
@@ -24,7 +24,7 @@ import logging
 import sys
 
 import config
-import queue_manager
+import futures_state
 import risk_guard
 from futures_client import FuturesApiError, client_from_config
 
@@ -59,7 +59,7 @@ def _print_status() -> int:
 
 
 def _reset() -> int:
-    existing = queue_manager.get_kill_switch()
+    existing = futures_state.get_kill_switch()
     if existing is None:
         print("Kill switch не взведён - снимать нечего.")
         return 0
@@ -70,7 +70,7 @@ def _reset() -> int:
         print("Отменено.")
         return 0
 
-    queue_manager.clear_kill_switch()
+    futures_state.clear_kill_switch()
     print("Kill switch снят. Новые позиции снова разрешены (в пределах остальных лимитов).")
     return 0
 

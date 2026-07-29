@@ -49,7 +49,7 @@ def _income(pnls):
 # --- kill switch: блокирует немедленно, без единого сетевого вызова ---
 
 def test_kill_switch_blocks_before_any_client_call(monkeypatch):
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch",
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch",
                          lambda: {"reason": "тестовая причина", "tripped_at": 0})
     client = _FakeClient()
     reason = risk_guard.check_new_position_allowed(client, _limits())
@@ -61,7 +61,7 @@ def test_kill_switch_blocks_before_any_client_call(monkeypatch):
 # --- лимит открытых позиций ---
 
 def test_max_open_positions_blocks(monkeypatch):
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
     client = _FakeClient(positions=[{"symbol": "BTCUSDT"}, {"symbol": "ETHUSDT"}, {"symbol": "SOLUSDT"}])
     reason = risk_guard.check_new_position_allowed(client, _limits(max_open=3))
     assert reason is not None
@@ -70,9 +70,9 @@ def test_max_open_positions_blocks(monkeypatch):
 
 
 def test_open_positions_under_limit_does_not_block_on_that_check(monkeypatch):
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
     client = _FakeClient(positions=[{"symbol": "BTCUSDT"}], wallet_balance=10_000.0, income_rows=[])
     reason = risk_guard.check_new_position_allowed(client, _limits(max_open=3))
     assert reason is None
@@ -82,10 +82,10 @@ def test_open_positions_under_limit_does_not_block_on_that_check(monkeypatch):
 
 def test_daily_loss_trips_kill_switch(monkeypatch):
     tripped = {}
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", lambda reason: tripped.setdefault("reason", reason))
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "set_kill_switch", lambda reason: tripped.setdefault("reason", reason))
 
     # баланс упал с 10000 до 9400 = ровно 6% убытка, лимит 5%
     client = _FakeClient(positions=[], wallet_balance=9_400.0, income_rows=[])
@@ -96,14 +96,14 @@ def test_daily_loss_trips_kill_switch(monkeypatch):
 
 
 def test_daily_loss_under_limit_does_not_trip(monkeypatch):
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
 
     def _fail_if_called(reason):
         raise AssertionError("set_kill_switch не должен был вызываться")
 
-    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", _fail_if_called)
+    monkeypatch.setattr(risk_guard.futures_state, "set_kill_switch", _fail_if_called)
     client = _FakeClient(positions=[], wallet_balance=9_600.0, income_rows=[])  # -4%, лимит 5%
     reason = risk_guard.check_new_position_allowed(client, _limits(max_daily_loss_pct=5.0))
     assert reason is None
@@ -111,8 +111,8 @@ def test_daily_loss_under_limit_does_not_trip(monkeypatch):
 
 def test_daily_baseline_set_once_on_first_check(monkeypatch):
     stored = {}
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: stored.get(day))
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: stored.__setitem__(day, bal))
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: stored.get(day))
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: stored.__setitem__(day, bal))
 
     client = _FakeClient(wallet_balance=10_000.0)
     loss_pct, baseline, current = risk_guard._daily_loss_pct(client)
@@ -129,10 +129,10 @@ def test_daily_baseline_set_once_on_first_check(monkeypatch):
 
 def test_consecutive_losses_trips_kill_switch(monkeypatch):
     tripped = {}
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", lambda reason: tripped.setdefault("reason", reason))
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "set_kill_switch", lambda reason: tripped.setdefault("reason", reason))
 
     # 3 убытка подряд, лимит 3
     client = _FakeClient(positions=[], wallet_balance=10_000.0, income_rows=_income([-10, -20, -30]))
@@ -143,14 +143,14 @@ def test_consecutive_losses_trips_kill_switch(monkeypatch):
 
 
 def test_streak_broken_by_a_win_does_not_trip(monkeypatch):
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
 
     def _fail_if_called(reason):
         raise AssertionError("set_kill_switch не должен был вызываться")
 
-    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", _fail_if_called)
+    monkeypatch.setattr(risk_guard.futures_state, "set_kill_switch", _fail_if_called)
     # два убытка, потом выигрыш (последняя сделка) - серия оборвана, несмотря на два убытка до неё
     client = _FakeClient(positions=[], wallet_balance=10_000.0, income_rows=_income([-10, -20, 15]))
     reason = risk_guard.check_new_position_allowed(client, _limits(max_consecutive_losses=3))
@@ -177,9 +177,9 @@ def test_consecutive_losses_sorts_by_time_itself():
 # --- всё в норме ---
 
 def test_all_clear_returns_none(monkeypatch):
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
     client = _FakeClient(positions=[{"symbol": "BTCUSDT"}], wallet_balance=10_100.0, income_rows=_income([10, 20]))
     reason = risk_guard.check_new_position_allowed(client, _limits(max_open=3, max_daily_loss_pct=5.0, max_consecutive_losses=3))
     assert reason is None
@@ -194,10 +194,10 @@ def test_status_trips_kill_switch_on_already_breached_streak(monkeypatch):
     check_new_position_allowed (в момент попытки открыть позицию), а не
     при простом просмотре статуса."""
     tripped = {}
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", lambda reason: tripped.setdefault("reason", reason))
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "set_kill_switch", lambda reason: tripped.setdefault("reason", reason))
 
     client = _FakeClient(positions=[{"symbol": "BTCUSDT"}], wallet_balance=10_000.0,
                           income_rows=_income([-10, -20, -30, -40]))  # 4 подряд, лимит 3
@@ -210,14 +210,14 @@ def test_status_trips_kill_switch_on_already_breached_streak(monkeypatch):
 
 
 def test_status_does_not_trip_when_within_limits(monkeypatch):
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
 
     def _fail_if_called(reason):
         raise AssertionError("set_kill_switch не должен был вызываться")
 
-    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", _fail_if_called)
+    monkeypatch.setattr(risk_guard.futures_state, "set_kill_switch", _fail_if_called)
     client = _FakeClient(positions=[], wallet_balance=10_000.0, income_rows=_income([10, -5]))
     s = risk_guard.status(client, _limits(max_consecutive_losses=3))
     assert s["kill_switch"] is None
@@ -226,11 +226,11 @@ def test_status_does_not_trip_when_within_limits(monkeypatch):
 
 def test_status_reports_already_tripped_kill_switch_without_retripping(monkeypatch):
     calls = []
-    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch",
+    monkeypatch.setattr(risk_guard.futures_state, "get_kill_switch",
                          lambda: {"reason": "уже взведён ранее", "tripped_at": 0})
-    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", lambda reason: calls.append(reason))
-    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
-    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.futures_state, "set_kill_switch", lambda reason: calls.append(reason))
+    monkeypatch.setattr(risk_guard.futures_state, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.futures_state, "set_risk_daily_baseline", lambda day, bal: None)
     client = _FakeClient(positions=[], wallet_balance=10_000.0, income_rows=[])
     s = risk_guard.status(client, _limits())
     assert s["kill_switch"]["reason"] == "уже взведён ранее"
