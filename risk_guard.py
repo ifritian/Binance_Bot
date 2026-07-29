@@ -32,6 +32,7 @@ check_new_position_allowed ПЕРВЫМ делом - до единого API-в�
 аварийно закрыта".
 """
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -103,6 +104,46 @@ def _consecutive_losses(client, lookback: int = 50) -> int:
     return streak
 
 
+def _evaluate_and_maybe_trip(client, limits: RiskLimits) -> tuple[Optional[dict], float, float, float, int]:
+    """Общее ядро для check_new_position_allowed И status: считает
+    дневной убыток и серию подряд, и если ЛЮБОЙ из них уже превышает
+    лимит - взводит kill switch (если он ещё не взведён), НЕЗАВИСИМО от
+    того, вызвано ли это в рамках попытки открыть позицию или просто
+    диагностики (risk_guard_cli.py status).
+
+    Раньше status() был "тихим" - показывал "серия 4/3 (лимит превышен)"
+    и одновременно "kill switch: не взведён", потому что взведение
+    происходило только внутри check_new_position_allowed, то есть в
+    момент РЕАЛЬНОЙ попытки открыть позицию. Это не было дырой (открыть
+    позицию всё равно не удалось бы - следующая же проверка увидела бы
+    превышение и заблокировала), но вводило в заблуждение: превышенный
+    лимит должен взводить предохранитель сразу, как только он обнаружен
+    ЛЮБЫМ кодом, который проверяет состояние - не только в момент сделки.
+
+    Возвращает (kill_switch_после_проверки, loss_pct, baseline, current,
+    streak)."""
+    kill_switch = queue_manager.get_kill_switch()
+
+    loss_pct, baseline, current = _daily_loss_pct(client)
+    if kill_switch is None and loss_pct >= limits.max_daily_loss_pct:
+        reason = (
+            f"дневной убыток {loss_pct:.2f}% >= лимита {limits.max_daily_loss_pct:.2f}% "
+            f"(baseline {baseline:.2f} -> сейчас {current:.2f})"
+        )
+        queue_manager.set_kill_switch(reason)
+        kill_switch = {"reason": reason, "tripped_at": time.time()}
+        logger.error("risk_guard: KILL SWITCH ВЗВЕДЁН (дневной лимит убытка): %s", reason)
+
+    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20))
+    if kill_switch is None and streak >= limits.max_consecutive_losses:
+        reason = f"{streak} убыточных сделок подряд (лимит {limits.max_consecutive_losses})"
+        queue_manager.set_kill_switch(reason)
+        kill_switch = {"reason": reason, "tripped_at": time.time()}
+        logger.error("risk_guard: KILL SWITCH ВЗВЕДЁН (серия убытков подряд): %s", reason)
+
+    return kill_switch, loss_pct, baseline, current, streak
+
+
 def check_new_position_allowed(client, limits: RiskLimits) -> Optional[str]:
     """None - можно открывать новую позицию. Иначе - строка с причиной
     отказа. Намеренно НЕ бросает исключение сама - futures_executor
@@ -124,38 +165,28 @@ def check_new_position_allowed(client, limits: RiskLimits) -> Optional[str]:
             "новая позиция не откроется, пока одна из текущих не закроется"
         )
 
-    loss_pct, baseline, current = _daily_loss_pct(client)
-    if loss_pct >= limits.max_daily_loss_pct:
-        reason = (
-            f"дневной убыток {loss_pct:.2f}% >= лимита {limits.max_daily_loss_pct:.2f}% "
-            f"(baseline {baseline:.2f} -> сейчас {current:.2f})"
+    kill_switch, loss_pct, baseline, current, streak = _evaluate_and_maybe_trip(client, limits)
+    if kill_switch is not None:
+        return (
+            f"KILL SWITCH ВЗВЕДЁН ({kill_switch['reason']}) - новые позиции заблокированы, "
+            "пока кто-то осознанно не снимет его (python3 risk_guard_cli.py reset)."
         )
-        queue_manager.set_kill_switch(reason)
-        logger.error("risk_guard: KILL SWITCH ВЗВЕДЁН (дневной лимит убытка): %s", reason)
-        return f"KILL SWITCH ВЗВЕДЁН ({reason}) - новые позиции заблокированы, пока кто-то осознанно не снимет его."
-
-    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20))
-    if streak >= limits.max_consecutive_losses:
-        reason = f"{streak} убыточных сделок подряд (лимит {limits.max_consecutive_losses})"
-        queue_manager.set_kill_switch(reason)
-        logger.error("risk_guard: KILL SWITCH ВЗВЕДЁН (серия убытков подряд): %s", reason)
-        return f"KILL SWITCH ВЗВЕДЁН ({reason}) - новые позиции заблокированы, пока кто-то осознанно не снимет его."
 
     return None
 
 
 def status(client, limits: RiskLimits) -> dict:
     """Снимок текущего состояния для risk_guard_cli.py status /
-    диагностики. В отличие от check_new_position_allowed, сама НИКОГДА
-    не взводит kill switch по превышенным лимитам - только сообщает о
-    нём, если он уже взведён. Побочный эффект: если сегодня ещё не было
-    ни одной проверки, зафиксирует дневной baseline (та же логика, что
-    и при обычной проверке - baseline должен быть один и тот же,
-    откуда бы его ни зафиксировали первым)."""
-    kill_switch = queue_manager.get_kill_switch()
+    диагностики. В отличие от старого поведения, теперь ТОЖЕ взводит
+    kill switch, если находит уже превышенный лимит (см.
+    _evaluate_and_maybe_trip) - "просто посмотреть статус" не должно
+    показывать превышенный лимит рядом с "kill switch: не взведён".
+    Побочный эффект: если сегодня ещё не было ни одной проверки,
+    зафиксирует дневной baseline (та же логика, что и при обычной
+    проверке - baseline должен быть один и тот же, откуда бы его ни
+    зафиксировали первым)."""
     open_positions = client.get_all_positions()
-    loss_pct, baseline, current = _daily_loss_pct(client)
-    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20))
+    kill_switch, loss_pct, baseline, current, streak = _evaluate_and_maybe_trip(client, limits)
     return {
         "kill_switch": kill_switch,
         "open_positions": len(open_positions),

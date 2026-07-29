@@ -185,6 +185,58 @@ def test_all_clear_returns_none(monkeypatch):
     assert reason is None
 
 
+# --- status(): не должен "молчать" о превышенном лимите ---
+
+def test_status_trips_kill_switch_on_already_breached_streak(monkeypatch):
+    """Регрессионный тест на реальный баг: status() раньше мог
+    показать 'убытков подряд: 4/3' и одновременно 'kill switch: не
+    взведён' - потому что взведение раньше происходило только внутри
+    check_new_position_allowed (в момент попытки открыть позицию), а не
+    при простом просмотре статуса."""
+    tripped = {}
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", lambda reason: tripped.setdefault("reason", reason))
+
+    client = _FakeClient(positions=[{"symbol": "BTCUSDT"}], wallet_balance=10_000.0,
+                          income_rows=_income([-10, -20, -30, -40]))  # 4 подряд, лимит 3
+    s = risk_guard.status(client, _limits(max_consecutive_losses=3))
+
+    assert s["consecutive_losses"] == 4
+    assert s["kill_switch"] is not None  # больше не "молчит"
+    assert "4 убыточных" in s["kill_switch"]["reason"]
+    assert "reason" in tripped  # queue_manager.set_kill_switch реально был вызван
+
+
+def test_status_does_not_trip_when_within_limits(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+
+    def _fail_if_called(reason):
+        raise AssertionError("set_kill_switch не должен был вызываться")
+
+    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", _fail_if_called)
+    client = _FakeClient(positions=[], wallet_balance=10_000.0, income_rows=_income([10, -5]))
+    s = risk_guard.status(client, _limits(max_consecutive_losses=3))
+    assert s["kill_switch"] is None
+    assert s["consecutive_losses"] == 1
+
+
+def test_status_reports_already_tripped_kill_switch_without_retripping(monkeypatch):
+    calls = []
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch",
+                         lambda: {"reason": "уже взведён ранее", "tripped_at": 0})
+    monkeypatch.setattr(risk_guard.queue_manager, "set_kill_switch", lambda reason: calls.append(reason))
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    client = _FakeClient(positions=[], wallet_balance=10_000.0, income_rows=[])
+    s = risk_guard.status(client, _limits())
+    assert s["kill_switch"]["reason"] == "уже взведён ранее"
+    assert calls == []  # не должен пытаться взвести повторно то, что уже взведено
+
+
 if __name__ == "__main__":
     import sys
     import types
