@@ -338,12 +338,25 @@ def _is_actively_trading(symbol: str) -> bool:
     return True
 
 
-def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_score_cfg: int) -> bool:
+def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_score_cfg: int,
+                               on_signal_accepted=None) -> bool:
     """Общий конвейер обработки ОДНОГО кандидата - неважно, от базовой
     RSI/Bollinger (см. _build_signal выше) или от любой стратегии из
     strategies.ADDITIONAL_STRATEGIES: cooldown -> подтверждение старшими
     ТФ (multi_timeframe.refine_signal) -> порог публикации -> очередь.
     Возвращает True, если сигнал был добавлен в очередь.
+
+    on_signal_accepted(signal, symbol) - опциональный колбэк, вызывается
+    ПОСЛЕ того, как сигнал прошёл ВСЕ те же фильтры, что и для публикации
+    поста (cooldown, подтверждение старшими ТФ, порог score) - см.
+    futures_signal_bridge.py/futures_auto_trade.py, который передаёт сюда
+    колбэк, открывающий защищённую позицию по прошедшему фильтры сигналу.
+    scanner.py сознательно НИЧЕГО не знает о futures/риск-предохранителях -
+    это ответственность колбэка, не этого модуля (тот же сканер
+    переиспользуется index_signal_scanner.py, которому futures вообще не
+    касается). Ошибка внутри колбэка НЕ должна ронять весь тик сканирования
+    (одна плохая позиция не должна останавливать сканирование остальных
+    150 пар) - см. try/except вокруг вызова.
 
     Ключ cooldown - (ticker, direction), БЕЗ учёта стратегии: если в
     один и тот же тик сразу две разные стратегии сигналят "SOL, лонг" -
@@ -383,12 +396,27 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
         "Сканер: новый сигнал %s %s (%s, score %s)",
         ticker, signal.direction, signal.strategy, signal.score,
     )
+
+    if on_signal_accepted is not None:
+        try:
+            on_signal_accepted(signal, symbol)
+        except Exception:
+            logger.exception(
+                "Сканер: колбэк on_signal_accepted упал на сигнале %s %s - "
+                "сканирование продолжается, публикация в очередь выше уже прошла успешно",
+                ticker, signal.direction,
+            )
+
     return True
 
 
-def run_scan() -> int:
+def run_scan(on_signal_accepted=None) -> int:
     """Сканирует рынок и кладёт найденные сигналы в очередь бота.
     Возвращает количество добавленных сигналов.
+
+    on_signal_accepted - см. docstring _process_signal_candidate. По
+    умолчанию None - поведение полностью совпадает со старым (только
+    публикация в очередь, без каких-либо побочных действий).
 
     Пробует НЕСКОЛЬКО независимых стратегий на одних и тех же уже
     полученных свечах - базовую RSI/Bollinger (_build_signal) и все из
@@ -424,7 +452,8 @@ def run_scan() -> int:
 
         ticker = symbol.replace("USDT", "")
         for signal in candidates:
-            if _process_signal_candidate(signal, symbol, ticker, config.MIN_SIGNAL_SCORE_TO_PUBLISH):
+            if _process_signal_candidate(signal, symbol, ticker, config.MIN_SIGNAL_SCORE_TO_PUBLISH,
+                                          on_signal_accepted=on_signal_accepted):
                 added += 1
 
     if added:

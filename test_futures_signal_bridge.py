@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""
+Тесты futures_signal_bridge.py - на ПОДДЕЛЬНОМ FuturesClient (никакой
+реальной сети) - конвертация сигнала в параметры сделки и все отказы
+ДО open_protected_position (плохие числа, score, зона входа, дубликат
+позиции)."""
+import futures_signal_bridge as bridge
+import risk_guard
+from futures_client import FuturesApiError
+from signal_parser import RsiSignal
+
+
+def _signal(ticker="SOL", direction="Лонг (перепроданность)", score="85",
+            entry_low="100", entry_high="102", invalidation="95", target="115"):
+    return RsiSignal(
+        ticker=ticker, timeframe="15m", strategy="RSI + Bollinger Touch", direction=direction,
+        current_price="101", rsi_now="25.0", score=score, quality="Moderate",
+        entry_low=entry_low, entry_high=entry_high, invalidation=invalidation, target=target,
+        change_24h="+1.0%", volume="10M", rsi_live="25.0", created_at="2026-07-29 00:00:00 UTC",
+        description="тест", raw_text="тест",
+    )
+
+
+class _FakeClient:
+    def __init__(self, mark_price=101.0, position=None, fail_position_check=False, fail_price=False):
+        self.mark_price = mark_price
+        self.position = position
+        self.fail_position_check = fail_position_check
+        self.fail_price = fail_price
+        self.opened = []
+        self.calls = []
+
+    def get_position(self, symbol):
+        self.calls.append(("get_position", symbol))
+        if self.fail_position_check:
+            raise FuturesApiError("симулированный сбой")
+        return self.position
+
+    def get_mark_price(self, symbol):
+        self.calls.append(("get_mark_price", symbol))
+        if self.fail_price:
+            raise FuturesApiError("симулированный сбой цены")
+        return self.mark_price
+
+
+def _limits():
+    return risk_guard.RiskLimits(max_open_positions=3, max_daily_loss_pct=5.0, max_consecutive_losses=3)
+
+
+# --- signal_to_trade_params ---
+
+def test_signal_to_trade_params_long_ok():
+    params = bridge.signal_to_trade_params(_signal())
+    assert params is not None
+    assert params.symbol == "SOLUSDT"
+    assert params.side == "BUY"
+    assert params.stop_price == 95.0
+    assert params.take_profit_price == 115.0
+
+
+def test_signal_to_trade_params_short_ok():
+    s = _signal(direction="Шорт (перекупленность)", entry_low="98", entry_high="100",
+                invalidation="105", target="85")
+    params = bridge.signal_to_trade_params(s)
+    assert params is not None
+    assert params.side == "SELL"
+    assert params.stop_price == 105.0
+    assert params.take_profit_price == 85.0
+
+
+def test_signal_to_trade_params_rejects_unparseable_numbers():
+    s = _signal(invalidation="н/д")
+    assert bridge.signal_to_trade_params(s) is None
+
+
+def test_signal_to_trade_params_rejects_stop_on_wrong_side_for_long():
+    # для лонга стоп ДОЛЖЕН быть ниже входа - тут он выше
+    s = _signal(entry_low="100", entry_high="102", invalidation="103", target="115")
+    assert bridge.signal_to_trade_params(s) is None
+
+
+def test_signal_to_trade_params_rejects_target_on_wrong_side_for_short():
+    s = _signal(direction="Шорт (перекупленность)", entry_low="98", entry_high="100",
+                invalidation="105", target="99")  # тейк должен быть НИЖЕ входа
+    assert bridge.signal_to_trade_params(s) is None
+
+
+def test_signal_to_trade_params_rejects_inverted_entry_range():
+    s = _signal(entry_low="105", entry_high="100")  # low > high
+    assert bridge.signal_to_trade_params(s) is None
+
+
+# --- execute_signal: гейты ДО open_protected_position ---
+
+def test_execute_signal_below_min_score_skips_without_any_client_call():
+    client = _FakeClient()
+    result = bridge.execute_signal(client, _signal(score="70"), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=80)
+    assert result is None
+    assert client.calls == []
+
+
+def test_execute_signal_bad_numbers_skips_without_any_client_call():
+    client = _FakeClient()
+    result = bridge.execute_signal(client, _signal(invalidation="bad"), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=0)
+    assert result is None
+    assert client.calls == []
+
+
+def test_execute_signal_skips_if_position_already_open():
+    client = _FakeClient(position={"symbol": "SOLUSDT", "positionAmt": "1.0"})
+    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=0)
+    assert result is None
+    # не должны были даже дойти до проверки цены - незачем
+    assert ("get_mark_price", "SOLUSDT") not in client.calls
+
+
+def test_execute_signal_skips_if_position_check_fails():
+    client = _FakeClient(fail_position_check=True)
+    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=0)
+    assert result is None
+
+
+def test_execute_signal_skips_if_price_moved_far_from_entry_zone():
+    # зона входа 100-102, допуск = ширина*0.5 = 1 -> граница 99..103
+    client = _FakeClient(mark_price=110.0, position=None)
+    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=0)
+    assert result is None
+
+
+def test_execute_signal_allows_small_slippage_within_tolerance():
+    # мимо зоны 100-102, но в пределах допуска (граница 99..103)
+    client = _FakeClient(mark_price=102.8, position=None)
+    # get_position -> None (ок), get_mark_price -> 102.8 (в допуске) -> дошли бы до open_protected_position,
+    # но у _FakeClient его нет - убеждаемся, что дошли именно до этой точки по AttributeError, а не по None раньше.
+    try:
+        bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3, risk_limits=_limits(), min_score=0)
+        assert False, "ожидался AttributeError - _FakeClient не реализует остальные методы FuturesClient"
+    except AttributeError:
+        pass
+    assert ("get_mark_price", "SOLUSDT") in client.calls
+
+
+if __name__ == "__main__":
+    import sys
+    import types
+
+    passed, failed = 0, 0
+    module = sys.modules[__name__]
+    for name in dir(module):
+        if not name.startswith("test_"):
+            continue
+        fn = getattr(module, name)
+        if not isinstance(fn, types.FunctionType):
+            continue
+        try:
+            fn()
+            print(f"OK   {name}")
+            passed += 1
+        except AssertionError as e:
+            print(f"FAIL {name}: {e}")
+            failed += 1
+
+    print(f"\n{passed} passed, {failed} failed")
+    sys.exit(1 if failed else 0)
