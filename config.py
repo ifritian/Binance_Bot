@@ -297,6 +297,15 @@ BINANCE_FUTURES_MAX_DAILY_LOSS_PCT = float(os.environ.get("BINANCE_FUTURES_MAX_D
 # дневной лимит выше.
 BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES = int(os.environ.get("BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES", "3"))
 
+# --- Автоматическое исполнение сигналов (см. futures_signal_bridge.py/
+# futures_auto_trade.py) ---
+# ОТДЕЛЬНЫЙ (и по умолчанию СТРОЖЕ) порог score от MIN_SIGNAL_SCORE_TO_PUBLISH
+# (70) выше - "достаточно хорош, чтобы о нём написать пост" и "достаточно
+# хорош, чтобы рискнуть на него реальными (пусть пока testnet) деньгами
+# без подтверждения человека" - разные по цене ошибки решения, порог для
+# второго должен быть заведомо не мягче первого.
+BINANCE_FUTURES_MIN_SIGNAL_SCORE = int(os.environ.get("BINANCE_FUTURES_MIN_SIGNAL_SCORE", "80"))
+
 
 def validate_config() -> list[str]:
     """Возвращает список незаполненных обязательных переменных."""
