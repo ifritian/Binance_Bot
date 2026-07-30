@@ -28,10 +28,14 @@ risk_guard.py). Это то, ради чего затевался весь пр�
     python3 futures_auto_trade.py                # dry-run - ничего не откроет
     python3 futures_auto_trade.py --live          # реально откроет позиции на testnet
 
-Предполагается ручной периодический запуск (как и futures_testnet_demo.py) -
-скрипт НЕ добавлен в .github/workflows/bot.yml. Подключение к
-расписанию (GitHub Actions cron) - отдельное решение, которое стоит
-принимать осознанно, а не бандлом с этим изменением.
+Подключён к расписанию в .github/workflows/bot.yml (тот же cron */10,
+отдельный шаг "Run futures auto-trade" после основного прогона main.py
+--once, с continue-on-error - падение здесь не должно ронять публикацию
+постов). Требует секретов BINANCE_FUTURES_API_KEY/BINANCE_FUTURES_API_SECRET
+в настройках репозитория (Settings -> Secrets and variables -> Actions) -
+без них шаг в workflow будет каждый раз завершаться ошибкой (безопасно,
+но бесполезно). Ручной запуск (как показано в usage ниже) по-прежнему
+работает и полезен для отладки вне расписания.
 """
 import argparse
 import logging
