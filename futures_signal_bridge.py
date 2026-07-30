@@ -29,9 +29,11 @@ scanner._process_signal_candidate, который уже сам ловит ис�
 просто проверить None, не оборачивая каждый вызов в try/except).
 """
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional
 
+import queue_manager
 import signal_parser
 from futures_client import FuturesApiError
 from futures_executor import ExecutionError, ProtectedPositionResult, open_protected_position
@@ -184,4 +186,21 @@ def execute_signal(
         "futures_signal_bridge: открыта позиция по сигналу %s %s (%s, score %s): qty=%.8g вход~%.6g",
         signal.ticker, signal.direction, signal.strategy, signal.score, result.quantity, result.entry_price,
     )
+
+    queue_manager.add_open_futures_position({
+        "symbol": result.symbol,
+        "side": result.side,
+        "quantity": result.quantity,
+        "entry_price": result.entry_price,
+        "stop_price": result.stop_price,
+        "take_profit_price": result.take_profit_price,
+        "stop_order_id": result.stop_order.get("orderId"),
+        "take_profit_order_id": result.take_profit_order.get("orderId"),
+        "ticker": signal.ticker,
+        "direction": signal.direction,
+        "strategy": signal.strategy,
+        "score": signal.score,
+        "opened_at": time.time(),
+    })
+
     return result

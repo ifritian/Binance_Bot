@@ -158,6 +158,26 @@ def main() -> None:
           "(в GitHub Actions фактически раз в ~10 мин по расписанию cron, "
           "независимо от этого значения).")
 
+    open_futures = queue_manager.get_open_futures_positions()
+    closed_futures = queue_manager.get_closed_futures_positions()
+    print("\n=== Фьючерсы (testnet, futures_position_monitor.py) ===")
+    if not open_futures:
+        print("Открытых позиций в трекинге: 0")
+    else:
+        print(f"Открытых позиций в трекинге: {len(open_futures)}")
+        for p in open_futures:
+            print(f"    {p.get('symbol')} {p.get('side')} qty={p.get('quantity')} "
+                  f"вход={p.get('entry_price')} стоп={p.get('stop_price')} "
+                  f"тейк={p.get('take_profit_price')} (score {p.get('score', '?')})")
+    if closed_futures:
+        recent = closed_futures[-5:]
+        wins = sum(1 for c in recent if c.get("realized_pnl", 0) > 0)
+        print(f"Последние {len(recent)} закрытых (из {len(closed_futures)} всего): "
+              f"{wins}/{len(recent)} в плюс")
+        for c in recent:
+            print(f"    {c.get('symbol')}: {c.get('close_reason')}, "
+                  f"PnL {c.get('realized_pnl', 0):+.4f} USDT")
+
     print("\n--- Вывод ---")
     if pending is not None:
         elapsed = queue_manager.seconds_since_last_post("currency")

@@ -1068,3 +1068,51 @@ def pending_crosspost_summary() -> list[str]:
         ticker = item.get("data", {}).get("ticker", "?")
         out.append(f"{item['platform']}:{ticker} (через ~{eta_min:.0f} мин, попыток={item.get('attempts', 0)})")
     return out
+
+
+# --- Трекинг реально открытых позиций на фьючерсах (futures_position_monitor.py) ---
+# Отдельно от open_outcomes/closed_outcomes выше - те трекают ЦЕНУ
+# опубликованного сигнала (для accuracy_report), а это - РЕАЛЬНО
+# открытую на бирже позицию (futures_signal_bridge.execute_signal), с
+# quantity/order id и т.п. Без этого open_protected_position открывает
+# позицию, и о ней тут же забывают - см. docstring futures_position_monitor.py.
+_OPEN_FUTURES_POSITIONS_MAX = 50
+_CLOSED_FUTURES_POSITIONS_MAX = 500
+
+
+def get_open_futures_positions() -> list[dict]:
+    return _get("open_futures_positions", [])
+
+
+def add_open_futures_position(record: dict) -> None:
+    items = get_open_futures_positions()
+    items.append(record)
+    if len(items) > _OPEN_FUTURES_POSITIONS_MAX:
+        import logging
+        logging.getLogger("queue_manager").warning(
+            "open_futures_positions переполнен (>%d) - похоже, старые записи не "
+            "закрываются (мониторинг не запускается?) - старейшие выброшены без трекинга",
+            _OPEN_FUTURES_POSITIONS_MAX,
+        )
+        items = items[-_OPEN_FUTURES_POSITIONS_MAX:]
+    _set("open_futures_positions", items)
+
+
+def replace_open_futures_positions(items: list[dict]) -> None:
+    """Перезаписывает open_futures_positions целиком - вызывается после
+    каждого прохода futures_position_monitor.check_open_positions() с
+    тем, что осталось реально открытым на бирже."""
+    _set("open_futures_positions", items)
+
+
+def get_closed_futures_positions() -> list[dict]:
+    return _get("closed_futures_positions", [])
+
+
+def append_closed_futures_positions(new_items: list[dict]) -> None:
+    items = get_closed_futures_positions()
+    items.extend(new_items)
+    if len(items) > _CLOSED_FUTURES_POSITIONS_MAX:
+        items = items[-_CLOSED_FUTURES_POSITIONS_MAX:]
+    _set("closed_futures_positions", items)
+
