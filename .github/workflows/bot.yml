@@ -60,6 +60,15 @@ jobs:
       MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH: ${{ secrets.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH || '55' }}
       INDEX_SIGNAL_ALERT_COOLDOWN_HOURS: ${{ secrets.INDEX_SIGNAL_ALERT_COOLDOWN_HOURS || '12' }}
       INDEX_SIGNAL_MAX_AGE_HOURS: ${{ secrets.INDEX_SIGNAL_MAX_AGE_HOURS || '2' }}
+      # --- Фьючерсы (testnet-автотрейдинг, см. futures_auto_trade.py) ---
+      BINANCE_FUTURES_API_KEY: ${{ secrets.BINANCE_FUTURES_API_KEY }}
+      BINANCE_FUTURES_API_SECRET: ${{ secrets.BINANCE_FUTURES_API_SECRET }}
+      BINANCE_FUTURES_MIN_SIGNAL_SCORE: ${{ secrets.BINANCE_FUTURES_MIN_SIGNAL_SCORE || '80' }}
+      BINANCE_FUTURES_RISK_PCT_PER_TRADE: ${{ secrets.BINANCE_FUTURES_RISK_PCT_PER_TRADE || '1.0' }}
+      BINANCE_FUTURES_DEFAULT_LEVERAGE: ${{ secrets.BINANCE_FUTURES_DEFAULT_LEVERAGE || '3' }}
+      BINANCE_FUTURES_MAX_OPEN_POSITIONS: ${{ secrets.BINANCE_FUTURES_MAX_OPEN_POSITIONS || '3' }}
+      BINANCE_FUTURES_MAX_DAILY_LOSS_PCT: ${{ secrets.BINANCE_FUTURES_MAX_DAILY_LOSS_PCT || '5.0' }}
+      BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES: ${{ secrets.BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES || '3' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -74,6 +83,20 @@ jobs:
 
       - name: Run one bot check
         run: python main.py --once
+
+      - name: Run futures auto-trade (testnet)
+        # Отдельный скрипт, отдельный вызов scanner.run_scan() - это
+        # осознанно (см. docstring futures_auto_trade.py): main.py
+        # сканирует только в "активном окне" перед постом, а тут нужен
+        # шанс на сделку каждые 10 минут независимо от расписания постов.
+        # Дублирования постов не будет - у scanner.py cooldown 4ч на
+        # тикер+направление (was_recently_alerted), так что повторный
+        # скан почти всегда просто не находит новых кандидатов.
+        # Если секреты BINANCE_FUTURES_API_KEY/SECRET не заданы, скрипт
+        # сам упадёт с понятной ошибкой - continue-on-error, чтобы это
+        # не валило остальной пайплайн (посты должны продолжать выходить).
+        continue-on-error: true
+        run: python futures_auto_trade.py --live
 
       - name: Show queue state (diagnostics)
         if: always()
