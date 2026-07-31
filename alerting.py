@@ -37,15 +37,23 @@ def is_configured() -> bool:
     return bool(config.TELEGRAM_BOT_TOKEN and config.YOUR_USER_ID)
 
 
-def send_owner_alert(alert_key: str, message: str, min_repeat_hours: float = _DEFAULT_MIN_REPEAT_HOURS) -> bool:
+def send_owner_alert(alert_key: str, message: str, min_repeat_hours: float = _DEFAULT_MIN_REPEAT_HOURS,
+                      state=queue_manager) -> bool:
     """Отправляет алерт владельцу, если он не настроен - тихо пропускает
     (это не ошибка, YOUR_USER_ID опционален). Возвращает True, если
-    сообщение реально ушло (не была троттлинга и не было сбоя API)."""
+    сообщение реально ушло (не была троттлинга и не было сбоя API).
+
+    state - модуль, хранящий троттлинг (get_last_alert_sent/
+    set_last_alert_sent) - по умолчанию queue_manager (bot_state.db,
+    постинг-бот), поведение на 100% совпадает со старым.
+    futures_position_monitor.py передаёт state=futures_state, чтобы
+    алерты о сделках не писали в bot_state.db (см. docstring
+    futures_state.py про то, почему состояние двух ботов разделено)."""
     if not is_configured():
         logger.debug("Алертинг владельцу не настроен (нет YOUR_USER_ID/TELEGRAM_BOT_TOKEN) - пропускаю: %s", message)
         return False
 
-    last_sent = queue_manager.get_last_alert_sent(alert_key)
+    last_sent = state.get_last_alert_sent(alert_key)
     if last_sent and (time.time() - last_sent) < min_repeat_hours * 3600:
         logger.debug("Алерт '%s' недавно уже отправлялся - пропускаю повтор", alert_key)
         return False
@@ -68,6 +76,6 @@ def send_owner_alert(alert_key: str, message: str, min_repeat_hours: float = _DE
         logger.exception("Неожиданная ошибка при отправке алерта владельцу")
         return False
 
-    queue_manager.set_last_alert_sent(alert_key)
+    state.set_last_alert_sent(alert_key)
     logger.info("Алерт владельцу отправлен (key=%s)", alert_key)
     return True

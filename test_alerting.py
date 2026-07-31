@@ -84,6 +84,36 @@ def test_telegram_rejects_message_returns_false(monkeypatch):
     assert result is False
 
 
+def test_custom_state_never_touches_queue_manager(monkeypatch):
+    """futures_position_monitor.py передаёт state=futures_state - алерт
+    не должен трогать queue_manager (bot_state.db постинг-бота) вообще,
+    ни на чтение, ни на запись (см. docstring futures_state.py)."""
+    monkeypatch.setattr(alerting.config, "TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setattr(alerting.config, "YOUR_USER_ID", 123)
+    monkeypatch.setattr(alerting.requests, "post", lambda *a, **k: _FakeResponse(ok=True))
+
+    def _fail_if_touched(*a, **k):
+        raise AssertionError("queue_manager не должен был вызываться при state=futures_state")
+
+    monkeypatch.setattr(alerting.queue_manager, "get_last_alert_sent", _fail_if_touched)
+    monkeypatch.setattr(alerting.queue_manager, "set_last_alert_sent", _fail_if_touched)
+
+    class _FakeState:
+        def __init__(self):
+            self.set_calls = []
+
+        def get_last_alert_sent(self, key):
+            return 0
+
+        def set_last_alert_sent(self, key):
+            self.set_calls.append(key)
+
+    fake_state = _FakeState()
+    result = alerting.send_owner_alert("futures_test", "hello", state=fake_state)
+    assert result is True
+    assert fake_state.set_calls == ["futures_test"]
+
+
 if __name__ == "__main__":
     import sys
 

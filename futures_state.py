@@ -127,3 +127,49 @@ def push_pending_signal(signal) -> None:
     (та часть контракта scanner.py, что относится ТОЛЬКО к постинг-боту) -
     см. docstring модуля про то, почему состояния ботов разделены."""
     return None
+
+
+# --- троттлинг алертов владельцу (см. alerting.send_owner_alert,
+# параметр state) - своя копия, чтобы futures_position_monitor.py могла
+# слать алерты о сделках, не трогая bot_state.db постинг-бота. ---
+
+def get_last_alert_sent(alert_key: str) -> float:
+    return _get(f"alert_sent:{alert_key}", 0)
+
+
+def set_last_alert_sent(alert_key: str) -> None:
+    _set(f"alert_sent:{alert_key}", time.time())
+
+
+# --- реестр позиций, которые futures-бот отслеживает для трейлинг-стопа
+# (см. futures_position_monitor.py) ---
+
+def register_managed_position(symbol: str, side: str, entry_price: float,
+                               initial_stop_price: float, take_profit_price: float) -> None:
+    """Вызывается ПОСЛЕ успешного открытия защищённой позиции (см.
+    futures_signal_bridge.execute_signal/futures_testnet_demo.py) -
+    сохраняет метаданные, нужные трейлинг-стопу. trail_distance
+    ФИКСИРУЕТСЯ здесь один раз как |entry_price - initial_stop_price| и
+    больше НИКОГДА не пересчитывается заново от текущей цены - иначе
+    дистанция "плыла" бы вместе с ценой, и трейлинг перестал бы быть
+    трейлингом (см. docstring futures_position_monitor.py)."""
+    positions = _get("managed_positions", {})
+    positions[symbol] = {
+        "side": side, "entry_price": entry_price,
+        "initial_stop_price": initial_stop_price, "take_profit_price": take_profit_price,
+        "trail_distance": abs(entry_price - initial_stop_price),
+        "opened_at": time.time(),
+    }
+    _set("managed_positions", positions)
+
+
+def list_managed_positions() -> dict:
+    """{symbol: {...метаданные...}} - все позиции, которые futures-бот
+    сейчас считает "своими" и трейлит/отслеживает на закрытие."""
+    return _get("managed_positions", {})
+
+
+def unregister_managed_position(symbol: str) -> None:
+    positions = _get("managed_positions", {})
+    positions.pop(symbol, None)
+    _set("managed_positions", positions)

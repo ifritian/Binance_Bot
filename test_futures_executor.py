@@ -53,7 +53,12 @@ class _FakeClient:
     def place_stop_market(self, symbol, side, stop_price, close_position=True, quantity=None):
         self._maybe_fail("stop")
         self.call_log.append(("place_stop_market", symbol, side, stop_price))
-        return {"orderId": 2}
+        return {"algoId": 2}
+
+    def cancel_algo_order(self, symbol, algo_id):
+        self._maybe_fail("cancel_algo")
+        self.call_log.append(("cancel_algo_order", symbol, algo_id))
+        return {}
 
     def place_take_profit_market(self, symbol, side, stop_price, close_position=True, quantity=None):
         self._maybe_fail("take_profit")
@@ -265,6 +270,39 @@ def test_emergency_close_all_closes_short_position_with_buy():
     close_calls = [c for c in client.call_log if c[0] == "place_market_order"]
     assert close_calls[0][2] == "BUY"
     assert close_calls[0][3] == 7.5
+
+
+# --- replace_stop_order: замена стопа для трейлинга ---
+
+def test_replace_stop_order_places_new_before_cancelling_old():
+    client = _FakeClient()
+    new_order = fe.replace_stop_order(client, "BTCUSDT", "SELL", old_algo_id=99, new_stop_price=61000.0)
+    assert new_order == {"algoId": 2}
+    steps = [c[0] for c in client.call_log]
+    # СНАЧАЛА place_stop_market (новый), ПОТОМ cancel_algo_order (старый) -
+    # см. docstring replace_stop_order про то, почему порядок именно такой.
+    assert steps.index("place_stop_market") < steps.index("cancel_algo_order")
+    assert ("cancel_algo_order", "BTCUSDT", 99) in client.call_log
+
+
+def test_replace_stop_order_tolerates_cancel_failure():
+    # Новый стоп встал успешно, отмена старого не удалась - не должно
+    # бросать исключение (временно два стоп-ордера - не опасно, см. docstring).
+    client = _FakeClient(fail_on={"cancel_algo"})
+    new_order = fe.replace_stop_order(client, "BTCUSDT", "SELL", old_algo_id=99, new_stop_price=61000.0)
+    assert new_order == {"algoId": 2}
+
+
+def test_replace_stop_order_raises_if_new_stop_placement_fails():
+    client = _FakeClient(fail_on={"stop"})
+    try:
+        fe.replace_stop_order(client, "BTCUSDT", "SELL", old_algo_id=99, new_stop_price=61000.0)
+        assert False, "должно было бросить FuturesApiError"
+    except FuturesApiError:
+        pass
+    # Раз новый стоп не встал - старый НЕ должен был отменяться (иначе
+    # позиция осталась бы вообще без защиты).
+    assert not any(c[0] == "cancel_algo_order" for c in client.call_log)
 
 
 # --- risk_limits: предохранители поверх отдельной сделки ---

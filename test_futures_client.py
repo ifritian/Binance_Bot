@@ -136,6 +136,20 @@ def test_cancel_all_algo_orders_uses_correct_endpoint(monkeypatch):
     assert "/fapi/v1/algoOpenOrders" in captured["url"]
 
 
+def test_cancel_algo_order_targets_one_order_by_id(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(fc.requests, "request",
+                         lambda method, url, **k: (captured.setdefault("method", method),
+                                                     captured.setdefault("url", url), _FakeResponse({}))[2])
+    client = _client()
+    client.cancel_algo_order("BTCUSDT", 12345)
+    assert captured["method"] == "DELETE"
+    # Именно /fapi/v1/algoOrder (единственное число) - НЕ /algoOpenOrders
+    # (тот отменяет ВСЕ разом, см. cancel_all_algo_orders выше).
+    assert captured["url"].split("?")[0].endswith("/fapi/v1/algoOrder")
+    assert "algoId=12345" in captured["url"]
+
+
 def test_get_open_orders_merges_regular_and_algo(monkeypatch):
     def fake_request(method, url, **k):
         if "openAlgoOrders" in url:

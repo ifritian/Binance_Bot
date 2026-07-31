@@ -306,14 +306,20 @@ BINANCE_FUTURES_MAX_DAILY_LOSS_PCT = float(os.environ.get("BINANCE_FUTURES_MAX_D
 # дневной лимит выше.
 BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES = int(os.environ.get("BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES", "3"))
 
-# --- Автоматическое исполнение сигналов (см. futures_signal_bridge.py/
-# futures_auto_trade.py) ---
+# Порог score для АВТОМАТИЧЕСКОГО исполнения сигнала (см.
+# futures_signal_bridge.py/futures_auto_trade.py) ---
 # ОТДЕЛЬНЫЙ (и по умолчанию СТРОЖЕ) порог score от MIN_SIGNAL_SCORE_TO_PUBLISH
 # (70) выше - "достаточно хорош, чтобы о нём написать пост" и "достаточно
 # хорош, чтобы рискнуть на него реальными (пусть пока testnet) деньгами
 # без подтверждения человека" - разные по цене ошибки решения, порог для
 # второго должен быть заведомо не мягче первого.
 BINANCE_FUTURES_MIN_SIGNAL_SCORE = int(os.environ.get("BINANCE_FUTURES_MIN_SIGNAL_SCORE", "80"))
+
+# Пауза между циклами futures_loop.py (см. его docstring) - сканирует
+# рынок заново только если есть свободное место под новую позицию (см.
+# BINANCE_FUTURES_MAX_OPEN_POSITIONS выше); иначе просто трейлит уже
+# открытые и ждёт следующего цикла.
+BINANCE_FUTURES_LOOP_INTERVAL_SECONDS = int(os.environ.get("BINANCE_FUTURES_LOOP_INTERVAL_SECONDS", "60"))
 
 
 def validate_config() -> list[str]:

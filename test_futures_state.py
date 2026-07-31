@@ -64,6 +64,45 @@ def test_push_pending_signal_is_a_no_op():
     _with_temp_db(_inner)
 
 
+def test_managed_position_registry_roundtrip():
+    def _inner():
+        assert futures_state.list_managed_positions() == {}
+        futures_state.register_managed_position("BTCUSDT", "BUY", 100.0, 95.0, 115.0)
+        positions = futures_state.list_managed_positions()
+        assert set(positions.keys()) == {"BTCUSDT"}
+        entry = positions["BTCUSDT"]
+        assert entry["side"] == "BUY"
+        assert entry["entry_price"] == 100.0
+        assert entry["initial_stop_price"] == 95.0
+        assert entry["take_profit_price"] == 115.0
+        assert entry["trail_distance"] == 5.0  # |100 - 95|, зафиксировано один раз
+
+        futures_state.unregister_managed_position("BTCUSDT")
+        assert futures_state.list_managed_positions() == {}
+    _with_temp_db(_inner)
+
+
+def test_managed_position_registry_tracks_multiple_symbols_independently():
+    def _inner():
+        futures_state.register_managed_position("BTCUSDT", "BUY", 100.0, 95.0, 115.0)
+        futures_state.register_managed_position("ETHUSDT", "SELL", 3000.0, 3100.0, 2800.0)
+        positions = futures_state.list_managed_positions()
+        assert set(positions.keys()) == {"BTCUSDT", "ETHUSDT"}
+
+        futures_state.unregister_managed_position("BTCUSDT")
+        remaining = futures_state.list_managed_positions()
+        assert set(remaining.keys()) == {"ETHUSDT"}
+    _with_temp_db(_inner)
+
+
+def test_alert_throttle_roundtrip():
+    def _inner():
+        assert futures_state.get_last_alert_sent("k") == 0
+        futures_state.set_last_alert_sent("k")
+        assert futures_state.get_last_alert_sent("k") > 0
+    _with_temp_db(_inner)
+
+
 def test_scanner_with_futures_state_never_touches_queue_manager(monkeypatch):
     """Главная гарантия этого разделения: если scanner._process_signal_candidate
     вызван с state=futures_state (как это делает futures_auto_trade.py),

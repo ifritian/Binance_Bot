@@ -253,6 +253,32 @@ def open_protected_position(
     )
 
 
+def replace_stop_order(client: FuturesClient, symbol: str, side: str, old_algo_id, new_stop_price: float) -> dict:
+    """Заменяет ОДИН стоп-ордер на более выгодный (используется трейлинг-
+    стопом - см. futures_position_monitor.py), не трогая тейк-профит.
+    side - сторона ЗАКРЫВАЮЩЕГО ордера (как в place_stop_market).
+
+    ПОРЯДОК ОПЕРАЦИЙ ВАЖЕН: сначала ставим НОВЫЙ стоп, и только при
+    успехе отменяем старый - если бы делали наоборот (сначала отмена),
+    а постановка нового не удалась (сеть, лимиты биржи и т.п.), позиция
+    осталась бы ВООБЩЕ без стоп-лосса до следующего цикла трейлинга.
+    Кратковременное "два стоп-ордера одновременно" (пока не отменили
+    старый) намного безопаснее кратковременного "нет ни одного" - какой
+    из двух сработает первым, тот и закроет позицию, риск от этого не
+    увеличивается."""
+    new_order = client.place_stop_market(symbol, side, new_stop_price, close_position=True)
+    try:
+        client.cancel_algo_order(symbol, old_algo_id)
+    except FuturesApiError as e:
+        logger.warning(
+            "Новый трейлинг-стоп для %s поставлен (%.6g), но не удалось отменить старый "
+            "algo-ордер %s (%s) - возможно, временно два стоп-ордера одновременно на бирже; "
+            "не опасно (см. docstring), но стоит проверить вручную при случае.",
+            symbol, new_stop_price, old_algo_id, e,
+        )
+    return new_order
+
+
 def emergency_close_all(client: FuturesClient, symbol: str) -> Optional[dict]:
     """Ручной "красная кнопка" для одного символа - отменяет все
     открытые ордера (и обычные, и algo - см. futures_client.

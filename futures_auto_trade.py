@@ -57,6 +57,36 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("futures_auto_trade")
 
 
+def run_cycle(client, risk_limits: risk_guard.RiskLimits, live: bool) -> dict:
+    """Один цикл: скан рынка -> попытка исполнить сигналы, прошедшие
+    фильтры. Общая логика для одноразового запуска (main() ниже) и
+    futures_loop.py (тот же цикл, но по кругу). Возвращает
+    {"signals_accepted": int, "executed": [ProtectedPositionResult, ...],
+    "skipped_dry_run": [RsiSignal, ...]}."""
+    executed = []
+    skipped_dry_run = []
+
+    def _on_signal_accepted(signal, symbol):
+        if not live:
+            skipped_dry_run.append(signal)
+            logger.info("DRY-RUN: сигнал %s %s (%s, score %s) прошёл бы к исполнению "
+                        "(запусти с --live, чтобы реально открыть)",
+                        signal.ticker, signal.direction, signal.strategy, signal.score)
+            return
+        result = futures_signal_bridge.execute_signal(
+            client, signal,
+            risk_pct=config.BINANCE_FUTURES_RISK_PCT_PER_TRADE,
+            leverage=config.BINANCE_FUTURES_DEFAULT_LEVERAGE,
+            risk_limits=risk_limits,
+            min_score=config.BINANCE_FUTURES_MIN_SIGNAL_SCORE,
+        )
+        if result is not None:
+            executed.append(result)
+
+    signals_accepted = scanner.run_scan(on_signal_accepted=_on_signal_accepted, state=futures_state)
+    return {"signals_accepted": signals_accepted, "executed": executed, "skipped_dry_run": skipped_dry_run}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--live", action="store_true",
@@ -80,31 +110,12 @@ def main() -> int:
     if not args.live:
         logger.info("=== DRY-RUN (без --live) - ни одна позиция не будет открыта ===")
 
-    executed = []
-    skipped_dry_run = []
-
-    def _on_signal_accepted(signal, symbol):
-        if not args.live:
-            skipped_dry_run.append(signal)
-            logger.info("DRY-RUN: сигнал %s %s (%s, score %s) прошёл бы к исполнению "
-                        "(запусти с --live, чтобы реально открыть)",
-                        signal.ticker, signal.direction, signal.strategy, signal.score)
-            return
-        result = futures_signal_bridge.execute_signal(
-            client, signal,
-            risk_pct=config.BINANCE_FUTURES_RISK_PCT_PER_TRADE,
-            leverage=config.BINANCE_FUTURES_DEFAULT_LEVERAGE,
-            risk_limits=risk_limits,
-            min_score=config.BINANCE_FUTURES_MIN_SIGNAL_SCORE,
-        )
-        if result is not None:
-            executed.append(result)
-
-    signals_accepted = scanner.run_scan(on_signal_accepted=_on_signal_accepted, state=futures_state)
+    stats = run_cycle(client, risk_limits, live=args.live)
+    executed, skipped_dry_run = stats["executed"], stats["skipped_dry_run"]
 
     logger.info(
         "Готово: %d сигнал(ов) прошли фильтры сканера, %d позици(й) реально открыто%s",
-        signals_accepted, len(executed),
+        stats["signals_accepted"], len(executed),
         f", {len(skipped_dry_run)} прошли бы фильтр (dry-run)" if not args.live else "",
     )
     for result in executed:

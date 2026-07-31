@@ -27,12 +27,19 @@ execute_signal НИКОГДА не бросает исключение нару�
 scanner._process_signal_candidate, который уже сам ловит исключения из
 колбэка - здесь дополнительно ловим ожидаемые, чтобы вызывающий код мог
 просто проверить None, не оборачивая каждый вызов в try/except).
+
+После успешного открытия позиция регистрируется в futures_state.
+register_managed_position - это то, что даёт futures_position_monitor.py
+знать, что позицию нужно трейлить/отслеживать на закрытие (см. его
+docstring). Без этого шага позиция была бы открыта и защищена (стоп/
+тейк расставлены), но полностью "невидима" для трейлинг-стопа.
 """
 import logging
 from dataclasses import dataclass
 from typing import Optional
 
 import signal_parser
+import futures_state
 from futures_client import FuturesApiError
 from futures_executor import ExecutionError, ProtectedPositionResult, open_protected_position
 from risk_guard import RiskLimits
@@ -183,5 +190,8 @@ def execute_signal(
     logger.info(
         "futures_signal_bridge: открыта позиция по сигналу %s %s (%s, score %s): qty=%.8g вход~%.6g",
         signal.ticker, signal.direction, signal.strategy, signal.score, result.quantity, result.entry_price,
+    )
+    futures_state.register_managed_position(
+        result.symbol, result.side, result.entry_price, result.stop_price, result.take_profit_price,
     )
     return result

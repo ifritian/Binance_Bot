@@ -31,6 +31,7 @@ import config  # ТОЛЬКО ради числовых лимитов risk_guar
                 # не используется - гарантия "этот скрипт никогда не попадёт
                 # на реальный счёт" (см. docstring модуля) не затронута.
 import risk_guard
+import futures_state
 from futures_client import FuturesClient, TESTNET_BASE_URL, FuturesApiError
 from futures_executor import open_protected_position, ExecutionError
 
@@ -46,6 +47,10 @@ def main() -> int:
     parser.add_argument("--leverage", type=int, default=3, help="Плечо (по умолчанию 3x)")
     parser.add_argument("--stop-pct", type=float, required=True, help="Расстояние до стопа в %% от текущей цены")
     parser.add_argument("--target-pct", type=float, required=True, help="Расстояние до тейка в %% от текущей цены")
+    parser.add_argument("--no-trailing", action="store_true",
+                        help="Не регистрировать позицию для трейлинг-стопа (futures_loop.py) - "
+                             "по умолчанию любая позиция, открытая этим скриптом, тоже трейлится, "
+                             "пока цикл futures_loop.py запущен.")
     args = parser.parse_args()
 
     api_key = os.environ.get("BINANCE_FUTURES_API_KEY", "")
@@ -102,6 +107,12 @@ def main() -> int:
         result.symbol, result.side, result.quantity, result.entry_price,
         result.stop_price, result.take_profit_price, result.risk_amount,
     )
+    if not args.no_trailing:
+        futures_state.register_managed_position(
+            result.symbol, result.side, result.entry_price, result.stop_price, result.take_profit_price,
+        )
+        logger.info("Позиция зарегистрирована для трейлинг-стопа (см. futures_loop.py) - "
+                    "передай --no-trailing, чтобы этого не делать.")
     logger.info("Проверь позицию и открытые ордера на https://testnet.binancefuture.com")
     return 0
 

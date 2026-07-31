@@ -268,6 +268,13 @@ class FuturesClient:
         сработать на уже закрытой/новой позиции."""
         return self._signed_request("DELETE", "/fapi/v1/algoOpenOrders", {"symbol": symbol})
 
+    def cancel_algo_order(self, symbol: str, algo_id) -> dict:
+        """Отменяет ОДИН конкретный algo-ордер по его algoId - в отличие
+        от cancel_all_algo_orders (отменяет разом и стоп, и тейк), нужен
+        трейлинг-стопу (см. futures_position_monitor.py), чтобы заменить
+        ТОЛЬКО стоп-ордер на более выгодный, не трогая тейк-профит."""
+        return self._signed_request("DELETE", "/fapi/v1/algoOrder", {"symbol": symbol, "algoId": algo_id})
+
 
 def client_from_config(config) -> FuturesClient:
     """Собирает FuturesClient из config.py (BINANCE_FUTURES_*) - единая
