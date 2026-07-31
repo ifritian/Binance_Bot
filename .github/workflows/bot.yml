@@ -69,6 +69,10 @@ jobs:
       BINANCE_FUTURES_MAX_OPEN_POSITIONS: ${{ secrets.BINANCE_FUTURES_MAX_OPEN_POSITIONS || '3' }}
       BINANCE_FUTURES_MAX_DAILY_LOSS_PCT: ${{ secrets.BINANCE_FUTURES_MAX_DAILY_LOSS_PCT || '5.0' }}
       BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES: ${{ secrets.BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES || '3' }}
+      # --- Спот-ребалансировка портфеля к Treasury Index (см. portfolio_rebalancer.py) ---
+      BINANCE_SPOT_API_KEY: ${{ secrets.BINANCE_SPOT_API_KEY }}
+      BINANCE_SPOT_API_SECRET: ${{ secrets.BINANCE_SPOT_API_SECRET }}
+      PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT: ${{ secrets.PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT || '5.0' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -84,6 +88,15 @@ jobs:
       - name: Run one bot check
         run: python main.py --once
 
+      - name: Check open futures positions (testnet)
+        # Отдельно от шага открытия новых сделок ниже - см. docstring
+        # futures_position_monitor.py. Идёт ПЕРЕД открытием новых, чтобы
+        # закрывшиеся позиции успели освободить слот (risk_guard.
+        # max_open_positions) и подчистить осиротевший условный ордер
+        # до следующей попытки открыть что-то по этому же символу.
+        continue-on-error: true
+        run: python futures_position_monitor.py
+
       - name: Run futures auto-trade (testnet)
         # Отдельный скрипт, отдельный вызов scanner.run_scan() - это
         # осознанно (см. docstring futures_auto_trade.py): main.py
@@ -97,6 +110,16 @@ jobs:
         # не валило остальной пайплайн (посты должны продолжать выходить).
         continue-on-error: true
         run: python futures_auto_trade.py --live
+
+      - name: Rebalance spot portfolio to Treasury Index (testnet)
+        # "По надобности", не по расписанию - portfolio_rebalancer.py сам
+        # проверяет отклонение от целевых весов на каждом тике (дёшево -
+        # баланс+цены, без ордеров) и торгует, только если максимальное
+        # отклонение >= PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT (по
+        # умолчанию 5%). Если ключи BINANCE_SPOT_* не заданы - упадёт с
+        # понятной ошибкой, continue-on-error не роняет остальной пайплайн.
+        continue-on-error: true
+        run: python portfolio_rebalancer.py --live
 
       - name: Show queue state (diagnostics)
         if: always()

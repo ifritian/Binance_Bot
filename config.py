@@ -306,6 +306,27 @@ BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES = int(os.environ.get("BINANCE_FUTURES_MAX
 # второго должен быть заведомо не мягче первого.
 BINANCE_FUTURES_MIN_SIGNAL_SCORE = int(os.environ.get("BINANCE_FUTURES_MIN_SIGNAL_SCORE", "80"))
 
+# --- Ребалансировка портфеля спотом к целевым весам Treasury Index
+# (см. portfolio_rebalancer.py) - БЕЗ плеча, без ликвидации, ниже
+# приоритет и ниже риск, чем автотрейдинг фьючерсов выше. Отдельные
+# ключи от BINANCE_FUTURES_* - testnet.binance.vision (спот) и
+# testnet.binancefuture.com (фьючерсы) две РАЗНЫЕ тестовые сети,
+# ключи между ними не взаимозаменяемы.
+BINANCE_SPOT_API_KEY = os.environ.get("BINANCE_SPOT_API_KEY", "")
+BINANCE_SPOT_API_SECRET = os.environ.get("BINANCE_SPOT_API_SECRET", "")
+BINANCE_SPOT_USE_TESTNET = os.environ.get("BINANCE_SPOT_USE_TESTNET", "true").strip().lower() != "false"
+BINANCE_SPOT_RECV_WINDOW_MS = int(os.environ.get("BINANCE_SPOT_RECV_WINDOW_MS", "5000"))
+# "По надобности", а не по расписанию (см. решение в обсуждении с
+# пользователем) - portfolio_rebalancer.py проверяет отклонение от
+# целевых весов на КАЖДОМ тике (дёшево - только баланс+цены, без
+# ордеров), но реально торгует только если максимальное отклонение по
+# какой-либо монете корзины превышает этот порог (в процентных пунктах
+# от общей стоимости управляемого портфеля). Слишком низкий порог -
+# комиссии съедают выгоду от частой мелкой ребалансировки, слишком
+# высокий - портфель подолгу остаётся заметно перекошен относительно
+# целевых весов.
+PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT = float(os.environ.get("PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT", "5.0"))
+
 
 def validate_config() -> list[str]:
     """Возвращает список незаполненных обязательных переменных."""
