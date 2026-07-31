@@ -135,6 +135,28 @@ def test_process_signal_candidate_callback_not_called_when_below_score(monkeypat
     assert calls == []
 
 
+def test_process_signal_candidate_accepts_score_exactly_at_threshold(monkeypatch):
+    # Регресс-тест на off-by-one: score, РОВНО равный порогу публикации,
+    # обязан пройти (порог - это "минимум, который проходит", а не
+    # "минимум + 1"). Раньше здесь стояло `<=`, из-за чего сигналы,
+    # которые multi_timeframe.refine_signal часто подтягивает ровно до
+    # порога (например 54 -> 70 при подтверждении старшими ТФ), тихо
+    # отбрасывались - ни в очередь постов, ни колбэку futures-автотрейдинга.
+    monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
+    monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
+    monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
+    monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
+
+    calls = []
+    accepted = scanner._process_signal_candidate(
+        _accepted_signal(score="70"), "SOLUSDT", "SOL", min_score_cfg=70,
+        on_signal_accepted=lambda s, sym: calls.append((s.ticker, sym)),
+    )
+    assert accepted is True
+    assert calls == [("SOL", "SOLUSDT")]
+
+
 if __name__ == "__main__":
     import sys
     import types

@@ -378,7 +378,7 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
         return False
     signal = refined
 
-    if int(signal.score) <= strategy_tuner.get_effective_min_score(signal.strategy, min_score_cfg):
+    if int(signal.score) < strategy_tuner.get_effective_min_score(signal.strategy, min_score_cfg):
         # Сигнал есть, но он не пройдёт порог публикации (см.
         # config.MIN_SIGNAL_SCORE_TO_PUBLISH, с поправкой strategy_tuner -
         # если у ЭТОЙ стратегии статистически слабый win-rate, порог для
