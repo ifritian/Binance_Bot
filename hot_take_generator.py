@@ -23,6 +23,7 @@ import re
 from typing import Optional
 
 import cliche_filter
+import config
 from groq_client import call_groq
 from opinion_generator import THEMES, calc_theme_stats, pick_theme  # ротация темы - тот же алгоритм, что и у opinion
 from post_format import BLUESKY_CHAR_LIMIT, DISCLAIMER, HOOK_MODES
@@ -104,7 +105,7 @@ def generate_hot_take(theme: str, hook_mode: Optional[str] = None) -> Optional[t
 
     user_prompt += voice_memory.anti_repeat_block() + voice_memory.continuity_block(theme, label)
 
-    take = call_groq(system_prompt, user_prompt, max_tokens=280, temperature=1.0)
+    take = call_groq(system_prompt, user_prompt, max_tokens=280, temperature=1.0, model=config.GROQ_MODEL_SECONDARY)
 
     # Хук не должен быть пустым/почти пустым - та же подстраховка, что и
     # в opinion_generator/index_signal_generator (call_groq уже

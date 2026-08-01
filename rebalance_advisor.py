@@ -143,7 +143,7 @@ def build_rebalance_report(candidates: list) -> Optional[str]:
     )
     user_prompt = f"Кандидаты на пересмотр состава индекса:\n{facts}\n\nНапиши отчёт-предложение."
 
-    body = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=500, temperature=0.7)
+    body = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=500, temperature=0.7, model=config.GROQ_MODEL_SECONDARY)
 
     if len(body.strip()) < 30:
         logger.warning("Отчёт по ребалансировке пустой/слишком короткий (%r) - пропускаю", body)

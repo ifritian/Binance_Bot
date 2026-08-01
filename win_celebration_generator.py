@@ -28,6 +28,7 @@ import random
 from typing import Optional
 
 import cliche_filter
+import config
 from groq_client import call_groq
 import validator
 import voice_guidelines
@@ -75,7 +76,7 @@ def generate_win_celebration_hook(angle: str) -> Optional[str]:
     focus = _ANGLES.get(angle, _ANGLES["pure_joy"])
     user_prompt = f"Угол подачи этого поста: {focus}.\n\nНапиши пост-реакцию на удачно закрытую сделку."
 
-    hook = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=180, temperature=1.05)
+    hook = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=180, temperature=1.05, model=config.GROQ_MODEL_SECONDARY)
 
     if len(hook.strip()) < 8:
         logger.warning("Хук 'Забрали профит!' пустой/слишком короткий (%r) - пропускаю", hook)

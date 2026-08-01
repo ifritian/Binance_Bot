@@ -25,6 +25,7 @@ import re
 from typing import Optional
 
 import cliche_filter
+import config
 from groq_client import call_groq
 import outcome_tracker
 import voice_guidelines
@@ -99,7 +100,7 @@ def generate_extended_context(signal, hook: str) -> Optional[tuple]:
         "Напиши блок 'Контекст'."
     )
 
-    context = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=450, temperature=0.8)
+    context = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=450, temperature=0.8, model=config.GROQ_MODEL_SECONDARY)
 
     if len(context.strip()) < 15:
         logger.warning("Блок 'Контекст' пустой/слишком короткий (%r) - публикую без него", context)

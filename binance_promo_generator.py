@@ -23,6 +23,7 @@ import re
 from typing import Optional
 
 import cliche_filter
+import config
 from groq_client import call_groq
 from post_format import DISCLAIMER, HOOK_MODES, assemble_post
 import voice_guidelines
@@ -104,7 +105,7 @@ def generate_binance_promo(theme: str, hook_mode: Optional[str] = None) -> Optio
     )
     user_prompt += voice_memory.anti_repeat_block() + voice_memory.continuity_block(theme, label)
 
-    hook = call_groq(system_prompt, user_prompt, max_tokens=350, temperature=0.9)
+    hook = call_groq(system_prompt, user_prompt, max_tokens=350, temperature=0.9, model=config.GROQ_MODEL_SECONDARY)
 
     # Та же подстраховка, что у opinion_generator/hot_take_generator -
     # call_groq уже перезапрашивает пустые ответы сам, это - защита на

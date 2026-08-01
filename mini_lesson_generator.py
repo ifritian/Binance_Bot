@@ -24,6 +24,7 @@ import re
 from typing import Optional
 
 import cliche_filter
+import config
 from groq_client import call_groq
 from post_format import BLUESKY_CHAR_LIMIT, DISCLAIMER
 import voice_guidelines
@@ -89,7 +90,7 @@ def generate_mini_lesson(topic: str) -> Optional[str]:
         return None
 
     user_prompt = f"Тема: {TOPICS[topic]}\n\nНапиши мини-урок на эту тему."
-    lesson = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=320, temperature=0.85)
+    lesson = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=320, temperature=0.85, model=config.GROQ_MODEL_SECONDARY)
 
     if len(lesson.strip()) < 10:
         logger.warning("Мини-урок пустой или слишком короткий (%r) - пропускаю это окно", lesson)

@@ -79,6 +79,17 @@ BINANCE_SQUARE_ENDPOINT = f"{BINANCE_SQUARE_BASE_V1}/content/add"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
+# Лимиты Groq free tier считаются ОТДЕЛЬНО по каждой модели (свой пул
+# RPM/TPM/RPD на модель, см. https://console.groq.com/docs/rate-limits).
+# GROQ_MODEL используется только для приоритетного формата (валютный
+# сигнал - text_generator) - у него весь бюджет основной модели в
+# одиночку. Все второстепенные форматы (мнение, хот-тейк, мини-урок,
+# глоссарий, AMA, промо, поздравления, алерты волатильности, рибаланс)
+# идут через GROQ_MODEL_SECONDARY - отдельная модель со своим пулом,
+# поэтому они не конкурируют с публикацией сигналов за один и тот же
+# TPM/RPM и не выбивают друг друга в 429, когда несколько окон публикации
+# открываются в один тик.
+GROQ_MODEL_SECONDARY = os.environ.get("GROQ_MODEL_SECONDARY", "llama-3.1-8b-instant")
 
 # --- Поведение бота ---
 MIN_POST_INTERVAL_HOURS = float(os.environ.get("MIN_POST_INTERVAL_HOURS", "2"))

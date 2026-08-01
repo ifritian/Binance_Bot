@@ -91,7 +91,7 @@ def generate_emergency_post(spike: dict) -> Optional[str]:
         f"{spike['window_hours']} часа(ов). Напиши короткую живую реакцию в моменте."
     )
 
-    take = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=180, temperature=0.9)
+    take = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=180, temperature=0.9, model=config.GROQ_MODEL_SECONDARY)
 
     if len(take.strip()) < 10:
         logger.warning("Экстренный пост пустой/слишком короткий (%r) - пропускаю", take)

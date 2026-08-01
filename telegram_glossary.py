@@ -27,6 +27,7 @@ import re
 from typing import Optional
 
 import cliche_filter
+import config
 from groq_client import call_groq
 from post_format import DISCLAIMER
 import voice_guidelines
@@ -163,7 +164,7 @@ def generate_glossary_post(topic: dict) -> Optional[str]:
     """Возвращает готовый текст поста (с заголовком и дисклеймером),
     либо None, если генерация не удалась содержательно."""
     user_prompt = f"Тема: {topic['title']}\n\nЧто нужно раскрыть: {topic['hint']}\n\nНапиши пост на эту тему."
-    body = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=500, temperature=0.8)
+    body = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=500, temperature=0.8, model=config.GROQ_MODEL_SECONDARY)
 
     if len(body.strip()) < 30:
         logger.warning("Пост глоссария (%s) пустой/слишком короткий (%r) - пропускаю", topic["key"], body)
