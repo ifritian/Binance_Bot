@@ -79,6 +79,39 @@ def test_accuracy_stats_empty(monkeypatch):
     assert stats["overall"] == {"count": 0, "win_rate": None, "avg_pnl_pct": None}
 
 
+def test_futures_trade_stats_aggregation(monkeypatch):
+    # entry_price*quantity = 1000 в обеих сделках по BTC, для простоты
+    # чисел; realized_pnl - реальный PnL с биржи (не оценка по цене).
+    fake_closed = [
+        {"symbol": "BTCUSDT", "strategy": "RSI + Bollinger Touch", "entry_price": 100,
+         "quantity": 10, "realized_pnl": 20.0, "closed_at": 0},
+        {"symbol": "BTCUSDT", "strategy": "RSI + Bollinger Touch", "entry_price": 100,
+         "quantity": 10, "realized_pnl": -10.0, "closed_at": 0},
+        {"symbol": "ETHUSDT", "strategy": "MACD Crossover", "entry_price": 50,
+         "quantity": 20, "realized_pnl": 30.0, "closed_at": 0},
+    ]
+    monkeypatch.setattr(outcome_tracker.queue_manager, "get_closed_futures_positions", lambda: fake_closed)
+
+    stats = outcome_tracker.get_futures_trade_stats(days=None)
+
+    assert stats["overall"]["count"] == 3
+    # 2 win (20, 30) из 3 decided (все не 0) -> 66.7%
+    assert stats["overall"]["win_rate"] == 66.7
+    assert stats["overall"]["total_pnl_usdt"] == 40.0
+    assert stats["by_strategy"]["RSI + Bollinger Touch"]["count"] == 2
+    assert stats["by_strategy"]["RSI + Bollinger Touch"]["win_rate"] == 50.0
+    assert stats["by_strategy"]["MACD Crossover"]["win_rate"] == 100.0
+    # by_quality намеренно не считается для реальных futures-сделок -
+    # у closed_futures_positions нет поля quality (см. docstring функции)
+    assert "by_quality" not in stats
+
+
+def test_futures_trade_stats_empty(monkeypatch):
+    monkeypatch.setattr(outcome_tracker.queue_manager, "get_closed_futures_positions", lambda: [])
+    stats = outcome_tracker.get_futures_trade_stats()
+    assert stats["overall"] == {"count": 0, "win_rate": None, "avg_pnl_pct": None, "total_pnl_usdt": 0.0}
+
+
 def test_record_signal_outcome_stores_bluesky_ref(monkeypatch):
     saved = []
     monkeypatch.setattr(outcome_tracker.queue_manager, "add_open_outcome", lambda record: saved.append(record))

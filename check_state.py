@@ -178,6 +178,30 @@ def main() -> None:
             print(f"    {c.get('symbol')}: {c.get('close_reason')}, "
                   f"PnL {c.get('realized_pnl', 0):+.4f} USDT")
 
+    print(
+        "\n--- Статистика по РЕАЛЬНЫМ сделкам testnet (не путать с "
+        "\"Трекингом результатов сигналов\" выше - там считается по цене "
+        "КАЖДЫЙ опубликованный сигнал, был по нему реальный ордер или нет) ---"
+    )
+    for label, days in (("за всё время", None), ("за 30 дней", 30), ("за 7 дней", 7)):
+        fstats = outcome_tracker.get_futures_trade_stats(days=days)
+        foverall = fstats["overall"]
+        print(f"\n  [{label}]")
+        if foverall["count"] == 0:
+            print("    итого: нет закрытых сделок")
+            continue
+        wr = f"{foverall['win_rate']}%" if foverall["win_rate"] is not None else "н/д"
+        print(f"    итого: n={foverall['count']}, win-rate={wr}, "
+              f"средний результат={foverall['avg_pnl_pct']:+.2f}%, "
+              f"суммарный PnL={foverall['total_pnl_usdt']:+.4f} USDT")
+        if fstats["by_strategy"]:
+            print("    по стратегии:")
+            for strat, s in sorted(fstats["by_strategy"].items(), key=lambda kv: -kv[1]["count"]):
+                swr = f"{s['win_rate']}%" if s["win_rate"] is not None else "н/д"
+                print(f"      {strat}: n={s['count']}, win-rate={swr}, "
+                      f"средний результат={s['avg_pnl_pct']:+.2f}%, "
+                      f"суммарный PnL={s['total_pnl_usdt']:+.4f} USDT")
+
     print("\n--- Вывод ---")
     if pending is not None:
         elapsed = queue_manager.seconds_since_last_post("currency")

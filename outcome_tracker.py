@@ -266,3 +266,64 @@ def get_accuracy_stats(days: float | None = None) -> dict:
         "by_strategy": {k: _summarize(v) for k, v in by_strategy.items()},
         "by_quality": {k: _summarize(v) for k, v in by_quality.items()},
     }
+
+
+def get_futures_trade_stats(days: float | None = None) -> dict:
+    """Аналог get_accuracy_stats(), но по РЕАЛЬНЫМ закрытым позициям на
+    testnet (queue_manager.get_closed_futures_positions(), см.
+    futures_position_monitor.py), а не по симуляции цены опубликованных
+    сигналов.
+
+    Это НАМЕРЕННО отдельная функция, а не слияние с get_accuracy_stats():
+    signal-трекинг считает исход КАЖДОГО опубликованного сигнала (был по
+    нему реальный ордер или нет - неважно, там просто путь цены), а этот
+    - только те сигналы, по которым futures_signal_bridge реально открыл
+    позицию (обычно меньшая, более отфильтрованная выборка - см.
+    config.BINANCE_FUTURES_MIN_SIGNAL_SCORE). Смешивать их в одну
+    статистику значило бы посчитать win-rate по сделкам, которых по факту
+    не было. by_quality не считается - у закрытых futures-позиций нет
+    поля quality (оно есть только у RsiSignal, из которого сделка
+    открывалась, но не сохраняется в саму запись позиции).
+
+    pnl_pct считается от номинала позиции (entry_price * quantity), а не
+    от баланса счёта - так он сопоставим по смыслу с pnl_pct из
+    get_accuracy_stats (тот тоже % от цены входа конкретной сделки, а
+    не от общего баланса)."""
+    closed = queue_manager.get_closed_futures_positions()
+    if days is not None:
+        cutoff = time.time() - days * 24 * 3600
+        closed = [c for c in closed if c.get("closed_at", 0) >= cutoff]
+
+    enriched = []
+    for c in closed:
+        entry = c.get("entry_price") or 0
+        qty = c.get("quantity") or 0
+        notional = entry * qty
+        pnl = c.get("realized_pnl", 0) or 0
+        pnl_pct = (pnl / notional * 100) if notional else 0.0
+        result = "win" if pnl > 0 else ("loss" if pnl < 0 else "flat")
+        enriched.append({**c, "result": result, "pnl_pct": pnl_pct})
+
+    def _summarize(items: list[dict]) -> dict:
+        n = len(items)
+        if n == 0:
+            return {"count": 0, "win_rate": None, "avg_pnl_pct": None, "total_pnl_usdt": 0.0}
+        wins = sum(1 for c in items if c["result"] == "win")
+        decided = sum(1 for c in items if c["result"] in ("win", "loss"))
+        avg_pnl = sum(c["pnl_pct"] for c in items) / n
+        total_pnl = sum(c.get("realized_pnl", 0) or 0 for c in items)
+        return {
+            "count": n,
+            "win_rate": round(wins / decided * 100, 1) if decided else None,
+            "avg_pnl_pct": round(avg_pnl, 3),
+            "total_pnl_usdt": round(total_pnl, 4),
+        }
+
+    by_strategy: dict[str, list[dict]] = {}
+    for c in enriched:
+        by_strategy.setdefault(c.get("strategy", "?"), []).append(c)
+
+    return {
+        "overall": _summarize(enriched),
+        "by_strategy": {k: _summarize(v) for k, v in by_strategy.items()},
+    }
