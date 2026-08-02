@@ -121,6 +121,17 @@ jobs:
         continue-on-error: true
         run: python portfolio_rebalancer.py --live
 
+      - name: Send daily ops digest to owner (Telegram)
+        # Идёт ПОСЛЕДНИМ из содержательных шагов - после auto-trade и
+        # ребалансировки, чтобы дайджест отражал состояние уже с учётом
+        # действий этого тика. Троттлинг (не чаще раза в ~сутки) - внутри
+        # alerting.send_owner_alert, см. docstring ops_digest.py - поэтому
+        # этот шаг безопасно запускать на КАЖДОМ тике, а не заводить для
+        # него отдельное расписание.
+        if: always()
+        continue-on-error: true
+        run: python ops_digest.py
+
       - name: Show queue state (diagnostics)
         if: always()
         run: python check_state.py

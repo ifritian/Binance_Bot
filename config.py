@@ -170,6 +170,16 @@ OUTCOME_MAX_TRACK_HOURS = float(os.environ.get("OUTCOME_MAX_TRACK_HOURS", "48"))
 # предупреждение не дублируется чаще, чем раз в DEAD_MANS_SWITCH_HOURS
 # (см. alerting.send_owner_alert).
 DEAD_MANS_SWITCH_HOURS = float(os.environ.get("DEAD_MANS_SWITCH_HOURS", "24"))
+# Ежедневный дайджест владельцу (см. ops_digest.py) - не строгий
+# интервал с джиттером (как у публичных форматов - см. TREASURY_INTERVAL_HOURS
+# и соседей), а троттлинг-порог для alerting.send_owner_alert: "не чаще,
+# чем раз в ЭТО число часов". 20, а не 24 - чтобы прогон, случившийся
+# чуть раньше суток из-за дрожания расписания cron, не откладывал
+# дайджест на лишние часы (та же идея, что и джиттер у публичных
+# форматов, только реализована через порог троттлинга, а не отдельное
+# окно - дайджест не идёт в публичную ленту, ему не нужна такая же
+# точность момента публикации).
+OPS_DIGEST_MIN_REPEAT_HOURS = float(os.environ.get("OPS_DIGEST_MIN_REPEAT_HOURS", "20"))
 
 # --- Еженедельный отчёт точности сигналов (accuracy_report_generator.py) ---
 # Отдельный формат от currency/opinion/treasury/article - публикует

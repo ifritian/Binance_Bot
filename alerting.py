@@ -37,10 +37,17 @@ def is_configured() -> bool:
     return bool(config.TELEGRAM_BOT_TOKEN and config.YOUR_USER_ID)
 
 
-def send_owner_alert(alert_key: str, message: str, min_repeat_hours: float = _DEFAULT_MIN_REPEAT_HOURS) -> bool:
+def send_owner_alert(alert_key: str, message: str, min_repeat_hours: float = _DEFAULT_MIN_REPEAT_HOURS,
+                      prefix: str = "\u26a0\ufe0f Bot alert") -> bool:
     """Отправляет алерт владельцу, если он не настроен - тихо пропускает
     (это не ошибка, YOUR_USER_ID опционален). Возвращает True, если
-    сообщение реально ушло (не была троттлинга и не было сбоя API)."""
+    сообщение реально ушло (не была троттлинга и не было сбоя API).
+
+    prefix - по умолчанию тот же "⚠️ Bot alert", что и раньше (не ломает
+    существующих вызывающих) - но для НЕ-тревожных сообщений (например,
+    ops_digest.py шлёт рутинный ежедневный отчёт, а не сигнал о сбое)
+    можно передать свой, чтобы не создавать ложное ощущение тревоги
+    каждый день на пустом месте."""
     if not is_configured():
         logger.debug("Алертинг владельцу не настроен (нет YOUR_USER_ID/TELEGRAM_BOT_TOKEN) - пропускаю: %s", message)
         return False
@@ -53,7 +60,7 @@ def send_owner_alert(alert_key: str, message: str, min_repeat_hours: float = _DE
     try:
         resp = requests.post(
             f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage",
-            data={"chat_id": config.YOUR_USER_ID, "text": f"\u26a0\ufe0f Bot alert\n\n{message}"},
+            data={"chat_id": config.YOUR_USER_ID, "text": f"{prefix}\n\n{message}"},
             timeout=15,
         )
         resp.raise_for_status()
