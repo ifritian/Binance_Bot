@@ -12,9 +12,10 @@ import image_analyzer
 
 
 class _FakeResponse:
-    def __init__(self, status_code, json_data=None):
+    def __init__(self, status_code, json_data=None, text=""):
         self.status_code = status_code
         self._json = json_data or {}
+        self.text = text or str(json_data or "")
 
     def raise_for_status(self):
         if self.status_code >= 400:

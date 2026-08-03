@@ -115,6 +115,51 @@ def test_strategy_name_words_do_not_trigger_language_check():
     assert ok is True, reason
 
 
+def test_macd_and_breakout_strategy_names_do_not_trigger_language_check():
+    """Регресс на реальный баг в проде (найден по логу с постом DODO):
+    та же история, что с 'RSI + Bollinger Touch' выше, но для двух
+    других стратегий из strategies.py - 'MACD Crossover' и 'Donchian
+    Breakout'. Подтверждено по outcome_tracker.get_accuracy_stats: с
+    момента появления этих стратегий в коде ОПУБЛИКОВАНО ноль сигналов
+    с ними, хотя сканер находит такие сигналы регулярно - валидатор
+    отклонял КАЖДЫЙ такой пост как 'смешение языков' из-за слов
+    Crossover/Donchian/Breakout (смешанный регистр, не заглавные - MACD
+    сам по себе не страдал, он весь заглавными и проходит по отдельному
+    правилу)."""
+    signal = _make_signal(
+        ticker="DODO", strategy="Donchian Breakout", direction="Лонг (пробой диапазона вверх)",
+        entry_low="0.0200299", entry_high="0.0201091", invalidation="0.0192831", target="0.0208",
+        rsi_now="н/д", score="92",
+    )
+    text = (
+        f"$DODO пробил 20-свечный диапазон вверх, объём вдвое выше обычного 🚀\n"
+        f"Подтверждено на старших таймфреймах, держу в зоне входа.\n\n"
+        f"🟢 Лонг (пробой диапазона вверх) | Donchian Breakout\n"
+        f"Вход: 0.0200299 - 0.0201091\n"
+        f"Стоп: 0.0192831\n"
+        f"Тейк: 0.0208\n"
+        f"RSI: н/д | Score: 92/100\n\n{DISCLAIMER}"
+    )
+    ok, reason = validator.validate_post_text(text, signal)
+    assert ok is True, reason
+
+    signal2 = _make_signal(
+        ticker="CFX", strategy="MACD Crossover", direction="Шорт (медвежье пересечение MACD)",
+        entry_low="0.108", entry_high="0.1087", invalidation="0.1097", target="0.1054",
+        rsi_now="н/д", score="54",
+    )
+    text2 = (
+        f"$CFX дал медвежье пересечение MACD на 15м, импульс разворачивается вниз 📉\n\n"
+        f"🔴 Шорт (медвежье пересечение MACD) | MACD Crossover\n"
+        f"Вход: 0.108 - 0.1087\n"
+        f"Стоп: 0.1097\n"
+        f"Тейк: 0.1054\n"
+        f"RSI: н/д | Score: 54/100\n\n{DISCLAIMER}"
+    )
+    ok2, reason2 = validator.validate_post_text(text2, signal2)
+    assert ok2 is True, reason2
+
+
 if __name__ == "__main__":
     import sys
     import types

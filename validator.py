@@ -37,6 +37,16 @@ _ALLOWED_ENGLISH_WORDS = {
     # языков" некорректно (баг: реально блокировал публикацию каждого
     # сигнала со стратегией "RSI + Bollinger Touch" / "+ Divergence").
     "bollinger", "touch", "divergence",
+    # Та же история со strategies.py: "MACD Crossover" и "Donchian
+    # Breakout" (build_macd_signal/build_breakout_signal) - тоже
+    # шаблонный код-текст, не LLM-хук. "MACD" сюда не входит - он
+    # целиком заглавными, уже проходит по отдельному правилу isupper()
+    # выше. Без этой строки НИ ОДИН сигнал с этими двумя стратегиями не
+    # мог опубликоваться ни разу с момента, как strategies.py появился в
+    # проекте (проверено по outcome_tracker.get_accuracy_stats -
+    # публикаций с этими strategy=0, при том что сканер такие сигналы
+    # находит регулярно).
+    "crossover", "donchian", "breakout",
 }
 
 

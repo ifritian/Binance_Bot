@@ -128,7 +128,13 @@ def analyze_chart_image(image_url: str, photo_file_id: Optional[str] = None) -> 
                 )
                 time.sleep(delay)
                 continue
-            logger.warning("Не удалось распознать картинку %s: %s", image_url, e)
+            # response.text - тут обычно человекочитаемая причина от Groq
+            # (например "model X has been decommissioned") - requests'овский
+            # e (просто "404 Client Error: Not Found for url: ...") её не
+            # содержит, из-за чего причину раньше приходилось угадывать
+            # по внешним источникам вместо одного взгляда в лог.
+            body = (e.response.text or "")[:300]
+            logger.warning("Не удалось распознать картинку %s: %s | ответ Groq: %s", image_url, e, body)
             return None
         except (requests.RequestException, KeyError, json.JSONDecodeError, ValueError) as e:
             logger.warning("Не удалось распознать картинку %s: %s", image_url, e)
