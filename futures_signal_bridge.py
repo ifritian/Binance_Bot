@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import queue_manager
+import risk_guard
 import signal_parser
 from futures_client import FuturesApiError
 from futures_executor import ExecutionError, ProtectedPositionResult, open_protected_position
@@ -171,11 +172,19 @@ def execute_signal(
         )
         return None
 
+    risk_multiplier, loss_streak = risk_guard.get_risk_multiplier(client, risk_limits)
+    effective_risk_pct = risk_pct * risk_multiplier
+    if risk_multiplier < 1.0:
+        logger.info(
+            "futures_signal_bridge: %d убыточных сделок подряд - риск снижен с %.2f%% до %.2f%% на эту сделку",
+            loss_streak, risk_pct, effective_risk_pct,
+        )
+
     try:
         result = open_protected_position(
             client, params.symbol, params.side,
             stop_price=params.stop_price, take_profit_price=params.take_profit_price,
-            risk_pct=risk_pct, leverage=leverage, risk_limits=risk_limits,
+            risk_pct=effective_risk_pct, leverage=leverage, risk_limits=risk_limits,
         )
     except (ExecutionError, FuturesApiError) as e:
         logger.error("futures_signal_bridge: не удалось открыть позицию по сигналу %s (%s): %s",

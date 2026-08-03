@@ -10,6 +10,10 @@ calc_position_size). Каждая позиция по отдельности м�
 1. Максимум ОДНОВРЕМЕННО открытых позиций (across всех символов).
 2. Дневной лимит убытка в % от баланса на начало UTC-дня.
 3. Серия убыточных сделок ПОДРЯД (по факту закрытия на бирже).
+4. Мягкое снижение риска НОВОЙ сделки (см. get_risk_multiplier), ещё
+   ДО того, как серия убытков дойдёт до порога пункта 3 и остановит
+   торговлю целиком - промежуточная ступень, а не замена жёсткому
+   выключателю.
 
 Лимиты 2 и 3 при срабатывании ВЗВОДЯТ kill switch (см.
 queue_manager.set_kill_switch) - персистентный (bot_state.db) флаг
@@ -21,9 +25,10 @@ queue_manager.set_kill_switch) - персистентный (bot_state.db) фл�
 решение продолжать торговать должно быть решением человека, а не
 побочным эффектом того, что цифры на бирже сами вернулись в норму.
 
-Лимит 1 (открытых позиций) - НЕ взводит kill switch: это не "что-то
-пошло не так", а просто "подожди, пока освободится слот" - само
-разрешится, когда одна из открытых позиций закроется.
+Лимит 1 (открытых позиций) и пункт 4 (мягкое снижение риска) - НЕ
+взводят kill switch: это не "что-то пошло не так", а штатная адаптация
+(подожди слот / рискуй меньше, пока не восстановишься) - само
+разрешится на следующей успешной сделке или освободившемся слоте.
 
 futures_executor.open_protected_position вызывает
 check_new_position_allowed ПЕРВЫМ делом - до единого API-вызова на
@@ -46,6 +51,14 @@ class RiskLimits:
     max_open_positions: int
     max_daily_loss_pct: float
     max_consecutive_losses: int
+    # Мягкая ступень де-рискования ДО жёсткого kill switch - см.
+    # get_risk_multiplier() ниже и docstring config.BINANCE_FUTURES_SOFT_DERISK_*.
+    # Дефолты здесь совпадают с config.py и существуют только чтобы не
+    # ломать старые вызовы RiskLimits(...) без этих двух аргументов
+    # (тесты, старые вызывающие места) - в реальной работе бота их
+    # всегда явно задаёт limits_from_config.
+    soft_derisk_after_losses: int = 2
+    soft_derisk_multiplier: float = 0.5
 
 
 def limits_from_config(config) -> RiskLimits:
@@ -53,6 +66,8 @@ def limits_from_config(config) -> RiskLimits:
         max_open_positions=config.BINANCE_FUTURES_MAX_OPEN_POSITIONS,
         max_daily_loss_pct=config.BINANCE_FUTURES_MAX_DAILY_LOSS_PCT,
         max_consecutive_losses=config.BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES,
+        soft_derisk_after_losses=config.BINANCE_FUTURES_SOFT_DERISK_AFTER_LOSSES,
+        soft_derisk_multiplier=config.BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER,
     )
 
 
@@ -101,6 +116,29 @@ def _consecutive_losses(client, lookback: int = 50) -> int:
         else:
             break
     return streak
+
+
+def get_risk_multiplier(client, limits: RiskLimits) -> tuple[float, int]:
+    """Возвращает (multiplier, streak) - множитель для risk_pct НОВОЙ
+    сделки, посчитанный по серии убытков подряд ПРЯМО СЕЙЧАС.
+
+    1.0, пока серия короче limits.soft_derisk_after_losses.
+    limits.soft_derisk_multiplier, начиная с этого порога (и до тех пор,
+    пока не сработает жёсткий kill switch - см. check_new_position_allowed,
+    он вызывается ОТДЕЛЬНО и раньше, эта функция не заменяет его, а
+    только смягчает то, что происходит ДО его срабатывания).
+
+    Намеренно НЕ кэширует и не понижает риск постепенно (0.75 -> 0.5 ->
+    0.25...) - две ступени (обычный/сниженный) проще объяснить и
+    предсказать, чем плавную кривую, а серия убытков и так штука редкая -
+    сложная формула здесь не окупает добавленной непрозрачности.
+    Использует ту же _consecutive_losses, что и check_new_position_allowed -
+    единый источник правды про серию, а не два независимых подсчёта,
+    которые могли бы разойтись при доработке одного без другого."""
+    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20))
+    if streak >= limits.soft_derisk_after_losses:
+        return limits.soft_derisk_multiplier, streak
+    return 1.0, streak
 
 
 def check_new_position_allowed(client, limits: RiskLimits) -> Optional[str]:

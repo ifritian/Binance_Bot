@@ -317,6 +317,17 @@ BINANCE_FUTURES_MAX_DAILY_LOSS_PCT = float(os.environ.get("BINANCE_FUTURES_MAX_D
 # risk_guard._consecutive_losses) взводят kill switch так же, как
 # дневной лимит выше.
 BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES = int(os.environ.get("BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES", "3"))
+# Мягкая ступень ПЕРЕД жёстким kill switch (см. risk_guard.py) - начиная
+# с этого числа убытков подряд (но ДО достижения MAX_CONSECUTIVE_LOSSES,
+# когда торговля просто остановится целиком) размер новых позиций
+# домножается на BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER. По умолчанию
+# 2 и 0.5 - т.е. после 2 убытков подряд следующая сделка рискует не 1%,
+# а 0.5% от баланса. Это снижает урон ДО того, как сработает жёсткий
+# стоп, вместо того чтобы идти на полном риске до самого последнего
+# момента. Должно быть < MAX_CONSECUTIVE_LOSSES, иначе бессмысленно
+# (see risk_guard.get_risk_multiplier).
+BINANCE_FUTURES_SOFT_DERISK_AFTER_LOSSES = int(os.environ.get("BINANCE_FUTURES_SOFT_DERISK_AFTER_LOSSES", "2"))
+BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER = float(os.environ.get("BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER", "0.5"))
 
 # --- Автоматическое исполнение сигналов (см. futures_signal_bridge.py/
 # futures_auto_trade.py) ---

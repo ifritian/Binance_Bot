@@ -174,6 +174,51 @@ def test_consecutive_losses_sorts_by_time_itself():
     assert streak == 2
 
 
+# --- мягкое снижение риска (get_risk_multiplier) ---
+
+def test_risk_multiplier_full_when_no_losses():
+    client = _FakeClient(income_rows=_income([10, -5, 10]))  # серия из 0 (последняя сделка - выигрыш)
+    limits = _limits()  # soft_derisk_after_losses=2 по дефолту дата-класса
+    multiplier, streak = risk_guard.get_risk_multiplier(client, limits)
+    assert multiplier == 1.0
+    assert streak == 0
+
+
+def test_risk_multiplier_full_below_threshold():
+    # 1 убыток подряд - меньше soft_derisk_after_losses=2 - риск ещё полный
+    client = _FakeClient(income_rows=_income([10, -5]))
+    limits = risk_guard.RiskLimits(max_open_positions=3, max_daily_loss_pct=5.0,
+                                    max_consecutive_losses=3, soft_derisk_after_losses=2,
+                                    soft_derisk_multiplier=0.5)
+    multiplier, streak = risk_guard.get_risk_multiplier(client, limits)
+    assert multiplier == 1.0
+    assert streak == 1
+
+
+def test_risk_multiplier_reduced_at_threshold():
+    # ровно 2 убытка подряд - порог достигнут - риск снижен
+    client = _FakeClient(income_rows=_income([10, -5, -3]))
+    limits = risk_guard.RiskLimits(max_open_positions=3, max_daily_loss_pct=5.0,
+                                    max_consecutive_losses=3, soft_derisk_after_losses=2,
+                                    soft_derisk_multiplier=0.5)
+    multiplier, streak = risk_guard.get_risk_multiplier(client, limits)
+    assert multiplier == 0.5
+    assert streak == 2
+
+
+def test_risk_multiplier_stays_reduced_beyond_threshold_but_before_kill_switch():
+    # 2 убытка подряд - между soft_derisk_after_losses(2) и
+    # max_consecutive_losses(3) - риск снижен, но kill switch ещё не взведён
+    # (это проверяет отдельно check_new_position_allowed, не эта функция).
+    client = _FakeClient(income_rows=_income([10, -5, -3]))
+    limits = risk_guard.RiskLimits(max_open_positions=3, max_daily_loss_pct=5.0,
+                                    max_consecutive_losses=3, soft_derisk_after_losses=2,
+                                    soft_derisk_multiplier=0.5)
+    multiplier, streak = risk_guard.get_risk_multiplier(client, limits)
+    assert multiplier == 0.5
+    assert streak < limits.max_consecutive_losses  # kill switch по этому лимиту ещё не должен сработать
+
+
 # --- всё в норме ---
 
 def test_all_clear_returns_none(monkeypatch):

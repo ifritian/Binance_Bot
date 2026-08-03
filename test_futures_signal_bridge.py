@@ -8,6 +8,7 @@ import futures_signal_bridge as bridge
 import risk_guard
 from futures_client import FuturesApiError
 from signal_parser import RsiSignal
+from types import SimpleNamespace
 
 
 def _signal(ticker="SOL", direction="Лонг (перепроданность)", score="85",
@@ -135,14 +136,67 @@ def test_execute_signal_skips_if_price_moved_far_from_entry_zone():
 def test_execute_signal_allows_small_slippage_within_tolerance():
     # мимо зоны 100-102, но в пределах допуска (граница 99..103)
     client = _FakeClient(mark_price=102.8, position=None)
-    # get_position -> None (ок), get_mark_price -> 102.8 (в допуске) -> дошли бы до open_protected_position,
-    # но у _FakeClient его нет - убеждаемся, что дошли именно до этой точки по AttributeError, а не по None раньше.
+    # get_position -> None (ок), get_mark_price -> 102.8 (в допуске) -> дошли бы дальше,
+    # но у _FakeClient нет get_income_history/остальных методов FuturesClient -
+    # убеждаемся, что дошли именно до этой точки по AttributeError, а не по None раньше
+    # (см. test_execute_signal_applies_soft_derisk_multiplier ниже - там дальше идёт
+    # уже полноценный монки-патч open_protected_position, здесь достаточно факта,
+    # что не отвалились раньше времени).
     try:
         bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3, risk_limits=_limits(), min_score=0)
         assert False, "ожидался AttributeError - _FakeClient не реализует остальные методы FuturesClient"
     except AttributeError:
         pass
     assert ("get_mark_price", "SOLUSDT") in client.calls
+
+
+# --- мягкое снижение риска (см. risk_guard.get_risk_multiplier) ---
+
+def test_execute_signal_applies_soft_derisk_multiplier(monkeypatch):
+    client = _FakeClient(mark_price=101.0, position=None)
+    # 2 убытка подряд -> при soft_derisk_after_losses=2 (дефолт RiskLimits) риск должен уполовиниться
+    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50: 2)
+    monkeypatch.setattr(bridge.queue_manager, "add_open_futures_position", lambda record: None)
+
+    captured = {}
+
+    def fake_open_protected_position(client, symbol, side, stop_price, take_profit_price,
+                                      risk_pct, leverage, risk_limits=None, margin_type="ISOLATED"):
+        captured["risk_pct"] = risk_pct
+        return SimpleNamespace(
+            symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
+            stop_price=stop_price, take_profit_price=take_profit_price,
+            stop_order={"orderId": 1}, take_profit_order={"orderId": 2},
+        )
+
+    monkeypatch.setattr(bridge, "open_protected_position", fake_open_protected_position)
+
+    bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3, risk_limits=_limits(), min_score=0)
+
+    assert captured["risk_pct"] == 0.5  # 1.0 * soft_derisk_multiplier(0.5)
+
+
+def test_execute_signal_keeps_full_risk_without_loss_streak(monkeypatch):
+    client = _FakeClient(mark_price=101.0, position=None)
+    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50: 0)
+    monkeypatch.setattr(bridge.queue_manager, "add_open_futures_position", lambda record: None)
+
+    captured = {}
+
+    def fake_open_protected_position(client, symbol, side, stop_price, take_profit_price,
+                                      risk_pct, leverage, risk_limits=None, margin_type="ISOLATED"):
+        captured["risk_pct"] = risk_pct
+        return SimpleNamespace(
+            symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
+            stop_price=stop_price, take_profit_price=take_profit_price,
+            stop_order={"orderId": 1}, take_profit_order={"orderId": 2},
+        )
+
+    monkeypatch.setattr(bridge, "open_protected_position", fake_open_protected_position)
+
+    bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3, risk_limits=_limits(), min_score=0)
+
+    assert captured["risk_pct"] == 1.0
 
 
 if __name__ == "__main__":
