@@ -31,6 +31,19 @@ STOP_MARKET/TAKE_PROFIT_MARKET автоматически (это не OCO), т�
    с биржи (уже с учётом комиссий и проскальзывания), а не оценка по
    цене входа/выхода.
 
+ВТОРАЯ обязанность этого модуля (см. _manage_partial_profit) - частичный
+профит и перевод в безубыток на ЕЩЁ ОТКРЫТЫХ позициях, ДО того, как они
+закроются: когда цена проходит config.BINANCE_FUTURES_PARTIAL_TP_TRIGGER_FRACTION
+пути от входа до тейка сигнала, часть позиции (config.
+BINANCE_FUTURES_PARTIAL_TP_CLOSE_FRACTION) закрывается по рынку, старые
+стоп/тейк снимаются, на остаток ставится стоп в безубыток и трейлинг-стоп
+(вместо исходного фиксированного тейка) - см. docstring
+_manage_partial_profit ниже про то, почему именно так, а не просто
+"подвинуть тейк". Срабатывает максимум ОДИН раз на позицию (record
+"partial_tp_done"), проверяется на каждом прогоне ДО проверки "закрылась
+ли позиция" - иначе позиция, закрывшаяся ровно в этот же тик, могла бы
+пропустить частичный профит и уйти сразу в обработку закрытия.
+
 Использование (те же переменные окружения, что и futures_auto_trade.py):
     export BINANCE_FUTURES_API_KEY=...
     export BINANCE_FUTURES_API_SECRET=...
@@ -42,6 +55,8 @@ import sys
 import time
 
 import alerting
+import config
+import futures_executor
 from futures_client import FuturesApiError, FuturesClient, TESTNET_BASE_URL
 import queue_manager
 
@@ -64,7 +79,14 @@ def _realized_pnl_since(client, symbol: str, since_ts: float) -> float:
 def _determine_close_reason_and_cleanup(client, record: dict, symbol: str) -> str:
     """Возвращает человекочитаемую причину закрытия и попутно отменяет
     "осиротевший" условный ордер, если он остался висеть (см. docstring
-    модуля)."""
+    модуля).
+
+    Если по позиции уже сработал частичный профит (record
+    "partial_tp_done" - см. _manage_partial_profit), то stop_order_id/
+    take_profit_order_id по факту держат уже не исходные стоп/тейк, а
+    стоп в безубытке и трейлинг-стоп соответственно - подписи причины
+    закрытия отражают это, а не молча называют трейлинг-стоп "тейк-
+    профитом"."""
     try:
         open_orders = client.get_open_orders(symbol)
     except FuturesApiError as e:
@@ -77,11 +99,12 @@ def _determine_close_reason_and_cleanup(client, record: dict, symbol: str) -> st
     open_order_ids = {o.get("orderId") for o in open_orders}
     stop_still_open = record.get("stop_order_id") in open_order_ids
     tp_still_open = record.get("take_profit_order_id") in open_order_ids
+    after_partial = bool(record.get("partial_tp_done"))
 
     if stop_still_open and not tp_still_open:
-        reason = "тейк-профит (TP)"
+        reason = "трейлинг-стоп остатка позиции (после частичного профита)" if after_partial else "тейк-профит (TP)"
     elif tp_still_open and not stop_still_open:
-        reason = "стоп-лосс (SL)"
+        reason = "стоп-лосс в безубытке (после частичного профита)" if after_partial else "стоп-лосс (SL)"
     elif not stop_still_open and not tp_still_open:
         reason = "неизвестно (оба условных ордера уже неактивны - возможно, закрыта вручную)"
     else:
@@ -90,11 +113,133 @@ def _determine_close_reason_and_cleanup(client, record: dict, symbol: str) -> st
     if stop_still_open or tp_still_open:
         try:
             client.cancel_all_open_orders(symbol)
+            client.cancel_all_algo_orders(symbol)
             logger.info("futures_position_monitor: отменён оставшийся условный ордер по %s", symbol)
         except FuturesApiError as e:
             logger.warning("futures_position_monitor: не удалось отменить оставшийся ордер по %s: %s", symbol, e)
 
     return reason
+
+
+def _target_progress_fraction(entry: float, target: float, mark_price: float, side: str) -> float:
+    """Доля пройденного пути от входа к тейку сигнала, где 0.0 - ещё в
+    точке входа, 1.0 - ровно на тейке (может быть и больше 1, если цена
+    уже прошла дальше тейка, и меньше 0, если цена ушла в сторону стопа) -
+    считается по направлению сделки, а не как "цена выросла", т.к. для
+    шорта тейк ниже входа. Возвращает 0.0, если entry/target совпадают
+    (нет пути, чтобы посчитать прогресс) - защита от деления на ноль на
+    испорченной/старой записи."""
+    total_distance = (target - entry) if side == "BUY" else (entry - target)
+    if total_distance <= 0:
+        return 0.0
+    progressed = (mark_price - entry) if side == "BUY" else (entry - mark_price)
+    return progressed / total_distance
+
+
+def _manage_partial_profit(client, record: dict, mark_price: float) -> dict:
+    """Проверяет, прошла ли цена config.BINANCE_FUTURES_PARTIAL_TP_TRIGGER_FRACTION
+    пути от входа до тейка сигнала - если да, и это ещё не делалось для
+    этой позиции (record["partial_tp_done"]), закрывает config.
+    BINANCE_FUTURES_PARTIAL_TP_CLOSE_FRACTION позиции по рынку, снимает
+    старые стоп/тейк и ставит на остаток стоп в безубыток + трейлинг-стоп
+    (см. модульный докстринг). Возвращает ОБНОВЛЁННУЮ запись - вызывающий
+    код (check_open_positions) обязан сохранить её обратно в трекинг
+    вместо исходной.
+
+    Срабатывает не больше одного раза за жизнь позиции - вторая частичная
+    фиксация на и без того урезанном остатке не входила в план (A1) и
+    только усложнила бы код без явной пользы на масштабе этого бота.
+
+    НИКОГДА не бросает исключение - ошибка API здесь (сеть, отклонённый
+    ордер и т.п.) логируется и позиция остаётся с исходным стопом/тейком
+    до следующего прогона: это не хуже, чем было раньше (просто "ещё не
+    улучшено"), а не новый источник риска."""
+    if not config.BINANCE_FUTURES_PARTIAL_TP_ENABLED or record.get("partial_tp_done"):
+        return record
+
+    entry = record.get("entry_price", 0) or 0
+    target = record.get("take_profit_price", 0) or 0
+    side = record.get("side", "")
+    quantity = record.get("quantity", 0) or 0
+    symbol = record.get("symbol", "")
+    if entry <= 0 or target <= 0 or quantity <= 0 or side not in ("BUY", "SELL"):
+        return record
+
+    progress = _target_progress_fraction(entry, target, mark_price, side)
+    if progress < config.BINANCE_FUTURES_PARTIAL_TP_TRIGGER_FRACTION:
+        return record
+
+    close_side = "SELL" if side == "BUY" else "BUY"
+
+    try:
+        filters = client.get_symbol_filters(symbol)
+        step = filters.get("step_size") or 0.0
+        raw_close_qty = quantity * config.BINANCE_FUTURES_PARTIAL_TP_CLOSE_FRACTION
+        close_qty = futures_executor.round_to_step(raw_close_qty, step) if step else raw_close_qty
+        remaining_qty = futures_executor.round_to_step(quantity - close_qty, step) if step else quantity - close_qty
+        if close_qty <= 0 or remaining_qty <= 0:
+            logger.info(
+                "futures_position_monitor: %s - частичное закрытие дало бы нулевую долю/остаток "
+                "(qty=%.8g, step=%s) - пропускаю, оставляю исходные стоп/тейк",
+                symbol, quantity, step,
+            )
+            return record
+
+        client.place_reduce_only_market_order(symbol, close_side, close_qty)
+
+        for order_id_key in ("stop_order_id", "take_profit_order_id"):
+            order_id = record.get(order_id_key)
+            if order_id is None:
+                continue
+            try:
+                client.cancel_order(symbol, order_id)
+            except FuturesApiError as e:
+                logger.warning(
+                    "futures_position_monitor: не удалось отменить старый %s (%s) для %s: %s - "
+                    "новый ордер всё равно ставлю, но старый может остаться висеть до следующей чистки",
+                    order_id_key, order_id, symbol, e,
+                )
+
+        breakeven_stop = client.place_stop_market(symbol, close_side, entry, close_position=True)
+        trailing_stop = client.place_trailing_stop_market(
+            symbol, close_side, config.BINANCE_FUTURES_TRAILING_CALLBACK_PCT,
+            close_position=True, activation_price=mark_price,
+        )
+    except FuturesApiError as e:
+        logger.warning(
+            "futures_position_monitor: не удалось выполнить частичный профит по %s: %s - "
+            "оставляю исходные стоп/тейк, попробую снова на следующем прогоне",
+            symbol, e,
+        )
+        return record
+
+    partial_pnl = (mark_price - entry) * close_qty if side == "BUY" else (entry - mark_price) * close_qty
+
+    message = (
+        f"\U0001F3AF Частичный профит: {record.get('ticker', symbol)} {record.get('direction', '')}\n"
+        f"Закрыто ~{config.BINANCE_FUTURES_PARTIAL_TP_CLOSE_FRACTION * 100:.0f}% позиции по рынку "
+        f"(~{partial_pnl:+.4f} USDT)\n"
+        f"Стоп на остаток переведён в безубыток ({entry:.6g}), дальше остаток ({remaining_qty:.8g}) "
+        f"ведётся трейлинг-стопом (callback {config.BINANCE_FUTURES_TRAILING_CALLBACK_PCT:.2f}%) "
+        "вместо исходного тейка"
+    )
+    alerting.send_owner_alert(
+        f"futures_partial_tp:{symbol}:{record.get('opened_at', 0)}",
+        message,
+        min_repeat_hours=0,  # ключ уникален на конкретную позицию - троттлить тут нечего
+    )
+    logger.info(
+        "futures_position_monitor: %s - частичный профит выполнен (%.8g закрыто, %.8g в трейлинге)",
+        symbol, close_qty, remaining_qty,
+    )
+
+    updated = dict(record)
+    updated["quantity"] = remaining_qty
+    updated["stop_order_id"] = breakeven_stop.get("orderId")
+    updated["take_profit_order_id"] = trailing_stop.get("orderId")
+    updated["partial_tp_done"] = True
+    updated["partial_tp_realized_pnl"] = partial_pnl
+    return updated
 
 
 def check_open_positions(client) -> dict:
@@ -126,6 +271,9 @@ def check_open_positions(client) -> dict:
 
         position_amt = float(position["positionAmt"]) if position else 0.0
         if position_amt != 0:
+            mark_price = float(position.get("markPrice", 0) or 0)
+            if mark_price > 0:
+                record = _manage_partial_profit(client, record, mark_price)
             still_open.append(record)
             continue
 
@@ -136,16 +284,29 @@ def check_open_positions(client) -> dict:
         newly_closed.append(closed_record)
 
         entry = record.get("entry_price", 0) or 0
-        quantity = record.get("quantity", 0) or 0
-        notional = entry * quantity
+        # original_quantity (весь риск сделки на момент входа) - не
+        # "quantity" (может быть уже уменьшено частичным профитом, см.
+        # _manage_partial_profit) - иначе % PnL считался бы только от
+        # ОСТАВШЕЙСЯ части позиции и выглядел бы задранным relative к
+        # исходному риску. Старые записи без этого поля (до A1) просто
+        # используют quantity - никакого поведенческого изменения для них.
+        original_quantity = record.get("original_quantity") or record.get("quantity", 0) or 0
+        notional = entry * original_quantity
         pnl_pct = (pnl / notional * 100) if notional else 0.0
         emoji = "\U0001F7E2" if pnl > 0 else ("\U0001F534" if pnl < 0 else "\u26AA")
+
+        partial_note = ""
+        if record.get("partial_tp_done"):
+            partial_note = (
+                f" (включает ~{record.get('partial_tp_realized_pnl', 0):+.4f} USDT, "
+                "зафиксированные ранее частичным профитом)"
+            )
 
         message = (
             f"{emoji} Позиция закрыта: {record.get('ticker', symbol)} {record.get('direction', '')}\n"
             f"Причина: {reason}\n"
-            f"Вход: {entry:.6g}  Кол-во: {quantity:.8g}\n"
-            f"Реализованный PnL: {pnl:+.4f} USDT ({pnl_pct:+.2f}% от размера позиции)\n"
+            f"Вход: {entry:.6g}  Кол-во (исходное): {original_quantity:.8g}\n"
+            f"Реализованный PnL: {pnl:+.4f} USDT ({pnl_pct:+.2f}% от исходного размера позиции){partial_note}\n"
             f"Стратегия: {record.get('strategy', '?')} (score {record.get('score', '?')})"
         )
         alerting.send_owner_alert(

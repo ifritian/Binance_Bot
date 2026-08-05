@@ -200,6 +200,13 @@ def execute_signal(
         "symbol": result.symbol,
         "side": result.side,
         "quantity": result.quantity,
+        # Исходный размер позиции, зафиксированный НАВСЕГДА - "quantity"
+        # выше будет уменьшаться после частичного профита (см.
+        # futures_position_monitor._manage_partial_profit), а этот - нет.
+        # Нужен, чтобы правильно считать % PnL от ПОЛНОГО риска сделки в
+        # уведомлении о закрытии, даже если часть уже была зафиксирована
+        # раньше отдельным ордером.
+        "original_quantity": result.quantity,
         "entry_price": result.entry_price,
         "stop_price": result.stop_price,
         "take_profit_price": result.take_profit_price,

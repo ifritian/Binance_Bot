@@ -203,6 +203,29 @@ if __name__ == "__main__":
     import sys
     import types
 
+    class _MiniMonkeypatch:
+        """Тот же минимальный monkeypatch, что и в остальных test_*.py
+        (см. test_futures_executor.py) - нужен тестам soft-derisk/
+        risk_multiplier ниже, которые подменяют risk_guard/queue_manager.
+        Раньше этот раннер не поддерживал monkeypatch вовсе - тесты,
+        объявленные с параметром monkeypatch, падали с TypeError
+        ("missing 1 required positional argument"), который не ловится
+        `except AssertionError` - весь скрипт аварийно останавливался, а
+        не просто помечал эти тесты как FAIL. В частности,
+        test_execute_signal_applies_soft_derisk_multiplier молча никогда
+        не запускался."""
+
+        def __init__(self):
+            self._restore = []
+
+        def setattr(self, obj, name, value):
+            self._restore.append((obj, name, getattr(obj, name)))
+            setattr(obj, name, value)
+
+        def undo(self):
+            for obj, name, old in reversed(self._restore):
+                setattr(obj, name, old)
+
     passed, failed = 0, 0
     module = sys.modules[__name__]
     for name in dir(module):
@@ -211,13 +234,19 @@ if __name__ == "__main__":
         fn = getattr(module, name)
         if not isinstance(fn, types.FunctionType):
             continue
+        mp = _MiniMonkeypatch()
         try:
-            fn()
+            if "monkeypatch" in fn.__code__.co_varnames[: fn.__code__.co_argcount]:
+                fn(mp)
+            else:
+                fn()
             print(f"OK   {name}")
             passed += 1
         except AssertionError as e:
             print(f"FAIL {name}: {e}")
             failed += 1
+        finally:
+            mp.undo()
 
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)

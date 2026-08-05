@@ -329,6 +329,29 @@ BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES = int(os.environ.get("BINANCE_FUTURES_MAX
 BINANCE_FUTURES_SOFT_DERISK_AFTER_LOSSES = int(os.environ.get("BINANCE_FUTURES_SOFT_DERISK_AFTER_LOSSES", "2"))
 BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER = float(os.environ.get("BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER", "0.5"))
 
+# --- Частичный профит + перевод в безубыток + трейлинг-стоп (см.
+# futures_position_monitor.py, докстринг про "A1" в плане развития) ---
+# Сейчас: фиксированные SL/TP из уровней сигнала, ничего не меняется
+# после входа до самого закрытия. Здесь - управление сделкой ПОСЛЕ
+# входа: когда цена проходит BINANCE_FUTURES_PARTIAL_TP_TRIGGER_FRACTION
+# пути от входа до тейка сигнала, часть позиции фиксируется по рынку, а
+# стоп на остаток переводится в безубыток и дальше ведётся уже не
+# фиксированным тейком, а трейлинг-стопом - чтобы поймать более крупное
+# движение, если оно продолжится, вместо того чтобы просто ждать, дойдёт
+# ли цена до исходного тейка целиком или развернётся обратно к стопу.
+BINANCE_FUTURES_PARTIAL_TP_ENABLED = os.environ.get("BINANCE_FUTURES_PARTIAL_TP_ENABLED", "true").strip().lower() != "false"
+# Доля пути от входа до тейка (0..1), при прохождении которой срабатывает
+# частичный профит - 0.5 по умолчанию = ровно половина пути.
+BINANCE_FUTURES_PARTIAL_TP_TRIGGER_FRACTION = float(os.environ.get("BINANCE_FUTURES_PARTIAL_TP_TRIGGER_FRACTION", "0.5"))
+# Какая доля ПОЗИЦИИ (0..1) закрывается по рынку при срабатывании
+# триггера выше - остаток ведётся трейлинг-стопом (см.
+# BINANCE_FUTURES_TRAILING_CALLBACK_PCT ниже).
+BINANCE_FUTURES_PARTIAL_TP_CLOSE_FRACTION = float(os.environ.get("BINANCE_FUTURES_PARTIAL_TP_CLOSE_FRACTION", "0.5"))
+# Callback rate (в %) трейлинг-стопа, который ведёт остаток позиции
+# после частичного профита - см. FuturesClient.place_trailing_stop_market.
+# Binance допускает диапазон 0.1-5.0 для USD-M фьючерсов.
+BINANCE_FUTURES_TRAILING_CALLBACK_PCT = float(os.environ.get("BINANCE_FUTURES_TRAILING_CALLBACK_PCT", "1.0"))
+
 # --- Автоматическое исполнение сигналов (см. futures_signal_bridge.py/
 # futures_auto_trade.py) ---
 # ОТДЕЛЬНЫЙ (и по умолчанию СТРОЖЕ) порог score от MIN_SIGNAL_SCORE_TO_PUBLISH

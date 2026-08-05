@@ -170,6 +170,59 @@ def test_place_stop_market_partial_requires_quantity_and_reduce_only(monkeypatch
     assert "quantity=0.01" in captured["url"]
 
 
+def test_place_trailing_stop_market_uses_algo_order_endpoint(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(fc.requests, "request",
+                         lambda method, url, **k: (captured.setdefault("method", method),
+                                                     captured.setdefault("url", url), _FakeResponse({"orderId": 4}))[2])
+    client = _client()
+    client.place_trailing_stop_market("BTCUSDT", "SELL", callback_rate=1.0, close_position=True, activation_price=101.5)
+    assert captured["method"] == "POST"
+    assert "/fapi/v1/algoOrder" in captured["url"]
+    assert "algoType=CONDITIONAL" in captured["url"]
+    assert "type=TRAILING_STOP_MARKET" in captured["url"]
+    assert "callbackRate=1.0" in captured["url"]
+    assert "activationPrice=101.5" in captured["url"]
+    assert "closePosition=true" in captured["url"]
+    assert "quantity=" not in captured["url"]
+
+
+def test_place_trailing_stop_market_partial_requires_quantity_and_reduce_only(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(fc.requests, "request",
+                         lambda method, url, **k: (captured.setdefault("url", url), _FakeResponse({"orderId": 4}))[1])
+    client = _client()
+    client.place_trailing_stop_market("BTCUSDT", "SELL", callback_rate=2.0, close_position=False, quantity=0.5)
+    assert "reduceOnly=true" in captured["url"]
+    assert "quantity=0.5" in captured["url"]
+
+
+def test_place_reduce_only_market_order_sets_reduce_only(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(fc.requests, "request",
+                         lambda method, url, **k: (captured.setdefault("method", method),
+                                                     captured.setdefault("url", url), _FakeResponse({"orderId": 5}))[2])
+    client = _client()
+    client.place_reduce_only_market_order("BTCUSDT", "SELL", 0.25)
+    assert captured["method"] == "POST"
+    assert "/fapi/v1/order" in captured["url"]
+    assert "reduceOnly=true" in captured["url"]
+    assert "quantity=0.25" in captured["url"]
+    assert "type=MARKET" in captured["url"]
+
+
+def test_cancel_order_uses_algo_order_endpoint_with_algo_id(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(fc.requests, "request",
+                         lambda method, url, **k: (captured.setdefault("method", method),
+                                                     captured.setdefault("url", url), _FakeResponse({}))[2])
+    client = _client()
+    client.cancel_order("BTCUSDT", 12345)
+    assert captured["method"] == "DELETE"
+    assert "/fapi/v1/algoOrder" in captured["url"]
+    assert "algoId=12345" in captured["url"]
+
+
 def test_set_margin_type_swallows_already_set_error(monkeypatch):
     monkeypatch.setattr(fc.requests, "request",
                          lambda *a, **k: _FakeResponse({"code": -4046, "msg": "No need to change margin type."}, 400))

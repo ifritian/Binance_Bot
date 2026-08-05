@@ -242,6 +242,58 @@ class FuturesClient:
             params["reduceOnly"] = "true"
         return self._signed_request("POST", "/fapi/v1/algoOrder", params)
 
+    def place_trailing_stop_market(self, symbol: str, side: str, callback_rate: float,
+                                    close_position: bool = True, quantity: Optional[float] = None,
+                                    activation_price: Optional[float] = None) -> dict:
+        """TRAILING_STOP_MARKET - стоп, который сам подтягивается вслед за
+        ценой на callback_rate% от лучшего достигнутого уровня, вместо
+        фиксированной цены (см. futures_position_monitor._manage_partial_profit -
+        используется на ОСТАТКЕ позиции после частичного профита, чтобы
+        поймать более крупное движение, если оно продолжится, а не просто
+        зафиксировать исходный тейк целиком).
+
+        activation_price - с какой цены начинать отслеживать лучший
+        уровень. Стоит передавать текущую рыночную цену явно (а не
+        полагаться на дефолт биржи) - иначе при активации "задним числом"
+        от цены входа стоп может тут же посчитать текущую цену уже
+        достаточным откатом и сработать почти сразу после постановки.
+
+        См. docstring place_stop_market про то, почему это тоже Algo
+        Order API, а не обычный /fapi/v1/order."""
+        params = {
+            "algoType": "CONDITIONAL", "symbol": symbol, "side": side,
+            "type": "TRAILING_STOP_MARKET", "callbackRate": callback_rate,
+        }
+        if activation_price is not None:
+            params["activationPrice"] = activation_price
+        if close_position:
+            params["closePosition"] = "true"
+        else:
+            params["quantity"] = quantity
+            params["reduceOnly"] = "true"
+        return self._signed_request("POST", "/fapi/v1/algoOrder", params)
+
+    def place_reduce_only_market_order(self, symbol: str, side: str, quantity: float) -> dict:
+        """MARKET-ордер с reduceOnly=true - для ЧАСТИЧНОГО закрытия уже
+        открытой позиции (в отличие от place_market_order, который
+        используется и для входа тоже, и сам по себе ничем не мешает
+        случайно нарастить позицию вместо того, чтобы её уменьшить).
+        reduceOnly биржа отклонит, если по факту получилось бы увеличение,
+        а не уменьшение - дополнительная защита от бага в вызывающем коде."""
+        return self._signed_request("POST", "/fapi/v1/order", {
+            "symbol": symbol, "side": side, "type": "MARKET",
+            "quantity": quantity, "reduceOnly": "true",
+        })
+
+    def cancel_order(self, symbol: str, order_id) -> dict:
+        """Отменяет ОДИН конкретный algo-ордер (стоп-лосс/тейк-профит/
+        трейлинг-стоп) по его orderId - в отличие от cancel_all_algo_orders
+        (сразу все ордера по символу), нужен частичному профиту (см.
+        futures_position_monitor._manage_partial_profit), где нужно снять
+        ИМЕННО старый стоп или тейк по отдельности, не трогая другой
+        условный ордер, который мог быть выставлен позже."""
+        return self._signed_request("DELETE", "/fapi/v1/algoOrder", {"symbol": symbol, "algoId": order_id})
+
     def get_open_orders(self, symbol: str) -> list:
         """Обычные (LIMIT/MARKET) И algo-ордера (наши STOP_MARKET/
         TAKE_PROFIT_MARKET, см. place_stop_market) - это ДВЕ отдельные
