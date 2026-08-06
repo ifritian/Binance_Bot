@@ -46,6 +46,62 @@ def maybe_binance_cta() -> str | None:
     return random.choice(_BINANCE_CTA_LINES)
 
 
+# --- Топик-хэштеги (ТОЛЬКО Binance Square) ---
+# Square различает два механизма дискаверабилити в тексте поста (см.
+# официальное уведомление Binance про апгрейд API постинга): "token tag"
+# ($TICKER - привязывает пост к конкретному активу и его подписчикам) и
+# "topic hashtag" (#тег - шанс попасть на страницу трендовой темы). Оба
+# парсятся сервером из голого текста (см. docstring binance_publisher.py),
+# без отдельного структурированного поля в API.
+#
+# $CASHTAG уже был - text_generator.py явно просит LLM начинать хук с
+# $TICKER (см. промпт там же). А вот #-хэштега в постах на Square не было
+# ВООБЩЕ: signal_setup_lines/assemble_signal_post (сетап+дисклеймер,
+# собран кодом) не содержит ни одного тега, и единственное место, где
+# строился #{TICKER}, было build_bluesky_post - формат кросспоста в
+# Bluesky, который на Square не публикуется. Ниже - именно недостающая
+# половина: #-хэштеги для самого частого формата (сигнал, см.
+# main._do_publish) и для еженедельной статьи.
+_SQUARE_GENERAL_HASHTAGS = ["#Crypto", "#Trading", "#Altcoins", "#CryptoTrading"]
+
+
+def square_hashtags_line(ticker: str | None) -> str | None:
+    """#{TICKER} + один ротирующийся общий тег (см.
+    _SQUARE_GENERAL_HASHTAGS). Ротация - чтобы не постить один и тот же
+    общий тег буквально в каждом посте (не выглядело спамом и не било в
+    один и тот же фильтр трендовой темы раз за разом). Возвращает None,
+    если тикер неизвестен - строить #-хэштег не от чего."""
+    import random
+    if not ticker:
+        return None
+    return f"#{ticker.upper()} {random.choice(_SQUARE_GENERAL_HASHTAGS)}"
+
+
+_SQUARE_ARTICLE_HASHTAGS_LINE = "#Crypto #CryptoNews #Bitcoin #Altcoins"
+
+
+def square_article_hashtags_line() -> str:
+    """Топик-хэштеги для еженедельной статьи (article_generator) - в
+    отличие от square_hashtags_line, статья не про один тикер, а про
+    сводку за неделю сразу по нескольким, поэтому вместо одного
+    $CASHTAG/тикера - фиксированный набор широких тем."""
+    return _SQUARE_ARTICLE_HASHTAGS_LINE
+
+
+def square_general_hashtag_line() -> str:
+    """Один ротирующийся общий тег БЕЗ $CASHTAG (см. _SQUARE_GENERAL_HASHTAGS) -
+    для форматов, у которых просто нет конкретного тикера, к которому
+    можно привязать $TICKER (промо-пост про саму площадку - см.
+    try_publish_binance_promo, и пост-мнение по теме "market" - см.
+    opinion_generator.THEMES). В отличие от square_hashtags_line(None),
+    которая возвращает None именно потому, что вызывающий код там ЖДЁТ
+    возможного отсутствия тикера как штатный случай (и раньше просто
+    ничего не добавлял) - здесь тикера в принципе не предполагается, и
+    полностью пропускать дискаверабилити тоже не за чем."""
+    import random
+    return random.choice(_SQUARE_GENERAL_HASHTAGS)
+
+
 def telegram_channel_line() -> str | None:
     """Строка со ссылкой на наш Telegram-канал (config.TELEGRAM_PUBLISH_CHANNEL) -
     добавляется в посты на Binance Square, чтобы читатели могли перейти

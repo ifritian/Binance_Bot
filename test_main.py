@@ -178,6 +178,45 @@ def test_win_celebrations_one_bad_record_does_not_block_the_rest(monkeypatch):
     assert "$GOOD" in calls[0]
 
 
+def test_win_celebrations_includes_hashtags_and_chart_image(monkeypatch):
+    """Ответ на уведомление Binance про апгрейд API постинга (картинки +
+    token/topic tags) - см. _publish_win_celebrations в main.py.
+    Картинку не тянем из реальной сети - chart_generator замокан."""
+    monkeypatch.setattr(main.win_celebration_generator, "generate_win_celebration_hook", lambda angle: "Невероятно!")
+    monkeypatch.setattr(main.chart_generator, "generate_chart_image", lambda ticker, days=2, expected_price=None: "/tmp/fake_chart.png")
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append((text, k)))
+
+    main._publish_win_celebrations([_closed_record(ticker="WIN1", result="win", hours_to_close=4.5)])
+
+    assert len(calls) == 1
+    text, kwargs = calls[0]
+    assert "#WIN1" in text
+    assert kwargs.get("image_paths") == ["/tmp/fake_chart.png"]
+
+
+def test_win_celebrations_chart_failure_still_publishes_without_image(monkeypatch):
+    """Как _publish_signal: неудачная генерация графика не должна
+    блокировать сам пост, просто уходит без картинки."""
+    monkeypatch.setattr(main.win_celebration_generator, "generate_win_celebration_hook", lambda angle: "Невероятно!")
+
+    def _boom(ticker, days=2, expected_price=None):
+        raise RuntimeError("нет данных с биржи")
+
+    monkeypatch.setattr(main.chart_generator, "generate_chart_image", _boom)
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append((text, k)))
+
+    main._publish_win_celebrations([_closed_record(ticker="WIN1", result="win", hours_to_close=4.5)])
+
+    assert len(calls) == 1
+    text, kwargs = calls[0]
+    assert "#WIN1" in text
+    assert kwargs.get("image_paths") is None
+
+
 def test_try_publish_hot_take_skips_when_bluesky_not_configured(monkeypatch):
     monkeypatch.setattr(config, "BLUESKY_HANDLE", "")
     monkeypatch.setattr(config, "BLUESKY_APP_PASSWORD", "")
@@ -670,6 +709,105 @@ def test_publish_signal_does_not_record_when_publish_fails(monkeypatch):
 
     assert published is False
     assert calls == []
+
+
+# ============================================================
+# Топик-хэштеги/token tags (ответ на уведомление Binance про апгрейд API
+# постинга) - main._do_publish (сигнал), try_publish_binance_promo,
+# try_publish_opinion_post. Всё, что ходит в сеть/LLM, замокано -
+# проверяем только то, что итоговый текст, отправленный в
+# binance_publisher.publish_post, содержит ожидаемые теги.
+# ============================================================
+
+def test_do_publish_appends_ticker_hashtag(monkeypatch):
+    monkeypatch.setattr(main.post_format, "maybe_binance_cta", lambda: None)
+    monkeypatch.setattr(main, "_schedule_crossposts", lambda *a, **k: None)
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append((text, k)))
+
+    published, _ = main._do_publish("текст сигнала", None, ticker="BEAT")
+
+    assert published is True
+    text, kwargs = calls[0]
+    assert "#BEAT" in text
+    assert text.startswith("текст сигнала")
+
+
+def test_do_publish_no_ticker_skips_hashtag_line(monkeypatch):
+    monkeypatch.setattr(main.post_format, "maybe_binance_cta", lambda: None)
+    monkeypatch.setattr(main, "_schedule_crossposts", lambda *a, **k: None)
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append((text, k)))
+
+    main._do_publish("текст без тикера", None, ticker=None)
+
+    text, kwargs = calls[0]
+    assert text == "текст без тикера"
+
+
+def test_try_publish_binance_promo_appends_general_hashtag(monkeypatch):
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.binance_promo_generator, "generate_binance_promo", lambda theme, hook_mode=None: "промо-текст.")
+    monkeypatch.setattr(main.binance_promo_generator, "validate_binance_promo", lambda text: (True, ""))
+    monkeypatch.setattr(main.binance_promo_generator, "assemble_binance_promo", lambda text: text)
+    monkeypatch.setattr(main.post_format, "maybe_binance_cta", lambda: None)
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
+    # voice_memory.record_post ДОЛЖЕН получить текст БЕЗ хэштега (см.
+    # try_publish_binance_promo - post_text используется для памяти, а
+    # хэштег добавляется только в binance_text для самой публикации).
+    voice_calls = []
+    monkeypatch.setattr(main.voice_memory, "record_post", lambda text, **k: voice_calls.append(text))
+
+    main.try_publish_binance_promo()
+
+    assert len(calls) == 1
+    assert calls[0].startswith("промо-текст.")
+    assert calls[0] != "промо-текст."  # хэштег дописан
+    assert voice_calls == ["промо-текст."]
+
+
+def test_try_publish_opinion_post_btc_theme_uses_cashtag_hashtag(monkeypatch):
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.opinion_generator, "pick_theme", lambda last: "BTC")
+    monkeypatch.setattr(main.opinion_generator, "generate_opinion_post",
+                         lambda theme, hook_mode=None: ("мнение про BTC.", set(), 1.5))
+    monkeypatch.setattr(main.opinion_generator, "validate_opinion_post_text", lambda text, nums: (True, ""))
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
+
+    main.try_publish_opinion_post()
+
+    assert len(calls) == 1
+    assert "#BTC" in calls[0]
+
+
+def test_try_publish_opinion_post_market_theme_uses_general_hashtag(monkeypatch):
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+    monkeypatch.setattr(main.opinion_generator, "pick_theme", lambda last: "market")
+    monkeypatch.setattr(main.opinion_generator, "generate_opinion_post",
+                         lambda theme, hook_mode=None: ("мнение про рынок в целом.", set(), 1.5))
+    monkeypatch.setattr(main.opinion_generator, "validate_opinion_post_text", lambda text, nums: (True, ""))
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
+
+    main.try_publish_opinion_post()
+
+    assert len(calls) == 1
+    # Никакого $CASHTAG (нет одного конкретного тикера у темы "market"),
+    # но общий тег из post_format._SQUARE_GENERAL_HASHTAGS всё равно есть.
+    assert any(tag in calls[0] for tag in main.post_format._SQUARE_GENERAL_HASHTAGS)
 
 
 if __name__ == "__main__":

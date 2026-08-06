@@ -233,6 +233,10 @@ def _do_publish(
     if cta:
         binance_text = f"{post_text}\n\n{cta}"
 
+    hashtags = post_format.square_hashtags_line(ticker)
+    if hashtags:
+        binance_text = f"{binance_text}\n\n{hashtags}"
+
     try:
         result = binance_publisher.publish_post(binance_text, image_paths=image_paths)
     except binance_publisher.PublishError as e:
@@ -607,7 +611,27 @@ def _publish_win_celebrations(closed_records: list) -> None:
                 continue
 
             post_text = post_format.assemble_win_celebration_post(hook, record)
-            binance_publisher.publish_post(post_text)
+
+            # Картинка (график с отметкой цены выхода) - тот же паттерн,
+            # что и в _publish_signal: неудача генерации графика НЕ
+            # должна блокировать сам пост, просто уходит без картинки.
+            # Именно этот формат ("вот закрытая сделка, вот цифры") -
+            # ровно то, для чего Binance советует добавлять картинку:
+            # визуальное подтверждение делает пост убедительнее, чем
+            # голые цифры в тексте.
+            try:
+                chart_path = chart_generator.generate_chart_image(
+                    record["ticker"], days=2, expected_price=float(record["exit_price"])
+                )
+            except Exception as e:
+                logger.warning("Не удалось сгенерировать график для 'Забрали профит!' %s: %s", record["ticker"], e)
+                chart_path = None
+            image_paths = [chart_path] if chart_path else None
+
+            hashtags = post_format.square_hashtags_line(record["ticker"])
+            binance_text = f"{post_text}\n\n{hashtags}" if hashtags else post_text
+
+            binance_publisher.publish_post(binance_text, image_paths=image_paths)
             queue_manager.set_last_win_celebration_angle(angle)
             logger.info("Опубликован пост 'Забрали профит!' для %s (%+.2f%%)", record["ticker"], record["pnl_pct"])
         except binance_publisher.PublishError as e:
@@ -769,8 +793,15 @@ def try_publish_opinion_post() -> None:
         queue_manager.set_retry_backoff("opinion", 1)
         return
 
+    # theme - ключ opinion_generator.THEMES: "BTC"/"ETH" - конкретный
+    # тикер, есть $CASHTAG; "market" - корзина из нескольких активов,
+    # $CASHTAG строить не от чего (см. square_hashtags_line), берём
+    # общий тег без тикера вместо того, чтобы просто ничего не добавлять.
+    hashtags = post_format.square_hashtags_line(theme) if theme in ("BTC", "ETH") else post_format.square_general_hashtag_line()
+    binance_text = f"{post_text}\n\n{hashtags}"
+
     try:
-        published_result = binance_publisher.publish_post(post_text)
+        published_result = binance_publisher.publish_post(binance_text)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации поста-мнения: %s", e)
         queue_manager.set_retry_backoff("opinion", 1)
@@ -838,8 +869,11 @@ def try_publish_binance_promo() -> None:
 
     post_text = binance_promo_generator.assemble_binance_promo(text)
 
+    hashtags = post_format.square_general_hashtag_line()
+    binance_text = f"{post_text}\n\n{hashtags}"
+
     try:
-        binance_publisher.publish_post(post_text)
+        binance_publisher.publish_post(binance_text)
     except binance_publisher.PublishError as e:
         logger.warning("Публикация промо-поста на Binance Square не удалась: %s", e)
         queue_manager.set_retry_backoff("binance_promo", 1)
@@ -1371,7 +1405,9 @@ def try_publish_article_post() -> None:
         cover_path = None
 
     try:
-        published_result = binance_publisher.publish_article(title, body, cover_path)
+        published_result = binance_publisher.publish_article(
+            title, f"{body}\n\n{post_format.square_article_hashtags_line()}", cover_path
+        )
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации статьи: %s", e)
         queue_manager.set_retry_backoff("article", 2)
