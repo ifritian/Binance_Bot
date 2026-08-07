@@ -190,7 +190,7 @@ def open_protected_position(
         raise ValueError(f"side должен быть '{_LONG_SIDE}' или '{_SHORT_SIDE}', получено: {side}")
 
     if risk_limits is not None:
-        blocked_reason = risk_guard.check_new_position_allowed(client, risk_limits)
+        blocked_reason = risk_guard.check_new_position_allowed(client, risk_limits, side=side)
         if blocked_reason is not None:
             raise ExecutionError(
                 f"Открытие позиции {symbol} заблокировано предохранителями риска: {blocked_reason}"

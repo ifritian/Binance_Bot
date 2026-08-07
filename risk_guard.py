@@ -8,14 +8,21 @@ calc_position_size). Каждая позиция по отдельности м�
 именно про СУММАРНУЮ картину, а не про отдельную сделку:
 
 1. Максимум ОДНОВРЕМЕННО открытых позиций (across всех символов).
-2. Дневной лимит убытка в % от баланса на начало UTC-дня.
-3. Серия убыточных сделок ПОДРЯД (по факту закрытия на бирже).
-4. Мягкое снижение риска НОВОЙ сделки (см. get_risk_multiplier), ещё
-   ДО того, как серия убытков дойдёт до порога пункта 3 и остановит
+2. Максимум позиций В ОДНУ СТОРОНУ одновременно (лонг или шорт
+   отдельно) - пункт 1 сам по себе не мешает набрать, например, лонг по
+   BTC+ETH+SOL сразу - формально три разных слота, а по факту одна
+   большая ставка на рынок вверх, а не три независимых позиции. См.
+   get_risk_multiplier ниже про пункт 4 - это НЕ то же самое: там про
+   размер риска одной сделки после серии убытков, а не про то, сколько
+   сделок можно набрать в одну сторону.
+3. Дневной лимит убытка в % от баланса на начало UTC-дня.
+4. Серия убыточных сделок ПОДРЯД (по факту закрытия на бирже).
+5. Мягкое снижение риска НОВОЙ сделки (см. get_risk_multiplier), ещё
+   ДО того, как серия убытков дойдёт до порога пункта 4 и остановит
    торговлю целиком - промежуточная ступень, а не замена жёсткому
    выключателю.
 
-Лимиты 2 и 3 при срабатывании ВЗВОДЯТ kill switch (см.
+Лимиты 3 и 4 при срабатывании ВЗВОДЯТ kill switch (см.
 queue_manager.set_kill_switch) - персистентный (bot_state.db) флаг
 "торговля остановлена", который НЕ снимается сам по себе - ни на
 следующий UTC-день, ни при следующей прибыльной сделке. Снять его можно
@@ -25,10 +32,10 @@ queue_manager.set_kill_switch) - персистентный (bot_state.db) фл�
 решение продолжать торговать должно быть решением человека, а не
 побочным эффектом того, что цифры на бирже сами вернулись в норму.
 
-Лимит 1 (открытых позиций) и пункт 4 (мягкое снижение риска) - НЕ
-взводят kill switch: это не "что-то пошло не так", а штатная адаптация
-(подожди слот / рискуй меньше, пока не восстановишься) - само
-разрешится на следующей успешной сделке или освободившемся слоте.
+Лимиты 1, 2 и пункт 5 (мягкое снижение риска) - НЕ взводят kill switch:
+это не "что-то пошло не так", а штатная адаптация (подожди слот / рискуй
+меньше, пока не восстановишься) - само разрешится на следующей успешной
+сделке или освободившемся слоте.
 
 futures_executor.open_protected_position вызывает
 check_new_position_allowed ПЕРВЫМ делом - до единого API-вызова на
@@ -59,6 +66,12 @@ class RiskLimits:
     # всегда явно задаёт limits_from_config.
     soft_derisk_after_losses: int = 2
     soft_derisk_multiplier: float = 0.5
+    # A4: лимит позиций В ОДНУ СТОРОНУ одновременно (см. модульный
+    # docstring, пункт 2) - None означает "не проверять" (полностью
+    # выключено), а не "0 разрешено". Дефолт None, а не число - чтобы
+    # старый код/тесты, которые создают RiskLimits(...) без этого поля,
+    # не начали внезапно ловить отказ по лимиту, который они не просили.
+    max_same_direction_positions: Optional[int] = None
 
 
 def limits_from_config(config) -> RiskLimits:
@@ -68,6 +81,7 @@ def limits_from_config(config) -> RiskLimits:
         max_consecutive_losses=config.BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES,
         soft_derisk_after_losses=config.BINANCE_FUTURES_SOFT_DERISK_AFTER_LOSSES,
         soft_derisk_multiplier=config.BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER,
+        max_same_direction_positions=config.BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS,
     )
 
 
@@ -141,12 +155,30 @@ def get_risk_multiplier(client, limits: RiskLimits) -> tuple[float, int]:
     return 1.0, streak
 
 
-def check_new_position_allowed(client, limits: RiskLimits) -> Optional[str]:
+def _same_direction_open_count(open_positions: list, side: str) -> int:
+    """Сколько из уже открытых позиций - в ТУ ЖЕ сторону, что и side
+    новой сделки ("BUY"=лонг/"SELL"=шорт). Знак positionAmt в ответе
+    Binance (см. FuturesClient.get_all_positions) - направление позиции:
+    положительный = лонг, отрицательный = шорт."""
+    is_long_side = side == "BUY"
+    return sum(
+        1 for p in open_positions
+        if (float(p.get("positionAmt", 0)) > 0) == is_long_side
+    )
+
+
+def check_new_position_allowed(client, limits: RiskLimits, side: Optional[str] = None) -> Optional[str]:
     """None - можно открывать новую позицию. Иначе - строка с причиной
     отказа. Намеренно НЕ бросает исключение сама - futures_executor
     оборачивает результат в ExecutionError на своей стороне,
     единообразно с остальными отказами до входа (недостаточный баланс
-    и т.п.)."""
+    и т.п.).
+
+    side - "BUY"/"SELL" направление НОВОЙ сделки, нужен только для
+    лимита A4 (max_same_direction_positions, см. RiskLimits) - если не
+    передан (None, дефолт для обратной совместимости со старыми
+    вызывающими местами/тестами), проверка A4 просто пропускается, как
+    будто лимита нет, а не отказывает вслепую."""
     kill_switch = queue_manager.get_kill_switch()
     if kill_switch is not None:
         return (
@@ -161,6 +193,17 @@ def check_new_position_allowed(client, limits: RiskLimits) -> Optional[str]:
             f"уже открыто {len(open_positions)}/{limits.max_open_positions} позиций ({symbols}) - "
             "новая позиция не откроется, пока одна из текущих не закроется"
         )
+
+    if side is not None and limits.max_same_direction_positions is not None:
+        same_dir = _same_direction_open_count(open_positions, side)
+        if same_dir >= limits.max_same_direction_positions:
+            direction_label = "лонг" if side == "BUY" else "шорт"
+            return (
+                f"уже открыто {same_dir}/{limits.max_same_direction_positions} позиций в сторону "
+                f"{direction_label} - лимит на коррелированные позиции (не набирать несколько "
+                "разных монет одной большой ставкой в одну сторону), новая позиция в ту же "
+                "сторону не откроется, пока одна из текущих не закроется"
+            )
 
     loss_pct, baseline, current = _daily_loss_pct(client)
     if loss_pct >= limits.max_daily_loss_pct:
@@ -192,13 +235,18 @@ def status(client, limits: RiskLimits) -> dict:
     откуда бы его ни зафиксировали первым)."""
     kill_switch = queue_manager.get_kill_switch()
     open_positions = client.get_all_positions()
+    long_count = sum(1 for p in open_positions if float(p.get("positionAmt", 0)) > 0)
+    short_count = len(open_positions) - long_count
     loss_pct, baseline, current = _daily_loss_pct(client)
     streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20))
     return {
         "kill_switch": kill_switch,
         "open_positions": len(open_positions),
         "open_positions_symbols": [p.get("symbol") for p in open_positions],
+        "open_positions_long": long_count,
+        "open_positions_short": short_count,
         "max_open_positions": limits.max_open_positions,
+        "max_same_direction_positions": limits.max_same_direction_positions,
         "daily_loss_pct": round(loss_pct, 3),
         "daily_baseline": baseline,
         "daily_current": current,

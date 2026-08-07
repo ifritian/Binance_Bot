@@ -52,6 +52,9 @@ def _print_status() -> int:
 
     symbols = f" ({', '.join(s['open_positions_symbols'])})" if s["open_positions_symbols"] else ""
     print(f"\nОткрытых позиций: {s['open_positions']}/{s['max_open_positions']}{symbols}")
+    if s["max_same_direction_positions"] is not None:
+        print(f"  из них лонг: {s['open_positions_long']}, шорт: {s['open_positions_short']} "
+              f"(лимит на одну сторону: {s['max_same_direction_positions']})")
     print(f"Дневной убыток: {s['daily_loss_pct']:+.2f}% (лимит {s['max_daily_loss_pct']:.2f}%), "
           f"baseline={s['daily_baseline']:.2f} -> сейчас={s['daily_current']:.2f}")
     print(f"Убытков подряд: {s['consecutive_losses']} (лимит {s['max_consecutive_losses']})")

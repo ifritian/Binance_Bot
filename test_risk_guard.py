@@ -29,11 +29,12 @@ class _FakeClient:
         return self.income_rows
 
 
-def _limits(max_open=3, max_daily_loss_pct=5.0, max_consecutive_losses=3):
+def _limits(max_open=3, max_daily_loss_pct=5.0, max_consecutive_losses=3, max_same_direction=None):
     return risk_guard.RiskLimits(
         max_open_positions=max_open,
         max_daily_loss_pct=max_daily_loss_pct,
         max_consecutive_losses=max_consecutive_losses,
+        max_same_direction_positions=max_same_direction,
     )
 
 
@@ -217,6 +218,70 @@ def test_risk_multiplier_stays_reduced_beyond_threshold_but_before_kill_switch()
     multiplier, streak = risk_guard.get_risk_multiplier(client, limits)
     assert multiplier == 0.5
     assert streak < limits.max_consecutive_losses  # kill switch по этому лимиту ещё не должен сработать
+
+
+# --- A4: лимит на позиции в одну сторону одновременно ---
+
+def test_same_direction_open_count_counts_by_sign():
+    positions = [
+        {"symbol": "BTCUSDT", "positionAmt": "1.5"},   # лонг
+        {"symbol": "ETHUSDT", "positionAmt": "2.0"},   # лонг
+        {"symbol": "SOLUSDT", "positionAmt": "-3.0"},  # шорт
+    ]
+    assert risk_guard._same_direction_open_count(positions, "BUY") == 2
+    assert risk_guard._same_direction_open_count(positions, "SELL") == 1
+
+
+def test_same_direction_limit_blocks_when_reached(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    positions = [
+        {"symbol": "BTCUSDT", "positionAmt": "1.0"},
+        {"symbol": "ETHUSDT", "positionAmt": "2.0"},
+    ]
+    client = _FakeClient(positions=positions)
+    # 2/2 лонга уже открыто, лимит на сторону = 2 - новый лонг блокируется
+    # (max_open=3, так что это НЕ лимит общего числа позиций, а именно A4)
+    reason = risk_guard.check_new_position_allowed(client, _limits(max_open=3, max_same_direction=2), side="BUY")
+    assert reason is not None
+    assert "2/2" in reason
+    assert "лонг" in reason
+
+
+def test_same_direction_limit_allows_opposite_side(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    positions = [
+        {"symbol": "BTCUSDT", "positionAmt": "1.0"},
+        {"symbol": "ETHUSDT", "positionAmt": "2.0"},
+    ]
+    client = _FakeClient(positions=positions, wallet_balance=10_000.0)
+    # те же 2 лонга не мешают открыть ШОРТ - лимит считается раздельно по стороне
+    reason = risk_guard.check_new_position_allowed(client, _limits(max_open=3, max_same_direction=2), side="SELL")
+    assert reason is None
+
+
+def test_same_direction_limit_disabled_when_not_configured(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    positions = [{"symbol": "BTCUSDT", "positionAmt": "1.0"}, {"symbol": "ETHUSDT", "positionAmt": "2.0"}]
+    client = _FakeClient(positions=positions, wallet_balance=10_000.0)
+    # max_same_direction=None (дефолт _limits()) - проверка A4 полностью пропущена
+    reason = risk_guard.check_new_position_allowed(client, _limits(max_open=3), side="BUY")
+    assert reason is None
+
+
+def test_same_direction_limit_skipped_when_side_not_passed(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    positions = [{"symbol": "BTCUSDT", "positionAmt": "1.0"}, {"symbol": "ETHUSDT", "positionAmt": "2.0"}]
+    client = _FakeClient(positions=positions, wallet_balance=10_000.0)
+    # side не передан (старый вызывающий код/тест) - A4 не проверяется вовсе,
+    # несмотря на настроенный лимит - обратная совместимость.
+    reason = risk_guard.check_new_position_allowed(client, _limits(max_open=3, max_same_direction=2))
+    assert reason is None
 
 
 # --- всё в норме ---

@@ -352,6 +352,16 @@ BINANCE_FUTURES_PARTIAL_TP_CLOSE_FRACTION = float(os.environ.get("BINANCE_FUTURE
 # Binance допускает диапазон 0.1-5.0 для USD-M фьючерсов.
 BINANCE_FUTURES_TRAILING_CALLBACK_PCT = float(os.environ.get("BINANCE_FUTURES_TRAILING_CALLBACK_PCT", "1.0"))
 
+# --- A4: лимит на позиции в ОДНУ СТОРОНУ одновременно (см. risk_guard.py,
+# докстринг модуля пункт 2) - защита от того, что max_open_positions сам
+# по себе не мешает набрать, например, лонг по BTC+ETH+SOL одновременно:
+# формально 3 разных слота, а по факту одна большая ставка на рынок
+# вверх, а не независимая диверсификация. None = проверка выключена.
+# Дефолт 2 при max_open_positions=3 - можно 2 лонга + 1 шорт (или
+# наоборот), но не 3 в одну сторону.
+_max_same_dir_env = os.environ.get("BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS", "2").strip()
+BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS = int(_max_same_dir_env) if _max_same_dir_env else None
+
 # --- Автоматическое исполнение сигналов (см. futures_signal_bridge.py/
 # futures_auto_trade.py) ---
 # ОТДЕЛЬНЫЙ (и по умолчанию СТРОЖЕ) порог score от MIN_SIGNAL_SCORE_TO_PUBLISH
