@@ -14,6 +14,7 @@ import types
 import config
 import post_format
 import bluesky_publisher
+import validator
 from signal_parser import RsiSignal
 
 
@@ -354,6 +355,54 @@ def test_publish_thread_attaches_image_only_to_first_post(monkeypatch):
 
     upload_calls = [c for c in calls if c.endswith("uploadBlob")]
     assert len(upload_calls) == 1
+
+
+def test_signal_risk_reward_line_long():
+    # long: entry mid = 100, stop = 90 (риск 10), тейк = 130 (профит 30) -> 1:3.0
+    signal = _make_signal(direction="Лонг", entry_low="98", entry_high="102",
+                           invalidation="90", target="130")
+    assert post_format.signal_risk_reward_line(signal) == "R:R 1:3.0"
+
+
+def test_signal_risk_reward_line_short():
+    # short: entry mid = 100, стоп ВЫШЕ входа (110, риск 10), тейк НИЖЕ (70, профит 30) -> 1:3.0
+    signal = _make_signal(direction="Шорт", entry_low="98", entry_high="102",
+                           invalidation="110", target="70")
+    assert post_format.signal_risk_reward_line(signal) == "R:R 1:3.0"
+
+
+def test_signal_risk_reward_line_none_when_stop_equals_entry():
+    signal = _make_signal(entry_low="100", entry_high="100", invalidation="100", target="130")
+    assert post_format.signal_risk_reward_line(signal) is None
+
+
+def test_signal_risk_reward_line_none_on_garbage_numbers():
+    signal = _make_signal(entry_low="не число", entry_high="", invalidation="90", target="130")
+    assert post_format.signal_risk_reward_line(signal) is None
+
+
+def test_signal_setup_lines_includes_rr_line():
+    signal = _make_signal(entry_low="98", entry_high="102", invalidation="90", target="130")
+    lines = post_format.signal_setup_lines(signal)
+    assert lines[-1] == "R:R 1:3.0"
+    assert len(lines) == 6  # направление/стратегия, вход, стоп, тейк, RSI/score, R:R
+
+
+def test_assemble_signal_post_includes_rr_line():
+    signal = _make_signal(entry_low="98", entry_high="102", invalidation="90", target="130")
+    text = post_format.assemble_signal_post("Хук.", signal)
+    assert "R:R 1:3.0" in text
+
+
+def test_validate_post_text_passes_with_rr_line(monkeypatch):
+    """R:R 1:X.X не должен ловиться как 'смешение языков' (одна буква
+    R, не 3+ подряд латинских букв - см. validator._LATIN_WORD_RE) и не
+    должен мешать проверке обязательных полей."""
+    monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", None)
+    signal = _make_signal(entry_low="98", entry_high="102", invalidation="90", target="130")
+    text = post_format.assemble_signal_post("Обычный хук без чисел про сетап.", signal)
+    ok, reason = validator.validate_post_text(text, signal)
+    assert ok, reason
 
 
 if __name__ == "__main__":

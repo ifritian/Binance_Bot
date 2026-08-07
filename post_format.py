@@ -129,20 +129,68 @@ def assemble_post(hook: str, include_referral: bool = False) -> str:
     return "\n\n".join(parts)
 
 
+def _signal_price(value) -> float:
+    """Парсит числовое поле сигнала (entry_low/entry_high/invalidation/
+    target - RsiSignal хранит их строками, см. signal_parser.py) в
+    float. Та же логика, что и outcome_tracker._to_float (запятая как
+    разделитель тысяч, не десятичный - формат чисел из scanner.py) -
+    продублирована здесь, а не импортирована из outcome_tracker, чтобы
+    не тащить в post_format его сетевые зависимости (requests и т.п.)
+    ради одной строчки парсинга."""
+    try:
+        return float(str(value).replace(",", "").replace("%", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def signal_risk_reward_line(signal) -> str | None:
+    """Строка "R:R 1:X.X" - соотношение потенциальной прибыли к риску
+    (см. C2 в роадмапе: "дёшево и сразу видимый эффект в контенте").
+    Вход берётся серединой диапазона entry_low..entry_high (та же логика,
+    что и в outcome_tracker.record_signal_outcome - трекинг результата
+    считает от того же самого entry, так что R:R в посте соответствует
+    ТОЙ ЖЕ цифре, по которой потом реально считается win-rate).
+
+    Возвращает None, если риск (|entry - stop|) равен нулю или числа не
+    распознались - показывать "R:R 1:inf" или падать тут не за чем,
+    просто пропускаем строку молча (как и остальные *_line-хелперы в
+    этом модуле - см. square_hashtags_line)."""
+    entry_low = _signal_price(signal.entry_low)
+    entry_high = _signal_price(signal.entry_high)
+    entry = (entry_low + entry_high) / 2 if (entry_low and entry_high) else (entry_low or entry_high)
+    stop = _signal_price(signal.invalidation)
+    target = _signal_price(signal.target)
+
+    if not (entry and stop and target):
+        return None
+
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return None
+
+    reward = abs(target - entry)
+    ratio = reward / risk
+    return f"R:R 1:{ratio:.1f}"
+
+
 def signal_setup_lines(signal) -> list:
-    """Строки с сетапом (направление/вход/стоп/тейк/RSI/score) - вынесено
-    отдельно от assemble_signal_post, чтобы переиспользовать в
+    """Строки с сетапом (направление/вход/стоп/тейк/RSI/score/R:R) -
+    вынесено отдельно от assemble_signal_post, чтобы переиспользовать в
     build_bluesky_thread_signal (там этот блок идёт ОТДЕЛЬНЫМ постом
     треда, а не частью одного текста) без дублирования кода/риска
     разъехаться цифрами между Square-версией и Bluesky-версией."""
     direction_emoji = "🟢" if "лонг" in signal.direction.lower() else "🔴"
-    return [
+    lines = [
         f"{direction_emoji} {signal.direction} | {signal.strategy}",
         f"Вход: {signal.entry_low} - {signal.entry_high}",
         f"Стоп: {signal.invalidation}",
         f"Тейк: {signal.target}",
         f"RSI: {signal.rsi_now} | Score: {signal.score}/100",
     ]
+    rr_line = signal_risk_reward_line(signal)
+    if rr_line:
+        lines.append(rr_line)
+    return lines
 
 
 def assemble_signal_post(hook: str, signal) -> str:
@@ -288,8 +336,8 @@ def build_bluesky_thread_signal(hook: str, signal) -> list:
     1) интрига - тот же хук, что ушёл на Square/Telegram (validator уже
        гарантирует отсутствие в нём чисел - это первый пост треда,
        цифры намеренно приберегаются для второго);
-    2) сетап - вход/стоп/тейк/RSI/score, те же гарантированно точные
-       цифры, что и в assemble_signal_post (см. signal_setup_lines) -
+    2) сетап - вход/стоп/тейк/RSI/score(/R:R) - те же гарантированно
+       точные цифры, что и в assemble_signal_post (см. signal_setup_lines) -
        код-блок, не LLM, риска расхождения с Square-версией нет;
     3) вывод - дисклеймер + ссылки на Binance/Telegram (с facets, чтобы
        быть кликабельными - см. bluesky_publisher._byte_facets).
@@ -297,7 +345,7 @@ def build_bluesky_thread_signal(hook: str, signal) -> list:
     Возвращает список из 3 элементов для bluesky_publisher.publish_thread
     (первые два - просто строки, третий - пара (текст, link_facets)).
     Каждый пост короткий по построению (хук уже проверен на длину/лимит
-    Square, сетап - 5 коротких строк, вывод - дисклеймер+2 ссылки) -
+    Square, сетап - 5-6 коротких строк, вывод - дисклеймер+2 ссылки) -
     отдельная обрезка под 300 символов не требуется ни одному из трёх."""
     post1 = hook.strip()
     post2 = "\n".join(signal_setup_lines(signal))
