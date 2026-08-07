@@ -19,6 +19,7 @@ import re
 import time
 
 import cliche_filter
+import chart_generator
 from groq_client import call_groq
 from loss_review_generator import classify_miss
 import outcome_tracker
@@ -101,11 +102,19 @@ def _format_stats_block(stats: dict, days: float, period_closed: list[dict] | No
     return "\n".join(lines)
 
 
-def generate_accuracy_report_post(days: float = 7.0) -> tuple[str, str] | None:
+def generate_accuracy_report_post(days: float = 7.0) -> tuple[str, str, "Path | None"] | None:
     """Возвращает (текст для Binance Square, текст для кросспоста в
-    Telegram) либо None, если данных недостаточно (меньше
+    Telegram, путь к кумулятивному графику PnL или None) либо None,
+    если данных недостаточно (меньше
     config.ACCURACY_REPORT_MIN_CLOSED_SIGNALS закрытых сигналов за период -
     статистика на таком объёме бессмысленна и только подорвёт доверие).
+
+    График (см. chart_generator.generate_cumulative_pnl_chart) строится
+    по ТЕМ ЖЕ закрытым сигналам периода, что и текстовый блок - C1 в
+    роадмапе: "визуальное подтверждение результата воспринимается
+    убедительнее текстовых цифр". None, если график не удалось
+    построить (сеть/меньше 2 точек) - это НЕ повод отменять публикацию
+    самого отчёта, отчёт просто уйдёт без картинки, как раньше.
 
     Поднимает groq_client.GroqRateLimited при 429 - вызывающий код
     (main.py) уже умеет это ловить, как для treasury/article/opinion."""
@@ -141,9 +150,15 @@ def generate_accuracy_report_post(days: float = 7.0) -> tuple[str, str] | None:
 
     text = "\n\n".join([hook.strip(), stats_block, post_format.DISCLAIMER])
 
+    try:
+        chart_path = chart_generator.generate_cumulative_pnl_chart(period_closed)
+    except Exception as e:
+        logger.warning("Не удалось построить кумулятивный график PnL для отчёта точности: %s", e)
+        chart_path = None
+
     logger.info("Сгенерирован отчёт точности (n=%d, win-rate=%s): %s",
                 overall["count"], overall["win_rate"], text[:150].replace("\n", " "))
-    return text, text
+    return text, text, chart_path
 
 
 def validate_accuracy_hook(hook: str, allowed_numbers: set[float]) -> tuple[bool, str]:

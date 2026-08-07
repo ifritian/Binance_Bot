@@ -1458,18 +1458,20 @@ def try_publish_accuracy_report() -> None:
         queue_manager.roll_new_jitter("accuracy_report", config.ACCURACY_REPORT_JITTER_HOURS * 3600)
         return
 
-    binance_text, telegram_text = result
+    binance_text, telegram_text, chart_path = result
 
     try:
-        published_result = binance_publisher.publish_post(binance_text)
+        published_result = binance_publisher.publish_post(
+            binance_text, image_paths=[chart_path] if chart_path else None,
+        )
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации отчёта точности: %s", e)
         queue_manager.set_retry_backoff("accuracy_report", 2)
         return
 
     logger.info("Опубликован отчёт точности: %s", published_result)
-    _crosspost_to_telegram(telegram_text)
-    _crosspost_to_bluesky(telegram_text)
+    _crosspost_to_telegram(telegram_text, image_path=chart_path)
+    _crosspost_to_bluesky(telegram_text, image_path=chart_path)
     queue_manager.set_last_post_time("accuracy_report")
     queue_manager.roll_new_jitter("accuracy_report", config.ACCURACY_REPORT_JITTER_HOURS * 3600)
 

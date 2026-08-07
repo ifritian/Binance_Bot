@@ -241,6 +241,91 @@ def _style_axis(ax, show_xticks: bool = False) -> None:
         ax.set_xticks([])
 
 
+def _draw_percent_tag(ax, value: float, color: str) -> None:
+    """Плашка со значением в % у правого края графика - тот же стиль,
+    что и _draw_price_tag (цена), но для % вместо абсолютной цены (см.
+    generate_cumulative_pnl_chart)."""
+    ax.annotate(
+        f"{value:+.2f}%",
+        xy=(1.0, value), xycoords=("axes fraction", "data"),
+        xytext=(8, 0), textcoords="offset points",
+        ha="left", va="center", fontsize=8.5, color="#0B0E11", fontweight="bold",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor=color, edgecolor="none"),
+        annotation_clip=False, zorder=5,
+    )
+
+
+def generate_cumulative_pnl_chart(records: list[dict], out_name: str = "weekly_digest_pnl") -> Path | None:
+    """Линейный график накопленного результата по закрытым сигналам
+    (C1 в роадмапе: "визуальное подтверждение результата воспринимается
+    убедительнее текстовых цифр"), в том же визуальном стиле, что и
+    generate_chart_image (тёмный фон, водяной знак, плашка со значением
+    справа) - чтобы смотрелось частью той же серии графиков, а не
+    отдельным, чужеродным типом картинки.
+
+    records - список словарей с полями "closed_at" (unix-время закрытия)
+    и "pnl_pct" (% результат конкретного сигнала) - обычно
+    queue_manager.get_closed_outcomes(), уже отфильтрованный по периоду
+    вызывающим кодом (см. accuracy_report_generator.generate_accuracy_report_post).
+    Сортируются по closed_at здесь же - порядок на входе не важен.
+
+    ВАЖНО про смысл кривой: это ПРОСТАЯ СУММА pnl_pct по сигналам одного
+    за другим ("что было бы, если бы на каждый сигнал ставилась примерно
+    одна и та же доля капитала, БЕЗ реинвестирования прибыли") - та же
+    намеренно простая договорённость, что уже используется в
+    outcome_tracker.get_accuracy_stats (avg_pnl_pct - обычное среднее, не
+    взвешенное и не сложный процент). Это НЕ график реального баланса
+    счёта - подпись на графике явно говорит "сумма % результата", а не
+    "доходность депозита", чтобы не создавать ложное впечатление
+    точности там, где её нет.
+
+    Возвращает None, если точек меньше 2 (линию из одной точки рисовать
+    не за чем - как и generate_chart_image, который тоже требует
+    минимум 2 свечи)."""
+    if len(records) < 2:
+        logger.info("Недостаточно точек (%d) для кумулятивного графика PnL - пропускаю", len(records))
+        return None
+
+    sorted_records = sorted(records, key=lambda r: r.get("closed_at", 0))
+    cumulative: list[float] = []
+    running = 0.0
+    for r in sorted_records:
+        running += r.get("pnl_pct", 0) or 0.0
+        cumulative.append(running)
+
+    xs = list(range(len(cumulative)))
+    final = cumulative[-1]
+    line_color = _UP_COLOR if final >= 0 else _DOWN_COLOR
+
+    _CHARTS_DIR.mkdir(exist_ok=True)
+    out_path = _CHARTS_DIR / f"{out_name}.png"
+
+    fig = plt.figure(figsize=(8, 4.5), dpi=150)
+    fig.patch.set_facecolor(_BG_COLOR)
+    ax = fig.add_axes((0.05, 0.12, 0.87, 0.68))
+
+    _draw_watermark(ax)
+    ax.axhline(0, color=_GRID_COLOR, linewidth=0.8, zorder=1)
+    ax.fill_between(xs, cumulative, 0, color=line_color, alpha=0.12, zorder=2)
+    ax.plot(xs, cumulative, color=line_color, linewidth=1.8, zorder=3)
+    _style_axis(ax, show_xticks=False)
+    ax.set_xlim(0, len(cumulative) - 1)
+    _draw_percent_tag(ax, final, line_color)
+
+    fig.text(0.05, 0.94, "Накопленный результат сигналов", color="white", fontsize=15, fontweight="bold", va="top")
+    fig.text(
+        0.05, 0.895,
+        f"{len(cumulative)} закрытых сигналов подряд, сумма % результата: {final:+.2f}%",
+        color=line_color, fontsize=10, fontweight="bold", va="top",
+    )
+
+    fig.savefig(out_path, facecolor=fig.get_facecolor())
+    plt.close(fig)
+
+    logger.info("Кумулятивный график PnL сохранён (%d точек, итог %+.2f%%): %s", len(cumulative), final, out_path)
+    return out_path
+
+
 def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None) -> Path | None:
     """
     Возвращает путь к PNG со свечным графиком тикера (MA7/25/99 +

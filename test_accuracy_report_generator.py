@@ -107,28 +107,64 @@ def test_generate_report_returns_none_when_not_enough_data(monkeypatch):
 def test_generate_report_returns_text_when_enough_data(monkeypatch):
     monkeypatch.setattr(arg.outcome_tracker, "get_accuracy_stats", lambda days: _fake_stats(count=10))
     monkeypatch.setattr(arg, "call_groq", lambda *a, **k: "Неделя вышла крепкой")
+    monkeypatch.setattr(arg.chart_generator, "generate_cumulative_pnl_chart", lambda records, **k: None)
     import config
     monkeypatch.setattr(config, "ACCURACY_REPORT_MIN_CLOSED_SIGNALS", 5)
 
     result = arg.generate_accuracy_report_post()
     assert result is not None
-    binance_text, telegram_text = result
+    binance_text, telegram_text, chart_path = result
     assert "Неделя вышла крепкой" in binance_text
     assert "60.0%" in binance_text
     assert binance_text == telegram_text
+    assert chart_path is None
 
 
 def test_generate_report_falls_back_to_neutral_hook_on_bad_llm_output(monkeypatch):
     monkeypatch.setattr(arg.outcome_tracker, "get_accuracy_stats", lambda days: _fake_stats(count=10))
     monkeypatch.setattr(arg, "call_groq", lambda *a, **k: "This week win-rate 99.9% amazing")
+    monkeypatch.setattr(arg.chart_generator, "generate_cumulative_pnl_chart", lambda records, **k: None)
     import config
     monkeypatch.setattr(config, "ACCURACY_REPORT_MIN_CLOSED_SIGNALS", 5)
 
     result = arg.generate_accuracy_report_post()
     assert result is not None
-    binance_text, _ = result
+    binance_text, _, _ = result
     assert "This week" not in binance_text
     assert "Свежий срез" in binance_text
+
+
+def test_generate_report_includes_chart_path_when_available(monkeypatch):
+    monkeypatch.setattr(arg.outcome_tracker, "get_accuracy_stats", lambda days: _fake_stats(count=10))
+    monkeypatch.setattr(arg, "call_groq", lambda *a, **k: "Неделя вышла крепкой")
+    monkeypatch.setattr(arg.queue_manager, "get_closed_outcomes",
+                         lambda: [{"closed_at": 1.0, "pnl_pct": 1.0}, {"closed_at": 2.0, "pnl_pct": -0.5}])
+    monkeypatch.setattr(arg.chart_generator, "generate_cumulative_pnl_chart", lambda records, **k: "/tmp/fake_chart.png")
+    import config
+    monkeypatch.setattr(config, "ACCURACY_REPORT_MIN_CLOSED_SIGNALS", 5)
+
+    result = arg.generate_accuracy_report_post()
+    assert result is not None
+    _, _, chart_path = result
+    assert chart_path == "/tmp/fake_chart.png"
+
+
+def test_generate_report_chart_failure_does_not_block_report(monkeypatch):
+    monkeypatch.setattr(arg.outcome_tracker, "get_accuracy_stats", lambda days: _fake_stats(count=10))
+    monkeypatch.setattr(arg, "call_groq", lambda *a, **k: "Неделя вышла крепкой")
+
+    def _boom(records, **k):
+        raise RuntimeError("matplotlib недоступен")
+
+    monkeypatch.setattr(arg.chart_generator, "generate_cumulative_pnl_chart", _boom)
+    import config
+    monkeypatch.setattr(config, "ACCURACY_REPORT_MIN_CLOSED_SIGNALS", 5)
+
+    result = arg.generate_accuracy_report_post()
+    assert result is not None
+    binance_text, _, chart_path = result
+    assert chart_path is None
+    assert "Неделя вышла крепкой" in binance_text
 
 
 if __name__ == "__main__":
