@@ -110,19 +110,43 @@ def _daily_loss_pct(client, asset: str = "USDT") -> tuple[float, float, float]:
     return loss_pct, baseline, current
 
 
+def _group_partial_fills(rows: list) -> list:
+    """Одно закрытие ОДНОЙ позиции Binance нередко исполняет несколькими
+    частичными филлами (partial fills) - каждый филл прилетает в income
+    history отдельной строкой REALIZED_PNL, но с ОДИНАКОВЫМ symbol и
+    ОДИНАКОВЫМ timestamp (совпадает даже до миллисекунды). Без этой
+    группировки один реальный убыточный трейд, закрытый, скажем, 27
+    филлами, засчитывался бы как 27 отдельных убытков подряд - именно
+    так на практике серия "3 убытка подряд" ошибочно раздувалась до
+    20-30+ и не давала снять kill switch. rows должны быть уже
+    отсортированы по времени - функция сохраняет этот порядок группами
+    (группа встаёт на место своего первого филла)."""
+    grouped: dict[tuple, float] = {}
+    order: list[tuple] = []
+    for r in rows:
+        key = (r.get("symbol"), int(r.get("time", 0)))
+        if key not in grouped:
+            grouped[key] = 0.0
+            order.append(key)
+        grouped[key] += float(r.get("income", 0))
+    return [grouped[k] for k in order]
+
+
 def _consecutive_losses(client, lookback: int = 50) -> int:
-    """Считает убыточные сделки ПОДРЯД, начиная с самой последней
-    закрытой - по истории income (incomeType=REALIZED_PNL), не по
-    локальному логу бота (тот не увидит сделку, закрытую вручную на
-    сайте биржи). Записи с income == 0 (например, чисто комиссийные
-    строки без реального закрытия позиции) игнорируются - это не
-    "выигрыш" и не "проигрыш". Сортирует по времени сам, не полагаясь
-    на порядок, в котором Binance отдаёт список."""
+    """Считает убыточные СДЕЛКИ (не строки income - см. _group_partial_fills)
+    ПОДРЯД, начиная с самой последней закрытой - по истории income
+    (incomeType=REALIZED_PNL), не по локальному логу бота (тот не увидит
+    сделку, закрытую вручную на сайте биржи). Записи с income == 0
+    (например, чисто комиссийные строки без реального закрытия позиции)
+    игнорируются - это не "выигрыш" и не "проигрыш". Сортирует по
+    времени сам, не полагаясь на порядок, в котором Binance отдаёт
+    список."""
     rows = client.get_income_history(income_type="REALIZED_PNL", limit=lookback)
-    trades = [
-        float(r["income"]) for r in sorted(rows, key=lambda r: int(r.get("time", 0)))
+    nonzero_sorted = [
+        r for r in sorted(rows, key=lambda r: int(r.get("time", 0)))
         if float(r.get("income", 0)) != 0
     ]
+    trades = _group_partial_fills(nonzero_sorted)
     streak = 0
     for pnl in reversed(trades):
         if pnl < 0:
