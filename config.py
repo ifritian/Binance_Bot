@@ -362,6 +362,48 @@ BINANCE_FUTURES_TRAILING_CALLBACK_PCT = float(os.environ.get("BINANCE_FUTURES_TR
 _max_same_dir_env = os.environ.get("BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS", "2").strip()
 BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS = int(_max_same_dir_env) if _max_same_dir_env else None
 
+# --- A5: вето по funding rate перед входом в перпетуалку (см.
+# futures_signal_bridge._funding_rate_veto) - если funding rate сильно
+# ПРОТИВ направления сделки (лонг платит при высоком положительном
+# funding, шорт платит при сильно отрицательном), вход обходится
+# заметно дороже, чем показывает score сигнала. Приоритет ниже A1-A3
+# (см. роадмап) - эффект на масштабе этого бота, скорее всего, небольшой,
+# поэтому порог намеренно консервативный (ветирует только ЗАМЕТНЫЙ
+# встречный funding, не любое ненулевое значение - funding почти всегда
+# хоть немного ненулевой).
+BINANCE_FUTURES_FUNDING_RATE_VETO_ENABLED = os.environ.get("BINANCE_FUTURES_FUNDING_RATE_VETO_ENABLED", "true").strip().lower() != "false"
+# 0.0005 = 0.05% за 8ч (типичный "нормальный" funding редко превышает
+# ~0.01-0.02% за 8ч - 0.05% уже заметно повышенный, характерный для
+# перегретого рынка в одну сторону).
+BINANCE_FUTURES_FUNDING_RATE_VETO_THRESHOLD = float(os.environ.get("BINANCE_FUTURES_FUNDING_RATE_VETO_THRESHOLD", "0.0005"))
+
+# --- A2: ATR вместо фиксированного % отступа для стопа (см. роадмап) ---
+# Сейчас (по умолчанию, USE_ATR_STOPS=false): invalidation (стоп) в
+# scanner._build_signal/strategies.build_macd_signal/build_breakout_signal
+# считается как "ближайший локальный экстремум (recent_high/recent_low
+# за 20 свечей, либо уровень пробитого канала) + ОДИН И ТОТ ЖЕ фиксированный
+# % буфер на все монеты сразу (0.3-0.5%)". Проблема: одна из самых частых
+# причин, по которой стопы бьются "на шуме" - фиксированный % не
+# учитывает, что у BTC и у мелкой альты совершенно разная нормальная
+# внутридневная волатильность.
+#
+# Когда USE_ATR_STOPS=true: тот же локальный экстремум/уровень + буфер
+# = ATR_STOP_MULTIPLIER * ATR(ATR_PERIOD) (см. strategies.calc_atr) -
+# стоп становится шире на волатильных монетах и уже на спокойных, вместо
+# одного процента на всех. Если ATR посчитать не удалось (свечей мало,
+# см. calc_atr) - тихо используется СТАРАЯ формула с фиксированным % как
+# запасной вариант, а не ошибка/пропуск сигнала.
+#
+# ПО УМОЛЧАНИЮ ВЫКЛЮЧЕНО (в отличие от A4/A5) - в отличие от них, это
+# изменение самой формулы стопа для уже работающих стратегий, а не
+# дополнительный независимый слой поверх. Роадмап явно требует бэктеста
+# до/после, прежде чем включать на реальных деньгах (см. backtest.py
+# --use-atr-stops) - не переключайте на true, не сравнив хотя бы
+# aggregate_report до и после на одних и тех же исторических данных.
+USE_ATR_STOPS = os.environ.get("USE_ATR_STOPS", "false").strip().lower() == "true"
+ATR_PERIOD = int(os.environ.get("ATR_PERIOD", "14"))
+ATR_STOP_MULTIPLIER = float(os.environ.get("ATR_STOP_MULTIPLIER", "1.5"))
+
 # --- Автоматическое исполнение сигналов (см. futures_signal_bridge.py/
 # futures_auto_trade.py) ---
 # ОТДЕЛЬНЫЙ (и по умолчанию СТРОЖЕ) порог score от MIN_SIGNAL_SCORE_TO_PUBLISH

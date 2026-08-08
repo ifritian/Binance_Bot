@@ -31,7 +31,137 @@ def _sideways_then_breakout(n_range=25, level=50.0, band=0.3, breakout_price=53.
     return candles
 
 
-# --- MACD Crossover ---
+# --- calc_atr (A2) ---
+
+def test_calc_atr_none_with_insufficient_candles():
+    assert strat.calc_atr(_flat_candles(n=5), period=14) is None  # 5 < 14+1
+
+
+def test_calc_atr_none_when_exactly_period_candles():
+    # period+1 свечей - МИНИМУМ необходимый (period штук True Range) -
+    # значит РОВНО period свечей (на одну меньше) должно давать None.
+    assert strat.calc_atr(_flat_candles(n=3), period=3) is None
+
+
+def test_calc_atr_matches_hand_computed_wilder_value():
+    # Те же 5 свечей, что и в ручном расчёте по формуле Уайлдера -
+    # TR: 2, 2.5, 2, 4 -> seed=avg(2,2.5,2)=2.1666... -> Уайлдер с TR4=4:
+    # (2.1666...*2 + 4) / 3 = 2.7777...
+    candles = [
+        _Candle(open=9, high=10, low=8, close=9, volume=1),
+        _Candle(open=10, high=11, low=9, close=10.5, volume=1),
+        _Candle(open=9, high=10, low=8, close=8.5, volume=1),
+        _Candle(open=8.5, high=9, low=7, close=8, volume=1),
+        _Candle(open=8, high=12, low=8, close=11, volume=1),
+    ]
+    atr = strat.calc_atr(candles, period=3)
+    assert atr is not None
+    assert math.isclose(atr, 2.7777777777777772, rel_tol=1e-9)
+
+
+def test_calc_atr_positive_for_volatile_candles():
+    atr = strat.calc_atr(_sine_candles(n=80), period=14)
+    assert atr is not None
+    assert atr > 0
+
+
+def test_calc_atr_small_for_flat_candles():
+    # Плоский рынок (диапазон каждой свечи 0.1, см. _flat_candles) -
+    # ATR должен сойтись примерно к этому же диапазону, не раздуваться.
+    atr = strat.calc_atr(_flat_candles(n=60), period=14)
+    assert atr is not None
+    assert atr == pytest_approx_or_close(0.1, 0.01)
+
+
+def pytest_approx_or_close(expected, tol):
+    """Мини-хелпер вместо pytest.approx - раннер этого файла не
+    гарантированно имеет pytest (см. __main__ ниже, это самодостаточный
+    мини-раннер, как и в остальных test_*.py проекта)."""
+    class _Approx:
+        def __eq__(self, other):
+            return abs(other - expected) <= tol
+    return _Approx()
+
+
+# --- A2: ATR-стопы в MACD Crossover/Donchian Breakout (интеграция) ---
+
+def test_macd_uses_fixed_pct_stop_by_default(monkeypatch):
+    monkeypatch.setattr(strat.config, "USE_ATR_STOPS", False)
+    candles = _macd_bullish_cross_candles()
+    signal = strat.build_macd_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    recent_low = min(c.low for c in candles[-20:])
+    assert math.isclose(float(signal.invalidation), recent_low * 0.997, rel_tol=1e-6)
+
+
+def test_macd_uses_atr_stop_when_enabled(monkeypatch):
+    monkeypatch.setattr(strat.config, "USE_ATR_STOPS", True)
+    monkeypatch.setattr(strat.config, "ATR_PERIOD", 14)
+    monkeypatch.setattr(strat.config, "ATR_STOP_MULTIPLIER", 1.5)
+    candles = _macd_bullish_cross_candles()
+    signal = strat.build_macd_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    recent_low = min(c.low for c in candles[-20:])
+    atr = strat.calc_atr(candles, 14)
+    expected = recent_low - atr * 1.5
+    assert math.isclose(float(signal.invalidation), expected, rel_tol=1e-6)
+    # НЕ должно совпадать со старой формулой - иначе флаг никак не подействовал
+    assert not math.isclose(float(signal.invalidation), recent_low * 0.997, rel_tol=1e-6)
+
+
+def test_breakout_uses_atr_stop_when_enabled(monkeypatch):
+    monkeypatch.setattr(strat.config, "USE_ATR_STOPS", True)
+    monkeypatch.setattr(strat.config, "ATR_PERIOD", 14)
+    monkeypatch.setattr(strat.config, "ATR_STOP_MULTIPLIER", 1.5)
+    candles = _sideways_then_breakout()
+    signal = strat.build_breakout_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    channel_high = max(c.high for c in candles[-(strat.BREAKOUT_LOOKBACK + 1):-1])
+    atr = strat.calc_atr(candles, 14)
+    expected = channel_high - atr * 1.5
+    assert math.isclose(float(signal.invalidation), expected, rel_tol=1e-6)
+
+
+def test_atr_stop_falls_back_to_fixed_pct_when_atr_unavailable(monkeypatch):
+    # USE_ATR_STOPS включён, но свечей МЕНЬШЕ ATR_PERIOD+1 - calc_atr
+    # вернёт None, формула должна тихо откатиться на фиксированный %,
+    # а не упасть/пропустить сигнал.
+    monkeypatch.setattr(strat.config, "USE_ATR_STOPS", True)
+    monkeypatch.setattr(strat.config, "ATR_PERIOD", 999)  # заведомо больше, чем свечей в candles
+    candles = _macd_bullish_cross_candles()
+    signal = strat.build_macd_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    recent_low = min(c.low for c in candles[-20:])
+    assert math.isclose(float(signal.invalidation), recent_low * 0.997, rel_tol=1e-6)
+
+
+def _macd_bullish_cross_candles():
+    """Обрезка _sine_candles() ровно до момента бычьего пересечения MACD -
+    та же техника поиска пересечений, что и в
+    test_macd_detects_bullish_and_bearish_crossovers ниже, но
+    возвращает ПЕРВЫЙ найденный бычий случай как готовые свечи, а не
+    сам факт пересечения - нужно ATR-тестам как детерминированная
+    "рабочая" заготовка сигнала."""
+    candles = _sine_candles()
+    closes = [c.close for c in candles]
+    ema_fast = strat._ema_series(closes, strat.MACD_FAST)
+    ema_slow = strat._ema_series(closes, strat.MACD_SLOW)
+    offset = len(ema_fast) - len(ema_slow)
+    macd_line = [f - s for f, s in zip(ema_fast[offset:], ema_slow)]
+    signal_line = strat._ema_series(macd_line, strat.MACD_SIGNAL)
+    macd_aligned = macd_line[-len(signal_line):]
+    diffs = [m - s for m, s in zip(macd_aligned, signal_line)]
+    crossovers = [i for i in range(1, len(diffs)) if diffs[i - 1] * diffs[i] < 0]
+
+    for idx in crossovers:
+        trimmed = candles[: len(candles) - (len(diffs) - 1 - idx)]
+        signal = strat.build_macd_signal("TESTUSDT", trimmed, 8_000_000)
+        if signal is not None and "Лонг" in signal.direction:
+            return trimmed
+    raise AssertionError("не нашлось бычьего пересечения MACD в _sine_candles() - тестовые данные сломаны")
+
+
+
 
 def test_macd_no_signal_on_flat_market():
     assert strat.build_macd_signal("TESTUSDT", _flat_candles(), 8_000_000) is None
@@ -128,6 +258,18 @@ if __name__ == "__main__":
     import sys
     import types
 
+    class _MiniMonkeypatch:
+        def __init__(self):
+            self._restore = []
+
+        def setattr(self, obj, name, value):
+            self._restore.append((obj, name, getattr(obj, name)))
+            setattr(obj, name, value)
+
+        def undo(self):
+            for obj, name, old in reversed(self._restore):
+                setattr(obj, name, old)
+
     passed, failed = 0, 0
     module = sys.modules[__name__]
     for name in dir(module):
@@ -136,13 +278,19 @@ if __name__ == "__main__":
         fn = getattr(module, name)
         if not isinstance(fn, types.FunctionType):
             continue
+        mp = _MiniMonkeypatch()
         try:
-            fn()
+            if "monkeypatch" in fn.__code__.co_varnames[: fn.__code__.co_argcount]:
+                fn(mp)
+            else:
+                fn()
             print(f"OK   {name}")
             passed += 1
         except AssertionError as e:
             print(f"FAIL {name}: {e}")
             failed += 1
+        finally:
+            mp.undo()
 
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)

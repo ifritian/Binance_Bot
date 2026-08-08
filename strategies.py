@@ -37,6 +37,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+import config
 from signal_parser import RsiSignal
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,40 @@ def _quality_from_score(score: int) -> str:
     if score >= 70:
         return "Moderate"
     return "Aggressive"
+
+
+def calc_atr(candles: list, period: int = 14) -> Optional[float]:
+    """Average True Range по Уайлдеру (то же рекурсивное сглаживание,
+    что и RSI в этом проекте - см. multi_timeframe._calc_rsi_last) -
+    средний ИСТИННЫЙ диапазон за period свечей, а не просто high-low:
+    True Range = max(high-low, |high-prev_close|, |low-prev_close|),
+    так учитываются и гэпы между свечами, не только размах внутри одной.
+
+    Используется для A2 (см. config.USE_ATR_STOPS) - привязать ширину
+    стопа к текущей волатильности конкретной монеты вместо одного
+    фиксированного % отступа на все монеты сразу. Живёт здесь (не в
+    scanner.py), потому что strategies.py уже не имеет обратной
+    зависимости от scanner.py (см. _quality_from_score выше) - a
+    scanner._build_signal просто импортирует strategies и зовёт эту
+    функцию, тем же способом, каким уже импортирует ADDITIONAL_STRATEGIES.
+
+    None, если свечей меньше period+1 - для ПЕРВОГО значения ATR нужно
+    period штук True Range, а TR самой первой свечи посчитать не из
+    чего (нет предыдущего close). Вызывающий код (scanner._build_signal
+    и стратегии этого файла) в этом случае тихо откатывается на старую
+    формулу с фиксированным %, а не пропускает сигнал."""
+    if len(candles) < period + 1:
+        return None
+    true_ranges = []
+    for i in range(1, len(candles)):
+        high, low, prev_close = candles[i].high, candles[i].low, candles[i - 1].close
+        true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+    if len(true_ranges) < period:
+        return None
+    atr = sum(true_ranges[:period]) / period
+    for tr in true_ranges[period:]:
+        atr = (atr * (period - 1) + tr) / period
+    return atr
 
 
 def build_macd_signal(symbol: str, candles: list, quote_volume: float) -> Optional[RsiSignal]:
@@ -127,16 +162,20 @@ def build_macd_signal(symbol: str, candles: list, quote_volume: float) -> Option
 
     recent_high = max(c.high for c in candles[-20:])
     recent_low = min(c.low for c in candles[-20:])
+    atr_buffer = None
+    if config.USE_ATR_STOPS:
+        atr = calc_atr(candles, config.ATR_PERIOD)
+        atr_buffer = atr * config.ATR_STOP_MULTIPLIER if atr else None
 
     if bullish_cross:
         direction = "Лонг (бычье пересечение MACD)"
         entry_low, entry_high = current_price * 0.999, current_price * 1.002
-        invalidation = recent_low * 0.997
+        invalidation = recent_low - atr_buffer if atr_buffer else recent_low * 0.997
         target = recent_high
     else:
         direction = "Шорт (медвежье пересечение MACD)"
         entry_low, entry_high = current_price * 0.998, current_price * 1.001
-        invalidation = recent_high * 1.003
+        invalidation = recent_high + atr_buffer if atr_buffer else recent_high * 1.003
         target = recent_low
 
     ticker = symbol.replace("USDT", "")
@@ -199,6 +238,11 @@ def build_breakout_signal(symbol: str, candles: list, quote_volume: float) -> Op
     current_price = current.close
     breakout_strength_pct = abs(current_price - level) / level * 100 if level else 0.0
 
+    atr_buffer = None
+    if config.USE_ATR_STOPS:
+        atr = calc_atr(candles, config.ATR_PERIOD)
+        atr_buffer = atr * config.ATR_STOP_MULTIPLIER if atr else None
+
     score = 30 + min(breakout_strength_pct * 25, 30)
     score += min((volume_ratio - BREAKOUT_VOLUME_RATIO_MIN) * 10, 20)  # чем сильнее объём выше порога, тем увереннее пробой
     if quote_volume >= 5_000_000:
@@ -218,12 +262,12 @@ def build_breakout_signal(symbol: str, candles: list, quote_volume: float) -> Op
     if breakout_up:
         direction = "Лонг (пробой диапазона вверх)"
         entry_low, entry_high = current_price * 0.999, current_price * 1.003
-        invalidation = level * 0.995
+        invalidation = level - atr_buffer if atr_buffer else level * 0.995
         target = level + range_height
     else:
         direction = "Шорт (пробой диапазона вниз)"
         entry_low, entry_high = current_price * 0.997, current_price * 1.001
-        invalidation = level * 1.005
+        invalidation = level + atr_buffer if atr_buffer else level * 1.005
         target = level - range_height
 
     description = (

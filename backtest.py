@@ -294,9 +294,27 @@ def main() -> None:
     parser.add_argument("--no-htf", action="store_true", help="Отключить HTF-подтверждение (для сравнения влияния)")
     parser.add_argument("--min-score", type=int, default=config.MIN_SIGNAL_SCORE_TO_PUBLISH,
                          help=f"Порог публикации без поправки strategy_tuner (по умолчанию {config.MIN_SIGNAL_SCORE_TO_PUBLISH})")
+    parser.add_argument("--use-atr-stops", action="store_true",
+                         help="A2: ATR вместо фиксированного % отступа для стопа (см. config.USE_ATR_STOPS) - "
+                              "для сравнения с дефолтным поведением прогоните ОДНИ И ТЕ ЖЕ --symbols/--days "
+                              "дважды, с этим флагом и без, и сравните aggregate_report")
+    parser.add_argument("--atr-period", type=int, default=config.ATR_PERIOD,
+                         help=f"Период ATR при --use-atr-stops (по умолчанию {config.ATR_PERIOD})")
+    parser.add_argument("--atr-multiplier", type=float, default=config.ATR_STOP_MULTIPLIER,
+                         help=f"Множитель ATR при --use-atr-stops (по умолчанию {config.ATR_STOP_MULTIPLIER})")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    # Прямая подмена config - те же атрибуты читают scanner._build_signal/
+    # strategies.build_macd_signal/build_breakout_signal (см. A2) - без
+    # отдельного протаскивания флага через backtest_symbol/build_signal.
+    if args.use_atr_stops:
+        config.USE_ATR_STOPS = True
+        config.ATR_PERIOD = args.atr_period
+        config.ATR_STOP_MULTIPLIER = args.atr_multiplier
+        logger.info("A2: ATR-стопы ВКЛЮЧЕНЫ для этого прогона (период=%d, множитель=%.2f)",
+                    args.atr_period, args.atr_multiplier)
 
     if args.symbols:
         symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
@@ -338,6 +356,14 @@ def main() -> None:
         logger.info("Бэктест: %s - %d закрытых сигналов", symbol, len(results))
 
     report = aggregate_report(all_results)
+    report["settings"] = {
+        "use_atr_stops": args.use_atr_stops,
+        "atr_period": args.atr_period if args.use_atr_stops else None,
+        "atr_multiplier": args.atr_multiplier if args.use_atr_stops else None,
+        "use_htf": not args.no_htf,
+        "min_score": args.min_score,
+        "days": args.days,
+    }
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 

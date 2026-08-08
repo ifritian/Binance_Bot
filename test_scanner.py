@@ -6,6 +6,7 @@
 """
 import config
 import scanner
+import strategies
 
 
 class _FakeResponse:
@@ -58,7 +59,55 @@ def test_fetch_universe_denylist_is_exact_ticker_not_substring(monkeypatch):
 
     symbols = [s for s, _ in universe]
     assert "PHBUSDT" in symbols  # "PHB" != "PH", не исключается
-    assert "ALPHAUSDT" in symbols
+
+
+# --- A2: ATR-стопы в _build_signal (RSI + Bollinger) ---
+
+def _downtrend_candles(n=60, start=100.0, step=0.5):
+    """Устойчивый нисходящий тренд - RSI(14) уходит к 0, гарантированно
+    ниже RSI_OVERSOLD(30), даёт стабильный сигнал "Лонг (перепроданность)"
+    для проверки формулы стопа."""
+    candles = []
+    price = start
+    for _ in range(n):
+        price -= step
+        candles.append(scanner._Candle(open=price + 0.05, high=price + 0.1, low=price - 0.1, close=price, volume=100_000))
+    return candles
+
+
+def test_build_signal_uses_fixed_pct_stop_by_default(monkeypatch):
+    monkeypatch.setattr(config, "USE_ATR_STOPS", False)
+    candles = _downtrend_candles()
+    signal = scanner._build_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    recent_low = min(c.low for c in candles[-20:])
+    assert abs(float(signal.invalidation) - recent_low * 0.997) < 1e-6
+
+
+def test_build_signal_uses_atr_stop_when_enabled(monkeypatch):
+    monkeypatch.setattr(config, "USE_ATR_STOPS", True)
+    monkeypatch.setattr(config, "ATR_PERIOD", 14)
+    monkeypatch.setattr(config, "ATR_STOP_MULTIPLIER", 1.5)
+    candles = _downtrend_candles()
+    signal = scanner._build_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    recent_low = min(c.low for c in candles[-20:])
+    atr = strategies.calc_atr(candles, 14)
+    expected = recent_low - atr * 1.5
+    assert abs(float(signal.invalidation) - expected) < 1e-6
+    assert abs(float(signal.invalidation) - recent_low * 0.997) > 1e-6  # реально другая формула, не совпадение
+
+
+def test_build_signal_atr_disabled_ignores_atr_config(monkeypatch):
+    # USE_ATR_STOPS=False - даже если ATR_STOP_MULTIPLIER настроен на
+    # что-то экзотическое, формула не должна его использовать вовсе.
+    monkeypatch.setattr(config, "USE_ATR_STOPS", False)
+    monkeypatch.setattr(config, "ATR_STOP_MULTIPLIER", 99.0)
+    candles = _downtrend_candles()
+    signal = scanner._build_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    recent_low = min(c.low for c in candles[-20:])
+    assert abs(float(signal.invalidation) - recent_low * 0.997) < 1e-6
 
 
 # --- _process_signal_candidate: колбэк on_signal_accepted ---

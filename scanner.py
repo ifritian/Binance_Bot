@@ -247,14 +247,18 @@ def _build_signal(symbol: str, candles: list[_Candle], quote_volume: float) -> R
 
     recent_high = max(c.high for c in candles[-20:])
     recent_low = min(c.low for c in candles[-20:])
+    atr_buffer = None
+    if config.USE_ATR_STOPS:
+        atr = strategies.calc_atr(candles, config.ATR_PERIOD)
+        atr_buffer = atr * config.ATR_STOP_MULTIPLIER if atr else None
 
     if overbought:
         entry_low, entry_high = current_price * 0.999, current_price * 1.002
-        invalidation = recent_high * 1.003
+        invalidation = recent_high + atr_buffer if atr_buffer else recent_high * 1.003
         target = mid  # возврат к средней полосе Боллинджера
     else:
         entry_low, entry_high = current_price * 0.998, current_price * 1.001
-        invalidation = recent_low * 0.997
+        invalidation = recent_low - atr_buffer if atr_buffer else recent_low * 0.997
         target = mid
 
     ticker = symbol.replace("USDT", "")
