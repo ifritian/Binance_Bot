@@ -206,6 +206,7 @@ def test_execute_signal_continues_if_funding_fetch_fails(monkeypatch):
             symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
             stop_price=stop_price, take_profit_price=take_profit_price,
             stop_order={"orderId": 1}, take_profit_order={"orderId": 2},
+            reference_price=101.0, slippage_pct=0.0,
         )
 
     monkeypatch.setattr(bridge, "open_protected_position", fake_open_protected_position)
@@ -232,6 +233,7 @@ def test_execute_signal_applies_soft_derisk_multiplier(monkeypatch):
             symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
             stop_price=stop_price, take_profit_price=take_profit_price,
             stop_order={"orderId": 1}, take_profit_order={"orderId": 2},
+            reference_price=101.0, slippage_pct=0.0,
         )
 
     monkeypatch.setattr(bridge, "open_protected_position", fake_open_protected_position)
@@ -255,6 +257,7 @@ def test_execute_signal_keeps_full_risk_without_loss_streak(monkeypatch):
             symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
             stop_price=stop_price, take_profit_price=take_profit_price,
             stop_order={"orderId": 1}, take_profit_order={"orderId": 2},
+            reference_price=101.0, slippage_pct=0.0,
         )
 
     monkeypatch.setattr(bridge, "open_protected_position", fake_open_protected_position)

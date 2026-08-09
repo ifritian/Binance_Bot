@@ -54,6 +54,13 @@ _LONG_SIDE, _SHORT_SIDE = "BUY", "SELL"
 # всё равно за вызывающим кодом/пользователем, но молчать об этом нельзя.
 _LIQUIDATION_SAFETY_MARGIN = 1.2
 
+# Проскальзывание на входе (см. _calc_slippage_pct) выше этого порога
+# (в %, уже нормализованного знака - положительное всегда невыгодно)
+# логируется как WARNING, а не INFO - не блокирует вход (ордер уже
+# исполнен к этому моменту, блокировать нечего), просто привлекает
+# внимание к необычно плохому исполнению конкретного ордера.
+_SLIPPAGE_WARN_THRESHOLD_PCT = 0.3
+
 
 class ExecutionError(Exception):
     """Что-то в цикле открытия защищённой позиции пошло не так - текст
@@ -73,6 +80,20 @@ class ProtectedPositionResult:
     entry_order: dict
     stop_order: dict
     take_profit_order: dict
+    # Цена, по которой считался размер позиции/риска - mark price ДО
+    # отправки рыночного ордера на вход (см. open_protected_position).
+    # entry_price выше - это РЕАЛЬНАЯ средняя цена исполнения (avgPrice
+    # из ответа биржи на MARKET-ордер), если её удалось получить - иначе
+    # (biржа изредка не успевает вернуть avgPrice синхронно) откатывается
+    # на reference_price же. slippage_pct - разница между ними в % от
+    # reference_price, ЗНАК так, что ПОЛОЖИТЕЛЬНОЕ значение всегда
+    # означает НЕВЫГОДНОЕ исполнение (переплатили на входе в лонг /
+    # недополучили на входе в шорт), независимо от стороны сделки - это
+    # специально сделано, чтобы можно было усреднять slippage_pct по
+    # сделкам разных направлений и получать осмысленное число (см.
+    # outcome_tracker.get_slippage_stats).
+    reference_price: float = 0.0
+    slippage_pct: float = 0.0
 
 
 def round_to_step(value: float, step: float) -> float:
@@ -103,6 +124,30 @@ def calc_position_size(balance: float, risk_pct: float, entry_price: float, stop
 
 def _opposite_side(side: str) -> str:
     return _SHORT_SIDE if side == _LONG_SIDE else _LONG_SIDE
+
+
+def _extract_fill_price(entry_order: dict, fallback_price: float) -> float:
+    """Реальная средняя цена исполнения MARKET-ордера входа -
+    поле avgPrice в ответе Binance. Иногда (редко, но бывает) биржа
+    синхронно возвращает avgPrice="0" - ордер уже исполнился, но поле
+    ещё не успело проставиться в ответе на сам вызов - в этом случае
+    откатываемся на fallback_price (reference mark price), а не на 0,
+    чтобы не считать 100% slippage там, где реальных данных просто нет."""
+    try:
+        avg_price = float(entry_order.get("avgPrice", 0) or 0)
+    except (TypeError, ValueError):
+        avg_price = 0.0
+    return avg_price if avg_price > 0 else fallback_price
+
+
+def _calc_slippage_pct(side: str, reference_price: float, fill_price: float) -> float:
+    """См. докстринг ProtectedPositionResult.slippage_pct - знак
+    нормализован так, что положительное значение ВСЕГДА невыгодно,
+    независимо от стороны сделки."""
+    if reference_price <= 0:
+        return 0.0
+    raw_pct = (fill_price - reference_price) / reference_price * 100
+    return raw_pct if side == _LONG_SIDE else -raw_pct
 
 
 def _warn_if_liquidation_before_stop(side: str, entry_price: float, stop_price: float, leverage: int) -> None:
@@ -225,6 +270,15 @@ def open_protected_position(
     take_profit_price = round_to_step(take_profit_price, tick_size) if tick_size else take_profit_price
 
     entry_order = client.place_market_order(symbol, side, quantity)
+    fill_price = _extract_fill_price(entry_order, fallback_price=entry_price)
+    slippage_pct = _calc_slippage_pct(side, reference_price=entry_price, fill_price=fill_price)
+    if abs(slippage_pct) >= _SLIPPAGE_WARN_THRESHOLD_PCT:
+        logger.warning(
+            "futures_executor: %s - проскальзывание на входе %.3f%% (ориентир %.6g -> факт %.6g)",
+            symbol, slippage_pct, entry_price, fill_price,
+        )
+    reference_price = entry_price
+    entry_price = fill_price
     close_side = _opposite_side(side)
 
     try:
@@ -240,9 +294,10 @@ def open_protected_position(
         raise
 
     logger.info(
-        "Открыта защищённая позиция %s %s %s: qty=%.8g, вход~%.6g, стоп=%.6g, тейк=%.6g, риск=%.2f%% баланса",
+        "Открыта защищённая позиция %s %s %s: qty=%.8g, вход~%.6g (ориентир %.6g, "
+        "проскальзывание %.3f%%), стоп=%.6g, тейк=%.6g, риск=%.2f%% баланса",
         symbol, side, "LONG" if side == _LONG_SIDE else "SHORT",
-        quantity, entry_price, stop_price, take_profit_price, risk_pct,
+        quantity, entry_price, reference_price, slippage_pct, stop_price, take_profit_price, risk_pct,
     )
 
     return ProtectedPositionResult(
@@ -250,6 +305,7 @@ def open_protected_position(
         stop_price=stop_price, take_profit_price=take_profit_price,
         risk_amount=balance * risk_pct / 100,
         entry_order=entry_order, stop_order=stop_order, take_profit_order=take_profit_order,
+        reference_price=reference_price, slippage_pct=slippage_pct,
     )
 
 

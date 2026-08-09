@@ -243,6 +243,11 @@ def execute_signal(
         # раньше отдельным ордером.
         "original_quantity": result.quantity,
         "entry_price": result.entry_price,
+        # Ориентировочная цена ДО входа (mark price) и фактическое
+        # проскальзывание при исполнении - см. futures_executor.
+        # ProtectedPositionResult и outcome_tracker.get_slippage_stats.
+        "reference_price": result.reference_price,
+        "slippage_pct": result.slippage_pct,
         "stop_price": result.stop_price,
         "take_profit_price": result.take_profit_price,
         "stop_order_id": result.stop_order.get("orderId"),

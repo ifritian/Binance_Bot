@@ -327,3 +327,46 @@ def get_futures_trade_stats(days: float | None = None) -> dict:
         "overall": _summarize(enriched),
         "by_strategy": {k: _summarize(v) for k, v in by_strategy.items()},
     }
+
+
+def get_slippage_stats(days: float | None = None) -> dict:
+    """Статистика проскальзывания на входе по реальным testnet-сделкам
+    (D1 из роадмапа). Источник - поле slippage_pct, которое
+    futures_signal_bridge.execute_signal сохраняет в саму запись
+    позиции (открытую ИЛИ уже закрытую - слайппедж фиксируется в момент
+    входа и после закрытия никуда не девается из record, см.
+    futures_position_monitor - closed_record строится через
+    dict(record, ...), то есть наследует все поля открытой записи).
+    Поэтому в отличие от get_futures_trade_stats здесь берём и
+    ОТКРЫТЫЕ, и ЗАКРЫТЫЕ позиции - проскальзывание не зависит от того,
+    закрылась ли уже сделка.
+
+    Записи без slippage_pct (например, старые, открытые ДО того, как
+    это поле появилось в коде) молча пропускаются - вернуть 0.0 вместо
+    реального значения было бы хуже, чем просто не учитывать их в
+    статистике.
+
+    Знак slippage_pct уже нормализован в futures_executor -
+    положительное значение ВСЕГДА означает невыгодное исполнение,
+    независимо от направления сделки (лонг/шорт) - поэтому avg_pct
+    напрямую интерпретируется как \"средняя стоимость входа сверх
+    ориентировочной цены, в %\"."""
+    records = queue_manager.get_open_futures_positions() + queue_manager.get_closed_futures_positions()
+    if days is not None:
+        cutoff = time.time() - days * 24 * 3600
+        records = [r for r in records if r.get("opened_at", 0) >= cutoff]
+
+    values = [r["slippage_pct"] for r in records if r.get("slippage_pct") is not None]
+    if not values:
+        return {"count": 0, "avg_pct": None, "max_pct": None, "worst_trades": []}
+
+    worst = sorted(records, key=lambda r: r.get("slippage_pct", 0), reverse=True)[:5]
+    return {
+        "count": len(values),
+        "avg_pct": round(sum(values) / len(values), 4),
+        "max_pct": round(max(values), 4),
+        "worst_trades": [
+            {"symbol": r.get("symbol"), "side": r.get("side"), "slippage_pct": round(r.get("slippage_pct", 0), 4)}
+            for r in worst
+        ],
+    }

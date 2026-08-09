@@ -202,6 +202,16 @@ def main() -> None:
                       f"средний результат={s['avg_pnl_pct']:+.2f}%, "
                       f"суммарный PnL={s['total_pnl_usdt']:+.4f} USDT")
 
+    sstats = outcome_tracker.get_slippage_stats()
+    print("\n--- Проскальзывание на входе (testnet, D1) ---")
+    if sstats["count"] == 0:
+        print("    нет данных (сделок с сохранённым slippage_pct ещё не было)")
+    else:
+        print(f"    n={sstats['count']}, среднее={sstats['avg_pct']:+.3f}%, худшее={sstats['max_pct']:+.3f}%")
+        print("    5 худших исполнений:")
+        for t in sstats["worst_trades"]:
+            print(f"      {t['symbol']} {t['side']}: {t['slippage_pct']:+.3f}%")
+
     print("\n--- Вывод ---")
     if pending is not None:
         elapsed = queue_manager.seconds_since_last_post("currency")

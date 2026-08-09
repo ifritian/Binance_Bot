@@ -16,13 +16,14 @@ class _FakeClient:
 
     def __init__(self, balance=10_000.0, mark_price=100.0,
                  step_size=0.001, tick_size=0.01, min_notional=5.0,
-                 fail_on=None):
+                 fail_on=None, fill_price=None):
         self.balance = balance
         self.mark_price = mark_price
         self.step_size = step_size
         self.tick_size = tick_size
         self.min_notional = min_notional
         self.fail_on = fail_on or set()  # набор шагов, на которых нужно бросить ошибку
+        self.fill_price = fill_price  # None -> avgPrice не возвращается (как раньше)
         self.call_log = []
         self.position = None  # для emergency-close сценариев
 
@@ -48,7 +49,10 @@ class _FakeClient:
     def place_market_order(self, symbol, side, quantity):
         self._maybe_fail("entry")
         self.call_log.append(("place_market_order", symbol, side, quantity))
-        return {"orderId": 1, "side": side, "quantity": quantity}
+        order = {"orderId": 1, "side": side, "quantity": quantity}
+        if self.fill_price is not None:
+            order["avgPrice"] = str(self.fill_price)
+        return order
 
     def place_stop_market(self, symbol, side, stop_price, close_position=True, quantity=None):
         self._maybe_fail("stop")
@@ -318,6 +322,73 @@ def test_risk_limits_allowed_proceeds_to_normal_flow(monkeypatch):
     # guard-проверки идут ДО set_leverage
     assert steps[:3] == ["get_all_positions", "get_wallet_balance", "get_income_history"]
     assert "set_leverage" in steps
+
+
+# --- проскальзывание на входе (D1, см. _extract_fill_price/_calc_slippage_pct) ---
+
+def test_extract_fill_price_uses_avg_price_when_present():
+    assert fe._extract_fill_price({"avgPrice": "101.5"}, fallback_price=100.0) == 101.5
+
+
+def test_extract_fill_price_falls_back_when_avg_price_missing():
+    assert fe._extract_fill_price({}, fallback_price=100.0) == 100.0
+
+
+def test_extract_fill_price_falls_back_when_avg_price_is_zero():
+    # биржа иногда синхронно отдаёт "0" - ордер уже исполнен, но поле не успело
+    # проставиться - не должно считаться как реальная цена 0.
+    assert fe._extract_fill_price({"avgPrice": "0"}, fallback_price=100.0) == 100.0
+
+
+def test_calc_slippage_pct_long_paid_more_is_positive_unfavorable():
+    # лонг: переплатили (вошли выше ориентира) - невыгодно -> положительное
+    pct = fe._calc_slippage_pct("BUY", reference_price=100.0, fill_price=100.3)
+    assert round(pct, 4) == 0.3
+
+
+def test_calc_slippage_pct_long_paid_less_is_negative_favorable():
+    pct = fe._calc_slippage_pct("BUY", reference_price=100.0, fill_price=99.7)
+    assert round(pct, 4) == -0.3
+
+
+def test_calc_slippage_pct_short_received_less_is_positive_unfavorable():
+    # шорт: продали дешевле ориентира - невыгодно -> положительное (знак развёрнут)
+    pct = fe._calc_slippage_pct("SELL", reference_price=100.0, fill_price=99.7)
+    assert round(pct, 4) == 0.3
+
+
+def test_calc_slippage_pct_short_received_more_is_negative_favorable():
+    pct = fe._calc_slippage_pct("SELL", reference_price=100.0, fill_price=100.3)
+    assert round(pct, 4) == -0.3
+
+
+def test_calc_slippage_pct_zero_reference_returns_zero():
+    assert fe._calc_slippage_pct("BUY", reference_price=0.0, fill_price=100.0) == 0.0
+
+
+def test_open_protected_position_uses_actual_fill_price_as_entry_price():
+    client = _FakeClient(balance=10_000, mark_price=100.0, fill_price=100.4)
+    result = fe.open_protected_position(
+        client, "BTCUSDT", "BUY", stop_price=95.0, take_profit_price=110.0,
+        risk_pct=1.0, leverage=3,
+    )
+    assert result.entry_price == 100.4          # реальная цена исполнения, не ориентир
+    assert result.reference_price == 100.0       # mark price ДО ордера
+    assert round(result.slippage_pct, 4) == 0.4  # (100.4-100.0)/100.0*100
+
+
+def test_open_protected_position_zero_slippage_without_avg_price_in_response():
+    # без avgPrice в ответе (как у "старого" FuturesClient до этого изменения)
+    # entry_price = reference_price, slippage_pct = 0 - поведение не должно
+    # ломаться там, где биржа/фейк не возвращает avgPrice.
+    client = _FakeClient(balance=10_000, mark_price=100.0)  # fill_price не задан
+    result = fe.open_protected_position(
+        client, "BTCUSDT", "BUY", stop_price=95.0, take_profit_price=110.0,
+        risk_pct=1.0, leverage=3,
+    )
+    assert result.entry_price == 100.0
+    assert result.reference_price == 100.0
+    assert result.slippage_pct == 0.0
 
 
 if __name__ == "__main__":

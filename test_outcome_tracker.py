@@ -112,6 +112,44 @@ def test_futures_trade_stats_empty(monkeypatch):
     assert stats["overall"] == {"count": 0, "win_rate": None, "avg_pnl_pct": None, "total_pnl_usdt": 0.0}
 
 
+def test_slippage_stats_aggregation(monkeypatch):
+    fake_open = [
+        {"symbol": "BTCUSDT", "side": "BUY", "slippage_pct": 0.2, "opened_at": 0},
+    ]
+    fake_closed = [
+        {"symbol": "ETHUSDT", "side": "SELL", "slippage_pct": 0.5, "opened_at": 0},
+        {"symbol": "SOLUSDT", "side": "BUY", "slippage_pct": -0.1, "opened_at": 0},
+    ]
+    monkeypatch.setattr(outcome_tracker.queue_manager, "get_open_futures_positions", lambda: fake_open)
+    monkeypatch.setattr(outcome_tracker.queue_manager, "get_closed_futures_positions", lambda: fake_closed)
+
+    stats = outcome_tracker.get_slippage_stats()
+
+    assert stats["count"] == 3
+    assert stats["avg_pct"] == round((0.2 + 0.5 - 0.1) / 3, 4)
+    assert stats["max_pct"] == 0.5
+    # худшие первыми (по убыванию slippage_pct)
+    assert stats["worst_trades"][0]["symbol"] == "ETHUSDT"
+
+
+def test_slippage_stats_ignores_records_without_the_field(monkeypatch):
+    # старые записи (открытые до появления slippage_pct в коде) не должны
+    # притворяться нулевым проскальзыванием - просто исключаются из выборки
+    fake_open = [{"symbol": "BTCUSDT", "side": "BUY", "opened_at": 0}]  # нет slippage_pct вовсе
+    monkeypatch.setattr(outcome_tracker.queue_manager, "get_open_futures_positions", lambda: fake_open)
+    monkeypatch.setattr(outcome_tracker.queue_manager, "get_closed_futures_positions", lambda: [])
+
+    stats = outcome_tracker.get_slippage_stats()
+    assert stats == {"count": 0, "avg_pct": None, "max_pct": None, "worst_trades": []}
+
+
+def test_slippage_stats_empty(monkeypatch):
+    monkeypatch.setattr(outcome_tracker.queue_manager, "get_open_futures_positions", lambda: [])
+    monkeypatch.setattr(outcome_tracker.queue_manager, "get_closed_futures_positions", lambda: [])
+    stats = outcome_tracker.get_slippage_stats()
+    assert stats == {"count": 0, "avg_pct": None, "max_pct": None, "worst_trades": []}
+
+
 def test_record_signal_outcome_stores_bluesky_ref(monkeypatch):
     saved = []
     monkeypatch.setattr(outcome_tracker.queue_manager, "add_open_outcome", lambda record: saved.append(record))
