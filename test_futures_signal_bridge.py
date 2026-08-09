@@ -23,11 +23,14 @@ def _signal(ticker="SOL", direction="Лонг (перепроданность)",
 
 
 class _FakeClient:
-    def __init__(self, mark_price=101.0, position=None, fail_position_check=False, fail_price=False):
+    def __init__(self, mark_price=101.0, position=None, fail_position_check=False, fail_price=False,
+                 funding_rate=0.0, fail_funding=False):
         self.mark_price = mark_price
         self.position = position
         self.fail_position_check = fail_position_check
         self.fail_price = fail_price
+        self.funding_rate = funding_rate
+        self.fail_funding = fail_funding
         self.opened = []
         self.calls = []
 
@@ -42,6 +45,12 @@ class _FakeClient:
         if self.fail_price:
             raise FuturesApiError("симулированный сбой цены")
         return self.mark_price
+
+    def get_funding_rate(self, symbol):
+        self.calls.append(("get_funding_rate", symbol))
+        if self.fail_funding:
+            raise FuturesApiError("симулированный сбой фандинга")
+        return self.funding_rate
 
 
 def _limits():
@@ -148,6 +157,62 @@ def test_execute_signal_allows_small_slippage_within_tolerance():
     except AttributeError:
         pass
     assert ("get_mark_price", "SOLUSDT") in client.calls
+
+
+# --- фильтр по ставке фандинга (см. _funding_rate_too_unfavorable) ---
+
+def test_funding_rate_too_unfavorable_blocks_long_on_high_positive_rate():
+    # порог по умолчанию 0.001 (0.1%) - берём заведомо выше
+    assert bridge._funding_rate_too_unfavorable(0.002, bridge._LONG_SIDE) is True
+
+
+def test_funding_rate_too_unfavorable_allows_long_on_negative_rate():
+    # отрицательный фандинг ПЛАТИТ лонгу - не блокирует, как бы велик ни был по модулю
+    assert bridge._funding_rate_too_unfavorable(-0.05, bridge._LONG_SIDE) is False
+
+
+def test_funding_rate_too_unfavorable_blocks_short_on_high_negative_rate():
+    assert bridge._funding_rate_too_unfavorable(-0.002, bridge._SHORT_SIDE) is True
+
+
+def test_funding_rate_too_unfavorable_allows_short_on_positive_rate():
+    assert bridge._funding_rate_too_unfavorable(0.05, bridge._SHORT_SIDE) is False
+
+
+def test_funding_rate_within_threshold_does_not_block_either_side():
+    assert bridge._funding_rate_too_unfavorable(0.0005, bridge._LONG_SIDE) is False
+    assert bridge._funding_rate_too_unfavorable(-0.0005, bridge._SHORT_SIDE) is False
+
+
+def test_execute_signal_skips_if_funding_unfavorable_for_long():
+    # _signal() по умолчанию - лонг (перепроданность); ставка сильно положительная
+    client = _FakeClient(mark_price=101.0, position=None, funding_rate=0.005)
+    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=0)
+    assert result is None
+    assert ("get_funding_rate", "SOLUSDT") in client.calls
+
+
+def test_execute_signal_continues_if_funding_fetch_fails(monkeypatch):
+    # сбой получения фандинга - не должен блокировать сделку сам по себе,
+    # проверка просто пропускается (доходим до реального открытия позиции)
+    client = _FakeClient(mark_price=101.0, position=None, fail_funding=True)
+    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50: 0)
+    monkeypatch.setattr(bridge.queue_manager, "add_open_futures_position", lambda record: None)
+
+    def fake_open_protected_position(client, symbol, side, stop_price, take_profit_price,
+                                      risk_pct, leverage, risk_limits=None, margin_type="ISOLATED"):
+        return SimpleNamespace(
+            symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
+            stop_price=stop_price, take_profit_price=take_profit_price,
+            stop_order={"orderId": 1}, take_profit_order={"orderId": 2},
+        )
+
+    monkeypatch.setattr(bridge, "open_protected_position", fake_open_protected_position)
+
+    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=0)
+    assert result is not None
 
 
 # --- мягкое снижение риска (см. risk_guard.get_risk_multiplier) ---

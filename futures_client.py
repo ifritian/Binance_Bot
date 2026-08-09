@@ -130,6 +130,18 @@ class FuturesClient:
         data = self._public_request("GET", "/fapi/v1/premiumIndex", {"symbol": symbol})
         return float(data["markPrice"])
 
+    def get_funding_rate(self, symbol: str) -> float:
+        """Текущая (последняя начисленная) ставка фандинга по символу -
+        та же /fapi/v1/premiumIndex, что и get_mark_price (поле
+        lastFundingRate), просто отдельным методом ради читаемости
+        вызывающего кода (см. futures_signal_bridge - там important
+        именно фандинг, а не markPrice). Положительная ставка = лонги
+        платят шортам (риск для новых лонгов), отрицательная = шорты
+        платят лонгам (риск для новых шортов). Значение - доля (0.0001
+        = 0.01%), НЕ проценты."""
+        data = self._public_request("GET", "/fapi/v1/premiumIndex", {"symbol": symbol})
+        return float(data["lastFundingRate"])
+
     # --- аккаунт (с подписью) ---
 
     def get_available_balance(self, asset: str = "USDT") -> float:

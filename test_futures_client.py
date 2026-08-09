@@ -95,6 +95,27 @@ def test_signed_request_includes_timestamp_and_signature(monkeypatch):
     assert client._api_secret not in captured["url"]
 
 
+# --- Публичные данные ---
+
+def test_get_funding_rate_reads_last_funding_rate_field(monkeypatch):
+    def fake_request(method, url, params=None, **kwargs):
+        assert params == {"symbol": "BTCUSDT"}
+        return _FakeResponse({"symbol": "BTCUSDT", "markPrice": "50000.0", "lastFundingRate": "0.00012"})
+
+    monkeypatch.setattr(fc.requests, "request", fake_request)
+    client = _client()
+    assert client.get_funding_rate("BTCUSDT") == 0.00012
+
+
+def test_get_funding_rate_handles_negative_rate(monkeypatch):
+    def fake_request(method, url, params=None, **kwargs):
+        return _FakeResponse({"markPrice": "50000.0", "lastFundingRate": "-0.0034"})
+
+    monkeypatch.setattr(fc.requests, "request", fake_request)
+    client = _client()
+    assert client.get_funding_rate("BTCUSDT") == -0.0034
+
+
 # --- Ордера (форма запроса) ---
 
 def test_place_stop_market_uses_algo_order_endpoint(monkeypatch):

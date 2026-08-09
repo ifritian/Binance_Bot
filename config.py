@@ -329,6 +329,20 @@ BINANCE_FUTURES_MAX_CONSECUTIVE_LOSSES = int(os.environ.get("BINANCE_FUTURES_MAX
 BINANCE_FUTURES_SOFT_DERISK_AFTER_LOSSES = int(os.environ.get("BINANCE_FUTURES_SOFT_DERISK_AFTER_LOSSES", "2"))
 BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER = float(os.environ.get("BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER", "0.5"))
 
+# Порог НЕВЫГОДНОЙ ставки фандинга (см. futures_signal_bridge.py) -
+# доля, а не проценты (0.001 = 0.1% за 8ч интервал). Обычная ставка на
+# Binance Futures обычно в пределах ±0.01%, выше 0.1% - уже признак
+# сильного перекоса рынка в одну сторону. Если фандинг движется ПРОТИВ
+# направления сигнала (лонг при высоком положительном фандинге, шорт
+# при сильно отрицательном) сильнее этого порога - сигнал пропускается:
+# стоимость удержания позиции может съесть значимую часть ожидаемой
+# прибыли ещё до того, как сработает тейк/стоп. Проверка не блокирует
+# сделки ПО направлению фандинга (лонг при отрицательном, шорт при
+# положительном) - там фандинг наоборот платит нам.
+BINANCE_FUTURES_MAX_UNFAVORABLE_FUNDING_RATE = float(
+    os.environ.get("BINANCE_FUTURES_MAX_UNFAVORABLE_FUNDING_RATE", "0.001")
+)
+
 # --- Частичный профит + перевод в безубыток + трейлинг-стоп (см.
 # futures_position_monitor.py, докстринг про "A1" в плане развития) ---
 # Сейчас: фиксированные SL/TP из уровней сигнала, ничего не меняется

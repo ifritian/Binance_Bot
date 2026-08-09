@@ -15,9 +15,14 @@ MACD/Breakout - см. strategies.py) с реальным открытием за
    автоматического исполнения сигнала (см. signal_to_trade_params и
    execute_signal ниже): числа сигнала должны быть физически осмысленны
    (стоп/тейк по правильную сторону от входа), рынок не должен успеть
-   уйти далеко от зоны входа сигнала, и на этот символ не должно уже
+   уйти далеко от зоны входа сигнала, на этот символ не должно уже
    быть открытой позиции (иначе один и тот же тикер молча наращивал бы
-   размер от нескольких стратегий подряд, сигналящих одно и то же).
+   размер от нескольких стратегий подряд, сигналящих одно и то же), и
+   ставка фандинга не должна быть слишком невыгодна для направления
+   сделки (см. _funding_rate_too_unfavorable,
+   config.BINANCE_FUTURES_MAX_UNFAVORABLE_FUNDING_RATE) - иначе
+   стоимость удержания позиции может съесть заметную часть ожидаемой
+   прибыли ещё до срабатывания тейка/стопа.
 3. futures_auto_trade.py (единственный вызывающий код) жёстко использует
    TESTNET - см. его docstring - независимо от risk_limits/config.
 
@@ -33,6 +38,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
+import config
 import queue_manager
 import risk_guard
 import signal_parser
@@ -122,6 +128,20 @@ def _price_still_near_entry_zone(mark_price: float, params: TradeParams) -> bool
     return (params.entry_low - tolerance) <= mark_price <= (params.entry_high + tolerance)
 
 
+def _funding_rate_too_unfavorable(funding_rate: float, side: str) -> bool:
+    """funding_rate - доля (0.001 = 0.1%), не проценты. Для ЛОНГА
+    невыгоден высокий ПОЛОЖИТЕЛЬНЫЙ фандинг (лонги платят шортам) -
+    сравниваем funding_rate с +порогом. Для ШОРТА невыгоден сильно
+    ОТРИЦАТЕЛЬНЫЙ фандинг (шорты платят лонгам) - сравниваем с
+    -порогом. Фандинг ПО направлению сделки (отрицательный для лонга,
+    положительный для шорта) никогда не блокирует - он там наоборот
+    платит нам, а не съедает прибыль."""
+    threshold = config.BINANCE_FUTURES_MAX_UNFAVORABLE_FUNDING_RATE
+    if side == _LONG_SIDE:
+        return funding_rate > threshold
+    return funding_rate < -threshold
+
+
 def execute_signal(
     client,
     signal: RsiSignal,
@@ -169,6 +189,21 @@ def execute_signal(
         logger.info(
             "futures_signal_bridge: %s - рынок (%.6g) ушёл от зоны входа сигнала (%.6g-%.6g) - пропускаю",
             params.symbol, mark_price, params.entry_low, params.entry_high,
+        )
+        return None
+
+    try:
+        funding_rate = client.get_funding_rate(params.symbol)
+    except FuturesApiError as e:
+        # Не удалось получить фандинг - не блокируем сделку из-за этого
+        # (это доп. фильтр поверх основной логики, а не обязательное
+        # условие), просто логируем и идём дальше без проверки.
+        logger.warning("futures_signal_bridge: не удалось получить ставку фандинга %s: %s", params.symbol, e)
+        funding_rate = None
+    if funding_rate is not None and _funding_rate_too_unfavorable(funding_rate, params.side):
+        logger.info(
+            "futures_signal_bridge: %s - ставка фандинга %.4f%% слишком невыгодна для %s - пропускаю",
+            params.symbol, funding_rate * 100, "лонга" if params.side == _LONG_SIDE else "шорта",
         )
         return None
 
