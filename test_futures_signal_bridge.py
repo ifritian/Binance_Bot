@@ -197,7 +197,7 @@ def test_execute_signal_continues_if_funding_fetch_fails(monkeypatch):
     # сбой получения фандинга - не должен блокировать сделку сам по себе,
     # проверка просто пропускается (доходим до реального открытия позиции)
     client = _FakeClient(mark_price=101.0, position=None, fail_funding=True)
-    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50: 0)
+    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50, since_ts=None: 0)
     monkeypatch.setattr(bridge.queue_manager, "add_open_futures_position", lambda record: None)
 
     def fake_open_protected_position(client, symbol, side, stop_price, take_profit_price,
@@ -221,7 +221,7 @@ def test_execute_signal_continues_if_funding_fetch_fails(monkeypatch):
 def test_execute_signal_applies_soft_derisk_multiplier(monkeypatch):
     client = _FakeClient(mark_price=101.0, position=None)
     # 2 убытка подряд -> при soft_derisk_after_losses=2 (дефолт RiskLimits) риск должен уполовиниться
-    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50: 2)
+    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50, since_ts=None: 2)
     monkeypatch.setattr(bridge.queue_manager, "add_open_futures_position", lambda record: None)
 
     captured = {}
@@ -245,7 +245,7 @@ def test_execute_signal_applies_soft_derisk_multiplier(monkeypatch):
 
 def test_execute_signal_keeps_full_risk_without_loss_streak(monkeypatch):
     client = _FakeClient(mark_price=101.0, position=None)
-    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50: 0)
+    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50, since_ts=None: 0)
     monkeypatch.setattr(bridge.queue_manager, "add_open_futures_position", lambda record: None)
 
     captured = {}

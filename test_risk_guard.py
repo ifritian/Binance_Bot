@@ -3,6 +3,8 @@
 Тесты risk_guard.py - на ПОДДЕЛЬНОМ FuturesClient (никакой реальной
 сети) и с monkeypatch queue_manager (никакой реальной SQLite - как в
 test_strategy_tuner.py)."""
+import time
+
 import risk_guard
 
 
@@ -57,6 +59,88 @@ def test_kill_switch_blocks_before_any_client_call(monkeypatch):
     assert reason is not None
     assert "тестовая причина" in reason
     assert client.calls == []  # ни один метод клиента не должен был вызваться
+
+
+# --- автоснятие kill switch по таймауту (см. RiskLimits.kill_switch_auto_reset_hours) ---
+
+def test_kill_switch_not_auto_reset_when_disabled(monkeypatch):
+    # взведён 100ч назад, но kill_switch_auto_reset_hours не задан (None/дефолт) -
+    # старое поведение: держим заблокированным, никакого автоснятия
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch",
+                         lambda: {"reason": "старая причина", "tripped_at": time.time() - 100 * 3600})
+    cleared = []
+    monkeypatch.setattr(risk_guard.queue_manager, "clear_kill_switch", lambda: cleared.append(True))
+    client = _FakeClient()
+    reason = risk_guard.check_new_position_allowed(client, _limits())  # auto_reset не задан
+    assert reason is not None
+    assert cleared == []
+
+
+def test_kill_switch_not_auto_reset_before_threshold(monkeypatch):
+    # взведён 1ч назад, порог 24ч - ещё рано
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch",
+                         lambda: {"reason": "причина", "tripped_at": time.time() - 1 * 3600})
+    cleared = []
+    monkeypatch.setattr(risk_guard.queue_manager, "clear_kill_switch", lambda: cleared.append(True))
+    client = _FakeClient()
+    limits = _limits()
+    limits.kill_switch_auto_reset_hours = 24
+    reason = risk_guard.check_new_position_allowed(client, limits)
+    assert reason is not None
+    assert cleared == []
+
+
+def test_kill_switch_auto_reset_after_threshold_allows_trade(monkeypatch):
+    # взведён 25ч назад, порог 24ч - должен сняться сам и пропустить проверку дальше
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch",
+                         lambda: {"reason": "старая причина", "tripped_at": time.time() - 25 * 3600})
+    cleared = []
+    monkeypatch.setattr(risk_guard.queue_manager, "clear_kill_switch", lambda: cleared.append(True))
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_streak_ignore_before", lambda: None)
+    client = _FakeClient(wallet_balance=10_000.0, income_rows=[])
+    limits = _limits()
+    limits.kill_switch_auto_reset_hours = 24
+    reason = risk_guard.check_new_position_allowed(client, limits)
+    assert reason is None  # реально снялся и разрешил сделку
+    assert cleared == [True]  # clear_kill_switch был вызван РОВНО один раз
+
+
+def test_kill_switch_auto_reset_ignores_old_streak_via_since_ts(monkeypatch):
+    # ключевой сценарий: старая серия убытков НЕ должна немедленно взвести
+    # switch обратно после автоснятия - since_ts отсекает старые сделки
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch",
+                         lambda: {"reason": "3 убытка подряд", "tripped_at": time.time() - 25 * 3600})
+    monkeypatch.setattr(risk_guard.queue_manager, "clear_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    # ВСЯ история - старые убытки, случившиеся ДО точки отсечения:
+    since_ts = time.time() - 10 * 3600  # отметка "снято 10ч назад"
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_streak_ignore_before", lambda: since_ts)
+    old_loss_time_ms = int((since_ts - 3600) * 1000)  # на час РАНЬШЕ отметки - должен игнорироваться
+    client = _FakeClient(
+        wallet_balance=10_000.0,
+        income_rows=[
+            {"income": "-10.0", "time": old_loss_time_ms},
+            {"income": "-10.0", "time": old_loss_time_ms + 1000},
+            {"income": "-10.0", "time": old_loss_time_ms + 2000},
+        ],
+    )
+    limits = _limits(max_consecutive_losses=3)
+    limits.kill_switch_auto_reset_hours = 24
+    reason = risk_guard.check_new_position_allowed(client, limits)
+    assert reason is None  # старые 3 убытка отсечены since_ts - не взводят switch заново
+
+
+def test_get_risk_multiplier_respects_since_ts(monkeypatch):
+    since_ts = time.time() - 3600
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_streak_ignore_before", lambda: since_ts)
+    old_time_ms = int((since_ts - 100) * 1000)  # до отметки - должен быть проигнорирован
+    client = _FakeClient(income_rows=[{"income": "-5.0", "time": old_time_ms}])
+    mult, streak = risk_guard.get_risk_multiplier(client, _limits(max_consecutive_losses=3))
+    assert streak == 0
+    assert mult == 1.0
 
 
 # --- лимит открытых позиций ---

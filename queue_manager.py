@@ -1048,7 +1048,9 @@ def get_kill_switch() -> Optional[dict]:
     (дневной лимит убытка или серия убытков подряд - см. risk_guard.py)
     сработал, иначе None. Сознательно НЕ привязан к дню/сессии - раз
     взведённый kill switch остаётся взведённым, пока его явно не снимут
-    (см. clear_kill_switch), даже после наступления нового UTC-дня."""
+    (см. clear_kill_switch) или (если настроено, см.
+    config.BINANCE_FUTURES_KILL_SWITCH_AUTO_RESET_HOURS) не пройдёт
+    заданный таймаут - даже после наступления нового UTC-дня."""
     return _get("risk_kill_switch", None)
 
 
@@ -1057,7 +1059,30 @@ def set_kill_switch(reason: str) -> None:
 
 
 def clear_kill_switch() -> None:
+    """Снимает kill switch - и вручную (risk_guard_cli.py reset), и
+    автоматически по таймауту (см. risk_guard.check_new_position_allowed)
+    - ОБА пути идут через эту функцию. Заодно сдвигает "точку отсчёта"
+    серии убытков на текущий момент (get/set_risk_streak_ignore_before) -
+    без этого убытки, из-за которых switch взвёлся, никуда не делись бы
+    из истории биржи и немедленно взвели бы его заново на первой же
+    следующей проверке (см. risk_guard._consecutive_losses,
+    параметр since_ts) - что на практике и происходило до этого
+    изменения, когда снятие приходилось делать вручную ПОСЛЕ каждой
+    неудачной серии, а не один раз."""
     _set("risk_kill_switch", None)
+    set_risk_streak_ignore_before(time.time())
+
+
+def get_risk_streak_ignore_before() -> Optional[float]:
+    """Unix-время (секунды): сделки ДО этого момента не учитываются при
+    подсчёте серии убытков подряд (risk_guard._consecutive_losses). None,
+    если отметки ещё не было (учитывать всю доступную историю, как
+    раньше)."""
+    return _get("risk_streak_ignore_before", None)
+
+
+def set_risk_streak_ignore_before(ts: float) -> None:
+    _set("risk_streak_ignore_before", ts)
 
 
 def pending_crosspost_summary() -> list[str]:

@@ -46,7 +46,10 @@ def _print_status() -> int:
 
     if s["kill_switch"] is not None:
         print(f"\n!!! KILL SWITCH ВЗВЕДЁН: {s['kill_switch']['reason']}")
-        print("    Новые позиции ЗАБЛОКИРОВАНЫ. Снять: python3 risk_guard_cli.py reset")
+        if s["kill_switch_auto_reset_eta_hours"] is not None:
+            print(f"    Автоснятие через ~{s['kill_switch_auto_reset_eta_hours']:.1f}ч "
+                  f"(настроено: {s['kill_switch_auto_reset_hours']:.1f}ч после срабатывания)")
+        print("    Новые позиции ЗАБЛОКИРОВАНЫ. Снять вручную сейчас: python3 risk_guard_cli.py reset")
     else:
         print("\nKill switch: не взведён (торговля разрешена)")
 

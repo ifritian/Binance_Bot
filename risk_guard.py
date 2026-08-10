@@ -24,13 +24,25 @@ calc_position_size). Каждая позиция по отдельности м�
 
 Лимиты 3 и 4 при срабатывании ВЗВОДЯТ kill switch (см.
 queue_manager.set_kill_switch) - персистентный (bot_state.db) флаг
-"торговля остановлена", который НЕ снимается сам по себе - ни на
+"торговля остановлена". По умолчанию НЕ снимается сам по себе - ни на
 следующий UTC-день, ни при следующей прибыльной сделке. Снять его можно
-только осознанно: `python3 risk_guard_cli.py reset`, посмотрев вначале,
-что случилось (`risk_guard_cli.py status`). Это НАМЕРЕННО консервативнее
+осознанно: `python3 risk_guard_cli.py reset`, посмотрев вначале, что
+случилось (`risk_guard_cli.py status`). Это НАМЕРЕННО консервативнее
 "тихого" автовосстановления - если один из этих двух лимитов сработал,
-решение продолжать торговать должно быть решением человека, а не
-побочным эффектом того, что цифры на бирже сами вернулись в норму.
+решение продолжать торговать по умолчанию должно быть решением
+человека, а не побочным эффектом того, что цифры на бирже сами
+вернулись в норму.
+
+Опционально (см. config.BINANCE_FUTURES_KILL_SWITCH_AUTO_RESET_HOURS,
+выключено по умолчанию) можно доверить это решение боту - тогда
+check_new_position_allowed сам снимает kill switch, если он был взведён
+дольше настроенного числа часов. При любом снятии - и ручном, и
+автоматическом - серия убытков "обнуляется" не физически (история на
+бирже никуда не девается), а логически: убытки ДО момента снятия
+перестают учитываться в _consecutive_losses (см. параметр since_ts и
+queue_manager.get/set_risk_streak_ignore_before) - иначе немедленно на
+первой же следующей проверке switch взводился бы заново по той же самой
+уже "разобранной" причине, а не давал боту реальный новый шанс.
 
 Лимиты 1, 2 и пункт 5 (мягкое снижение риска) - НЕ взводят kill switch:
 это не "что-то пошло не так", а штатная адаптация (подожди слот / рискуй
@@ -44,6 +56,7 @@ check_new_position_allowed ПЕРВЫМ делом - до единого API-в�
 аварийно закрыта".
 """
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -72,6 +85,10 @@ class RiskLimits:
     # старый код/тесты, которые создают RiskLimits(...) без этого поля,
     # не начали внезапно ловить отказ по лимиту, который они не просили.
     max_same_direction_positions: Optional[int] = None
+    # Автоснятие kill switch по таймауту - см. docstring модуля и
+    # config.BINANCE_FUTURES_KILL_SWITCH_AUTO_RESET_HOURS. None/0 =
+    # выключено (дефолт - требуется ручной risk_guard_cli.py reset).
+    kill_switch_auto_reset_hours: Optional[float] = None
 
 
 def limits_from_config(config) -> RiskLimits:
@@ -82,6 +99,7 @@ def limits_from_config(config) -> RiskLimits:
         soft_derisk_after_losses=config.BINANCE_FUTURES_SOFT_DERISK_AFTER_LOSSES,
         soft_derisk_multiplier=config.BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER,
         max_same_direction_positions=config.BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS,
+        kill_switch_auto_reset_hours=config.BINANCE_FUTURES_KILL_SWITCH_AUTO_RESET_HOURS,
     )
 
 
@@ -132,7 +150,7 @@ def _group_partial_fills(rows: list) -> list:
     return [grouped[k] for k in order]
 
 
-def _consecutive_losses(client, lookback: int = 50) -> int:
+def _consecutive_losses(client, lookback: int = 50, since_ts: Optional[float] = None) -> int:
     """Считает убыточные СДЕЛКИ (не строки income - см. _group_partial_fills)
     ПОДРЯД, начиная с самой последней закрытой - по истории income
     (incomeType=REALIZED_PNL), не по локальному логу бота (тот не увидит
@@ -140,12 +158,20 @@ def _consecutive_losses(client, lookback: int = 50) -> int:
     (например, чисто комиссийные строки без реального закрытия позиции)
     игнорируются - это не "выигрыш" и не "проигрыш". Сортирует по
     времени сам, не полагаясь на порядок, в котором Binance отдаёт
-    список."""
+    список.
+
+    since_ts (unix-время в секундах), если задан - сделки СТРОГО ДО
+    этого момента полностью исключаются из подсчёта, как будто их не
+    было (см. queue_manager.get_risk_streak_ignore_before - выставляется
+    при снятии kill switch, ручном или автоматическом по таймауту, см.
+    docstring модуля)."""
     rows = client.get_income_history(income_type="REALIZED_PNL", limit=lookback)
     nonzero_sorted = [
         r for r in sorted(rows, key=lambda r: int(r.get("time", 0)))
         if float(r.get("income", 0)) != 0
     ]
+    if since_ts is not None:
+        nonzero_sorted = [r for r in nonzero_sorted if int(r.get("time", 0)) / 1000 >= since_ts]
     trades = _group_partial_fills(nonzero_sorted)
     streak = 0
     for pnl in reversed(trades):
@@ -173,7 +199,8 @@ def get_risk_multiplier(client, limits: RiskLimits) -> tuple[float, int]:
     Использует ту же _consecutive_losses, что и check_new_position_allowed -
     единый источник правды про серию, а не два независимых подсчёта,
     которые могли бы разойтись при доработке одного без другого."""
-    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20))
+    since_ts = queue_manager.get_risk_streak_ignore_before()
+    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20), since_ts=since_ts)
     if streak >= limits.soft_derisk_after_losses:
         return limits.soft_derisk_multiplier, streak
     return 1.0, streak
@@ -204,6 +231,19 @@ def check_new_position_allowed(client, limits: RiskLimits, side: Optional[str] =
     вызывающими местами/тестами), проверка A4 просто пропускается, как
     будто лимита нет, а не отказывает вслепую."""
     kill_switch = queue_manager.get_kill_switch()
+    if kill_switch is not None:
+        auto_reset_hours = limits.kill_switch_auto_reset_hours
+        elapsed_hours = (time.time() - kill_switch["tripped_at"]) / 3600
+        if auto_reset_hours and elapsed_hours >= auto_reset_hours:
+            logger.warning(
+                "risk_guard: kill switch снят АВТОМАТИЧЕСКИ по таймауту (взведён %.1fч назад, "
+                "порог %.1fч) - причина была: %s. Прежняя серия убытков больше не учитывается, "
+                "отсчёт начинается заново.",
+                elapsed_hours, auto_reset_hours, kill_switch["reason"],
+            )
+            queue_manager.clear_kill_switch()
+            kill_switch = None
+
     if kill_switch is not None:
         return (
             f"KILL SWITCH ВЗВЕДЁН ({kill_switch['reason']}) - новые позиции заблокированы, "
@@ -239,7 +279,8 @@ def check_new_position_allowed(client, limits: RiskLimits, side: Optional[str] =
         logger.error("risk_guard: KILL SWITCH ВЗВЕДЁН (дневной лимит убытка): %s", reason)
         return f"KILL SWITCH ВЗВЕДЁН ({reason}) - новые позиции заблокированы, пока кто-то осознанно не снимет его."
 
-    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20))
+    since_ts = queue_manager.get_risk_streak_ignore_before()
+    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20), since_ts=since_ts)
     if streak >= limits.max_consecutive_losses:
         reason = f"{streak} убыточных сделок подряд (лимит {limits.max_consecutive_losses})"
         queue_manager.set_kill_switch(reason)
@@ -252,19 +293,30 @@ def check_new_position_allowed(client, limits: RiskLimits, side: Optional[str] =
 def status(client, limits: RiskLimits) -> dict:
     """Снимок текущего состояния для risk_guard_cli.py status /
     диагностики. В отличие от check_new_position_allowed, сама НИКОГДА
-    не взводит kill switch по превышенным лимитам - только сообщает о
-    нём, если он уже взведён. Побочный эффект: если сегодня ещё не было
-    ни одной проверки, зафиксирует дневной baseline (та же логика, что
-    и при обычной проверке - baseline должен быть один и тот же,
-    откуда бы его ни зафиксировали первым)."""
+    не взводит и не снимает kill switch (даже по таймауту автосброса -
+    это read-only снимок, а не проверка перед сделкой) - только
+    сообщает о текущем состоянии, включая сколько осталось до
+    автосброса, если он настроен и switch взведён. Побочный эффект:
+    если сегодня ещё не было ни одной проверки, зафиксирует дневной
+    baseline (та же логика, что и при обычной проверке - baseline
+    должен быть один и тот же, откуда бы его ни зафиксировали первым)."""
     kill_switch = queue_manager.get_kill_switch()
     open_positions = client.get_all_positions()
     long_count = sum(1 for p in open_positions if float(p.get("positionAmt", 0)) > 0)
     short_count = len(open_positions) - long_count
     loss_pct, baseline, current = _daily_loss_pct(client)
-    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20))
+    since_ts = queue_manager.get_risk_streak_ignore_before()
+    streak = _consecutive_losses(client, lookback=max(limits.max_consecutive_losses * 5, 20), since_ts=since_ts)
+
+    auto_reset_eta_hours = None
+    if kill_switch is not None and limits.kill_switch_auto_reset_hours:
+        elapsed_hours = (time.time() - kill_switch["tripped_at"]) / 3600
+        auto_reset_eta_hours = round(max(limits.kill_switch_auto_reset_hours - elapsed_hours, 0), 2)
+
     return {
         "kill_switch": kill_switch,
+        "kill_switch_auto_reset_hours": limits.kill_switch_auto_reset_hours,
+        "kill_switch_auto_reset_eta_hours": auto_reset_eta_hours,
         "open_positions": len(open_positions),
         "open_positions_symbols": [p.get("symbol") for p in open_positions],
         "open_positions_long": long_count,
