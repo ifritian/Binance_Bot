@@ -185,3 +185,39 @@ def is_long_direction(direction: str) -> bool:
     не подходящее по смыслу слово). Весь код теперь должен определять
     направление ЧЕРЕЗ ЭТУ функцию, а не через собственный substring-поиск."""
     return "лонг" in direction.lower()
+
+
+def _to_float(value) -> float:
+    try:
+        return float(str(value).replace(",", "").replace("%", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def calc_risk_reward_ratio(signal: "RsiSignal") -> Optional[float]:
+    """Соотношение потенциальной прибыли к риску (reward/risk) - ЕДИНЫЙ
+    источник правды для этого расчёта, чтобы R:R в посте
+    (post_format.signal_risk_reward_line), в фильтре качества сигналов
+    (scanner._meets_min_risk_reward) и где угодно ещё в будущем всегда
+    была ОДНА И ТА ЖЕ цифра, а не три чуть разные реализации одной идеи.
+
+    Вход берётся серединой диапазона entry_low..entry_high - та же
+    логика, что и в outcome_tracker.record_signal_outcome (трекинг
+    результата считает от этого же entry).
+
+    None, если риск (|entry - stop|) равен нулю или числа не
+    распознались - "не удалось посчитать", а не "риск бесконечный/нулевой"."""
+    entry_low = _to_float(signal.entry_low)
+    entry_high = _to_float(signal.entry_high)
+    entry = (entry_low + entry_high) / 2 if (entry_low and entry_high) else (entry_low or entry_high)
+    stop = _to_float(signal.invalidation)
+    target = _to_float(signal.target)
+
+    if not (entry and stop and target):
+        return None
+
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return None
+
+    return abs(target - entry) / risk

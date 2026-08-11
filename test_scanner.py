@@ -206,6 +206,91 @@ def test_process_signal_candidate_accepts_score_exactly_at_threshold(monkeypatch
     assert calls == [("SOL", "SOLUSDT")]
 
 
+# --- _process_signal_candidate: минимальный R:R (см. config.MIN_RISK_REWARD_RATIO) ---
+
+def _poor_rr_signal(ratio: float, score="85"):
+    """entry mid = 100, риск фиксирован в 10 (стоп=90) - target подобран
+    так, чтобы reward/risk == ratio ровно."""
+    from signal_parser import RsiSignal
+    target = 100 + 10 * ratio
+    return RsiSignal(
+        ticker="SOL", timeframe="15m", strategy="RSI", direction="Лонг (перепроданность)",
+        current_price="100", rsi_now="25", score=score, quality="Moderate",
+        entry_low="99", entry_high="101", invalidation="90", target=f"{target:.6g}",
+        change_24h="+1%", volume="10M", rsi_live="25", created_at="2026-07-29 00:00:00 UTC",
+        description="тест", raw_text="тест",
+    )
+
+
+def test_process_signal_candidate_rejected_when_risk_reward_below_threshold(monkeypatch):
+    monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
+    monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(config, "MIN_RISK_REWARD_RATIO", 1.2)
+
+    calls = []
+    accepted = scanner._process_signal_candidate(
+        _poor_rr_signal(ratio=0.8), "SOLUSDT", "SOL", min_score_cfg=70,
+        on_signal_accepted=lambda s, sym: calls.append((s.ticker, sym)),
+    )
+    assert accepted is False
+    assert calls == []
+
+
+def test_process_signal_candidate_accepts_risk_reward_exactly_at_threshold(monkeypatch):
+    # ratio РОВНО равный порогу должен пройти (порог - "минимум, который
+    # проходит", та же логика, что и в off-by-one тесте для score выше).
+    monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
+    monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
+    monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
+    monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
+    monkeypatch.setattr(config, "MIN_RISK_REWARD_RATIO", 1.2)
+
+    calls = []
+    accepted = scanner._process_signal_candidate(
+        _poor_rr_signal(ratio=1.2), "SOLUSDT", "SOL", min_score_cfg=70,
+        on_signal_accepted=lambda s, sym: calls.append((s.ticker, sym)),
+    )
+    assert accepted is True
+    assert calls == [("SOL", "SOLUSDT")]
+
+
+def test_process_signal_candidate_high_score_does_not_rescue_poor_risk_reward(monkeypatch):
+    # ключевая идея фильтра: плохой R:R не спасти высоким score.
+    monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
+    monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
+    monkeypatch.setattr(config, "MIN_RISK_REWARD_RATIO", 1.2)
+
+    accepted = scanner._process_signal_candidate(
+        _poor_rr_signal(ratio=0.5, score="100"), "SOLUSDT", "SOL", min_score_cfg=0,
+    )
+    assert accepted is False
+
+
+def test_process_signal_candidate_not_blocked_when_ratio_cannot_be_computed(monkeypatch):
+    # числа не распознались/риск=0 -> calc_risk_reward_ratio вернёт None -
+    # фильтр НЕ блокирует из-за собственной невозможности посчитать,
+    # проверка просто пропускается (как и остальные "мягкие" проверки).
+    from signal_parser import RsiSignal
+    signal = RsiSignal(
+        ticker="SOL", timeframe="15m", strategy="RSI", direction="Лонг (перепроданность)",
+        current_price="100", rsi_now="25", score="85", quality="Moderate",
+        entry_low="100", entry_high="100", invalidation="100", target="130",  # риск = 0
+        change_24h="+1%", volume="10M", rsi_live="25", created_at="2026-07-29 00:00:00 UTC",
+        description="тест", raw_text="тест",
+    )
+    monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
+    monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda s, sym: s)
+    monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
+    monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
+    monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
+    monkeypatch.setattr(config, "MIN_RISK_REWARD_RATIO", 1.2)
+
+    accepted = scanner._process_signal_candidate(signal, "SOLUSDT", "SOL", min_score_cfg=70)
+    assert accepted is True
+
+
 if __name__ == "__main__":
     import sys
     import types

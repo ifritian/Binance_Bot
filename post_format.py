@@ -146,30 +146,18 @@ def _signal_price(value) -> float:
 def signal_risk_reward_line(signal) -> str | None:
     """Строка "R:R 1:X.X" - соотношение потенциальной прибыли к риску
     (см. C2 в роадмапе: "дёшево и сразу видимый эффект в контенте").
-    Вход берётся серединой диапазона entry_low..entry_high (та же логика,
-    что и в outcome_tracker.record_signal_outcome - трекинг результата
-    считает от того же самого entry, так что R:R в посте соответствует
-    ТОЙ ЖЕ цифре, по которой потом реально считается win-rate).
+    Сам расчёт - см. signal_parser.calc_risk_reward_ratio (единый
+    источник правды, тот же самый, что использует scanner.py для
+    фильтра минимального R:R - цифра в посте гарантированно совпадает
+    с той, по которой сигнал вообще прошёл или не прошёл в очередь).
 
     Возвращает None, если риск (|entry - stop|) равен нулю или числа не
     распознались - показывать "R:R 1:inf" или падать тут не за чем,
     просто пропускаем строку молча (как и остальные *_line-хелперы в
     этом модуле - см. square_hashtags_line)."""
-    entry_low = _signal_price(signal.entry_low)
-    entry_high = _signal_price(signal.entry_high)
-    entry = (entry_low + entry_high) / 2 if (entry_low and entry_high) else (entry_low or entry_high)
-    stop = _signal_price(signal.invalidation)
-    target = _signal_price(signal.target)
-
-    if not (entry and stop and target):
+    ratio = signal_parser.calc_risk_reward_ratio(signal)
+    if ratio is None:
         return None
-
-    risk = abs(entry - stop)
-    if risk <= 0:
-        return None
-
-    reward = abs(target - entry)
-    ratio = reward / risk
     return f"R:R 1:{ratio:.1f}"
 
 

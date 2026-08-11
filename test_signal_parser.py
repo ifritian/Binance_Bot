@@ -5,6 +5,54 @@
 без сети.
 """
 import signal_parser
+from signal_parser import RsiSignal
+
+
+def _make_signal(**overrides) -> RsiSignal:
+    base = dict(
+        ticker="BEAT", timeframe="15m", strategy="RSI + Bollinger Touch",
+        direction="Шорт", current_price="2.225", rsi_now="81.74", score="89",
+        quality="Conservative", entry_low="2.205", entry_high="2.2178",
+        invalidation="2.2371", target="2.1729", change_24h="+35.67%",
+        volume="57.67M", rsi_live="82.64", created_at="2026-06-23 22:44:59 EEST",
+        description="desc", raw_text="raw",
+    )
+    base.update(overrides)
+    return RsiSignal(**base)
+
+
+# --- calc_risk_reward_ratio (см. post_format.signal_risk_reward_line -
+# использует ЭТУ ЖЕ функцию, там же есть эквивалентные тесты через
+# отформатированную строку "R:R 1:X.X") ---
+
+def test_calc_risk_reward_ratio_long():
+    signal = _make_signal(direction="Лонг", entry_low="98", entry_high="102",
+                           invalidation="90", target="130")
+    assert signal_parser.calc_risk_reward_ratio(signal) == 3.0
+
+
+def test_calc_risk_reward_ratio_short():
+    signal = _make_signal(direction="Шорт", entry_low="98", entry_high="102",
+                           invalidation="110", target="70")
+    assert signal_parser.calc_risk_reward_ratio(signal) == 3.0
+
+
+def test_calc_risk_reward_ratio_poor_ratio_below_one():
+    # риск 20 (100->80), прибыль 10 (100->110) -> R:R 1:0.5
+    signal = _make_signal(entry_low="100", entry_high="100",
+                           invalidation="80", target="110")
+    assert signal_parser.calc_risk_reward_ratio(signal) == 0.5
+
+
+def test_calc_risk_reward_ratio_none_when_risk_is_zero():
+    signal = _make_signal(entry_low="100", entry_high="100", invalidation="100", target="130")
+    assert signal_parser.calc_risk_reward_ratio(signal) is None
+
+
+def test_calc_risk_reward_ratio_none_on_garbage_numbers():
+    signal = _make_signal(entry_low="не число", entry_high="", invalidation="90", target="130")
+    assert signal_parser.calc_risk_reward_ratio(signal) is None
+
 
 _SAMPLE_SINGLE = """BEATUSDT • 15m
 [Свежий] [RSI + Bollinger Touch] [Шорт]

@@ -347,7 +347,8 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
     """Общий конвейер обработки ОДНОГО кандидата - неважно, от базовой
     RSI/Bollinger (см. _build_signal выше) или от любой стратегии из
     strategies.ADDITIONAL_STRATEGIES: cooldown -> подтверждение старшими
-    ТФ (multi_timeframe.refine_signal) -> порог публикации -> очередь.
+    ТФ (multi_timeframe.refine_signal) -> минимальный R:R (см.
+    config.MIN_RISK_REWARD_RATIO) -> порог публикации -> очередь.
     Возвращает True, если сигнал был добавлен в очередь.
 
     on_signal_accepted(signal, symbol) - опциональный колбэк, вызывается
@@ -381,6 +382,22 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
     if refined is None:
         return False
     signal = refined
+
+    ratio = signal_parser.calc_risk_reward_ratio(signal)
+    if ratio is not None and ratio < config.MIN_RISK_REWARD_RATIO:
+        # Структурная отбраковка ПО ЦИФРАМ, а не по score - см.
+        # config.MIN_RISK_REWARD_RATIO. Плохой R:R не спасти более
+        # высоким score: даже самый "уверенный" сигнал в среднем
+        # убыточен, если потенциальный убыток больше потенциальной
+        # прибыли. Ratio is None (числа не распознались) сюда не
+        # попадает - в этом случае не блокируем сигнал ИЗ-ЗА ошибки
+        # расчёта, а не потому что R:R реально плохой (та же логика,
+        # что и у остальных "мягких" проверок в этом файле).
+        logger.info(
+            "Сканер: %s %s - R:R 1:%.2f хуже порога 1:%.2f - отсеян",
+            ticker, signal.strategy, ratio, config.MIN_RISK_REWARD_RATIO,
+        )
+        return False
 
     if int(signal.score) < strategy_tuner.get_effective_min_score(signal.strategy, min_score_cfg):
         # Сигнал есть, но он не пройдёт порог публикации (см.
