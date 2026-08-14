@@ -750,6 +750,25 @@ def mark_alerted(ticker: str, direction_key: str) -> None:
     _set(key, time.time())
 
 
+# --- Cooldown по символу после стоп-аута реальной позиции (см.
+# config.FUTURES_SYMBOL_COOLDOWN_HOURS, futures_position_monitor,
+# futures_signal_bridge.execute_signal) - персистентно, а не in-memory,
+# чтобы переживать рестарт/деплой бота: без этого cooldown "сбрасывался"
+# бы при каждом деплое и не защищал бы от входа сразу после рестарта.
+
+def was_recently_stopped_out(symbol: str, cooldown_hours: float) -> bool:
+    key = f"futures_stop_cooldown:{symbol.upper()}"
+    last_ts = _get(key, None)
+    if last_ts is None:
+        return False
+    return (time.time() - last_ts) < cooldown_hours * 3600
+
+
+def mark_stopped_out(symbol: str) -> None:
+    key = f"futures_stop_cooldown:{symbol.upper()}"
+    _set(key, time.time())
+
+
 # --- Отступ при сбое генерации/публикации (opinion, article) ---
 # Без этого временный сбой (например, 429 от Groq) приводил бы к
 # попытке заново на КАЖДОМ тике (раз в ~10 минут) до победного конца,

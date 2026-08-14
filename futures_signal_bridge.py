@@ -180,6 +180,14 @@ def execute_signal(
                     "чтобы не наращивать размер по одному и тому же тикеру от нескольких стратегий", params.symbol)
         return None
 
+    if queue_manager.was_recently_stopped_out(params.symbol, config.FUTURES_SYMBOL_COOLDOWN_HOURS):
+        logger.info(
+            "futures_signal_bridge: %s недавно закрылся по стопу (cooldown %.1fч) - пропускаю сигнал, "
+            "чтобы не входить сразу после потенциального \"пиления\" у того же уровня",
+            params.symbol, config.FUTURES_SYMBOL_COOLDOWN_HOURS,
+        )
+        return None
+
     try:
         mark_price = client.get_mark_price(params.symbol)
     except FuturesApiError as e:

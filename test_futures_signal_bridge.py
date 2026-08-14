@@ -5,6 +5,7 @@
 ДО open_protected_position (плохие числа, score, зона входа, дубликат
 позиции)."""
 import futures_signal_bridge as bridge
+import queue_manager
 import risk_guard
 from futures_client import FuturesApiError
 from signal_parser import RsiSignal
@@ -125,6 +126,26 @@ def test_execute_signal_skips_if_position_already_open():
     assert result is None
     # не должны были даже дойти до проверки цены - незачем
     assert ("get_mark_price", "SOLUSDT") not in client.calls
+
+
+def test_execute_signal_skips_if_symbol_in_stop_cooldown(monkeypatch):
+    monkeypatch.setattr(queue_manager, "was_recently_stopped_out", lambda *a, **k: True)
+    client = _FakeClient(position=None)
+    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=0)
+    assert result is None
+    # не должны были дойти до проверки цены - cooldown отсеивает раньше
+    assert ("get_mark_price", "SOLUSDT") not in client.calls
+
+
+def test_execute_signal_proceeds_if_symbol_not_in_stop_cooldown(monkeypatch):
+    monkeypatch.setattr(queue_manager, "was_recently_stopped_out", lambda *a, **k: False)
+    client = _FakeClient(position=None, mark_price=110.0)  # цена вне зоны входа -> отказ дальше по цепочке
+    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=0)
+    assert result is None
+    # дошли до проверки цены, значит cooldown не заблокировал сигнал раньше времени
+    assert ("get_mark_price", "SOLUSDT") in client.calls
 
 
 def test_execute_signal_skips_if_position_check_fails():

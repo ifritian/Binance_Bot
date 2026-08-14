@@ -285,6 +285,63 @@ def test_check_open_positions_uses_original_quantity_for_pnl_pct(monkeypatch):
     assert "зафиксированные ранее частичным профитом" in captured["message"]
 
 
+def test_check_open_positions_marks_cooldown_on_real_stop_loss(monkeypatch):
+    monkeypatch.setattr(fpm.queue_manager, "get_open_futures_positions", lambda: [_record()])
+    monkeypatch.setattr(fpm.queue_manager, "replace_open_futures_positions", lambda items: None)
+    monkeypatch.setattr(fpm.queue_manager, "append_closed_futures_positions", lambda items: None)
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda *a, **k: None)
+
+    marked = []
+    monkeypatch.setattr(fpm.queue_manager, "mark_stopped_out", lambda symbol: marked.append(symbol))
+
+    # stop_order_id (11) не висит (сработал), take_profit_order_id (12) всё ещё висит -> сработал стоп.
+    client = _FakeClient(position=None, open_orders=[{"orderId": 12}], income_rows=[])
+    summary = fpm.check_open_positions(client)
+
+    assert summary == {"still_open": 0, "closed": 1}
+    assert marked == ["BTCUSDT"]
+
+
+def test_check_open_positions_does_not_mark_cooldown_on_take_profit(monkeypatch):
+    monkeypatch.setattr(fpm.queue_manager, "get_open_futures_positions", lambda: [_record()])
+    monkeypatch.setattr(fpm.queue_manager, "replace_open_futures_positions", lambda items: None)
+    monkeypatch.setattr(fpm.queue_manager, "append_closed_futures_positions", lambda items: None)
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda *a, **k: None)
+
+    marked = []
+    monkeypatch.setattr(fpm.queue_manager, "mark_stopped_out", lambda symbol: marked.append(symbol))
+
+    # take_profit_order_id (12) не висит (сработал), stop_order_id (11) всё ещё висит -> сработал тейк.
+    client = _FakeClient(position=None, open_orders=[{"orderId": 11}], income_rows=[])
+    summary = fpm.check_open_positions(client)
+
+    assert summary == {"still_open": 0, "closed": 1}
+    assert marked == []
+
+
+def test_check_open_positions_does_not_mark_cooldown_on_breakeven_stop_after_partial(monkeypatch):
+    # После частичного профита stop_order_id держит стоп в безубытке, а не
+    # исходный стоп-лосс - это не тот же сигнал "монета пилит у уровня",
+    # поэтому cooldown НЕ должен ставиться (см. futures_position_monitor
+    # docstring и роадмап фазы 2, пункт P1.1).
+    record = _record(partial_tp_done=True, stop_order_id=201, take_profit_order_id=202)
+    monkeypatch.setattr(fpm.queue_manager, "get_open_futures_positions", lambda: [record])
+    monkeypatch.setattr(fpm.queue_manager, "replace_open_futures_positions", lambda items: None)
+    monkeypatch.setattr(fpm.queue_manager, "append_closed_futures_positions", lambda items: None)
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda *a, **k: None)
+
+    marked = []
+    monkeypatch.setattr(fpm.queue_manager, "mark_stopped_out", lambda symbol: marked.append(symbol))
+
+    # stop_order_id (201, теперь безубыток) не висит, take_profit_order_id
+    # (202, теперь трейлинг) всё ещё висит -> сработал именно безубыток.
+    client = _FakeClient(position=None, open_orders=[{"orderId": 202}], income_rows=[])
+    summary = fpm.check_open_positions(client)
+
+    assert summary == {"still_open": 0, "closed": 1}
+    assert marked == []
+
+
 def test_check_open_positions_no_mark_price_skips_partial_profit(monkeypatch):
     # markPrice отсутствует/0 (например, поле не пришло от биржи) - не
     # должны падать или вызывать частичный профит с мусорной ценой.
