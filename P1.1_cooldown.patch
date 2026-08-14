@@ -1,0 +1,185 @@
+--- a/config.py
++++ b/config.py
+@@ -120,6 +120,17 @@
+ # теоретического.
+ MIN_RISK_REWARD_RATIO = float(os.environ.get("MIN_RISK_REWARD_RATIO", "1.2"))
+ 
++# Cooldown (в часах) на конкретный символ после закрытия реальной позиции
++# по стопу (см. futures_position_monitor._determine_close_reason_and_cleanup,
++# futures_signal_bridge.execute_signal) - если сигнал по этому же символу
++# приходит раньше, чем прошло это время с последнего стоп-аута, он
++# пропускается для РЕАЛЬНОГО исполнения (посты в Telegram/Binance Square
++# не затрагиваются - см. queue_manager.mark_stopped_out). Идея: сразу
++# после стоп-аута повышен статистический шанс, что цена продолжает
++# "пилить" в районе того же уровня, а не даёт чистый новый сетап - см.
++# роадмап фазы 2, пункт P1.1.
++FUTURES_SYMBOL_COOLDOWN_HOURS = float(os.environ.get("FUTURES_SYMBOL_COOLDOWN_HOURS", "4"))
++
+ # Ручной денай-лист тикеров (без USDT, через запятую, например "PHB,FLOKI") -
+ # для монет, которые формально проходят фильтр по объёму (scanner.
+ # MIN_QUOTE_VOLUME_24H), но по своей природе слишком тонкие/волатильные и
+--- a/queue_manager.py
++++ b/queue_manager.py
+@@ -750,6 +750,25 @@
+     _set(key, time.time())
+ 
+ 
++# --- Cooldown по символу после стоп-аута реальной позиции (см.
++# config.FUTURES_SYMBOL_COOLDOWN_HOURS, futures_position_monitor,
++# futures_signal_bridge.execute_signal) - персистентно, а не in-memory,
++# чтобы переживать рестарт/деплой бота: без этого cooldown "сбрасывался"
++# бы при каждом деплое и не защищал бы от входа сразу после рестарта.
++
++def was_recently_stopped_out(symbol: str, cooldown_hours: float) -> bool:
++    key = f"futures_stop_cooldown:{symbol.upper()}"
++    last_ts = _get(key, None)
++    if last_ts is None:
++        return False
++    return (time.time() - last_ts) < cooldown_hours * 3600
++
++
++def mark_stopped_out(symbol: str) -> None:
++    key = f"futures_stop_cooldown:{symbol.upper()}"
++    _set(key, time.time())
++
++
+ # --- Отступ при сбое генерации/публикации (opinion, article) ---
+ # Без этого временный сбой (например, 429 от Groq) приводил бы к
+ # попытке заново на КАЖДОМ тике (раз в ~10 минут) до победного конца,
+--- a/futures_position_monitor.py
++++ b/futures_position_monitor.py
+@@ -280,6 +280,14 @@
+         reason = _determine_close_reason_and_cleanup(client, record, symbol)
+         pnl = _realized_pnl_since(client, symbol, record.get("opened_at", 0))
+ 
++        # Cooldown по символу (см. config.FUTURES_SYMBOL_COOLDOWN_HOURS) -
++        # только для НАСТОЯЩЕГО стоп-лосса, не для стопа в безубытке после
++        # частичного профита: там цена уже успела пройти в нашу пользу и
++        # статистического сигнала "монета пилит у этого уровня" нет в той
++        # же мере - см. роадмап фазы 2, пункт P1.1.
++        if reason == "стоп-лосс (SL)":
++            queue_manager.mark_stopped_out(symbol)
++
+         closed_record = dict(record, closed_at=time.time(), close_reason=reason, realized_pnl=pnl)
+         newly_closed.append(closed_record)
+ 
+--- a/futures_signal_bridge.py
++++ b/futures_signal_bridge.py
+@@ -180,6 +180,14 @@
+                     "чтобы не наращивать размер по одному и тому же тикеру от нескольких стратегий", params.symbol)
+         return None
+ 
++    if queue_manager.was_recently_stopped_out(params.symbol, config.FUTURES_SYMBOL_COOLDOWN_HOURS):
++        logger.info(
++            "futures_signal_bridge: %s недавно закрылся по стопу (cooldown %.1fч) - пропускаю сигнал, "
++            "чтобы не входить сразу после потенциального \"пиления\" у того же уровня",
++            params.symbol, config.FUTURES_SYMBOL_COOLDOWN_HOURS,
++        )
++        return None
++
+     try:
+         mark_price = client.get_mark_price(params.symbol)
+     except FuturesApiError as e:
+--- a/test_futures_signal_bridge.py
++++ b/test_futures_signal_bridge.py
+@@ -5,6 +5,7 @@
+ ДО open_protected_position (плохие числа, score, зона входа, дубликат
+ позиции)."""
+ import futures_signal_bridge as bridge
++import queue_manager
+ import risk_guard
+ from futures_client import FuturesApiError
+ from signal_parser import RsiSignal
+@@ -127,6 +128,26 @@
+     assert ("get_mark_price", "SOLUSDT") not in client.calls
+ 
+ 
++def test_execute_signal_skips_if_symbol_in_stop_cooldown(monkeypatch):
++    monkeypatch.setattr(queue_manager, "was_recently_stopped_out", lambda *a, **k: True)
++    client = _FakeClient(position=None)
++    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
++                                    risk_limits=_limits(), min_score=0)
++    assert result is None
++    # не должны были дойти до проверки цены - cooldown отсеивает раньше
++    assert ("get_mark_price", "SOLUSDT") not in client.calls
++
++
++def test_execute_signal_proceeds_if_symbol_not_in_stop_cooldown(monkeypatch):
++    monkeypatch.setattr(queue_manager, "was_recently_stopped_out", lambda *a, **k: False)
++    client = _FakeClient(position=None, mark_price=110.0)  # цена вне зоны входа -> отказ дальше по цепочке
++    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
++                                    risk_limits=_limits(), min_score=0)
++    assert result is None
++    # дошли до проверки цены, значит cooldown не заблокировал сигнал раньше времени
++    assert ("get_mark_price", "SOLUSDT") in client.calls
++
++
+ def test_execute_signal_skips_if_position_check_fails():
+     client = _FakeClient(fail_position_check=True)
+     result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
+--- a/test_futures_position_monitor.py
++++ b/test_futures_position_monitor.py
+@@ -285,6 +285,63 @@
+     assert "зафиксированные ранее частичным профитом" in captured["message"]
+ 
+ 
++def test_check_open_positions_marks_cooldown_on_real_stop_loss(monkeypatch):
++    monkeypatch.setattr(fpm.queue_manager, "get_open_futures_positions", lambda: [_record()])
++    monkeypatch.setattr(fpm.queue_manager, "replace_open_futures_positions", lambda items: None)
++    monkeypatch.setattr(fpm.queue_manager, "append_closed_futures_positions", lambda items: None)
++    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda *a, **k: None)
++
++    marked = []
++    monkeypatch.setattr(fpm.queue_manager, "mark_stopped_out", lambda symbol: marked.append(symbol))
++
++    # stop_order_id (11) не висит (сработал), take_profit_order_id (12) всё ещё висит -> сработал стоп.
++    client = _FakeClient(position=None, open_orders=[{"orderId": 12}], income_rows=[])
++    summary = fpm.check_open_positions(client)
++
++    assert summary == {"still_open": 0, "closed": 1}
++    assert marked == ["BTCUSDT"]
++
++
++def test_check_open_positions_does_not_mark_cooldown_on_take_profit(monkeypatch):
++    monkeypatch.setattr(fpm.queue_manager, "get_open_futures_positions", lambda: [_record()])
++    monkeypatch.setattr(fpm.queue_manager, "replace_open_futures_positions", lambda items: None)
++    monkeypatch.setattr(fpm.queue_manager, "append_closed_futures_positions", lambda items: None)
++    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda *a, **k: None)
++
++    marked = []
++    monkeypatch.setattr(fpm.queue_manager, "mark_stopped_out", lambda symbol: marked.append(symbol))
++
++    # take_profit_order_id (12) не висит (сработал), stop_order_id (11) всё ещё висит -> сработал тейк.
++    client = _FakeClient(position=None, open_orders=[{"orderId": 11}], income_rows=[])
++    summary = fpm.check_open_positions(client)
++
++    assert summary == {"still_open": 0, "closed": 1}
++    assert marked == []
++
++
++def test_check_open_positions_does_not_mark_cooldown_on_breakeven_stop_after_partial(monkeypatch):
++    # После частичного профита stop_order_id держит стоп в безубытке, а не
++    # исходный стоп-лосс - это не тот же сигнал "монета пилит у уровня",
++    # поэтому cooldown НЕ должен ставиться (см. futures_position_monitor
++    # docstring и роадмап фазы 2, пункт P1.1).
++    record = _record(partial_tp_done=True, stop_order_id=201, take_profit_order_id=202)
++    monkeypatch.setattr(fpm.queue_manager, "get_open_futures_positions", lambda: [record])
++    monkeypatch.setattr(fpm.queue_manager, "replace_open_futures_positions", lambda items: None)
++    monkeypatch.setattr(fpm.queue_manager, "append_closed_futures_positions", lambda items: None)
++    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda *a, **k: None)
++
++    marked = []
++    monkeypatch.setattr(fpm.queue_manager, "mark_stopped_out", lambda symbol: marked.append(symbol))
++
++    # stop_order_id (201, теперь безубыток) не висит, take_profit_order_id
++    # (202, теперь трейлинг) всё ещё висит -> сработал именно безубыток.
++    client = _FakeClient(position=None, open_orders=[{"orderId": 202}], income_rows=[])
++    summary = fpm.check_open_positions(client)
++
++    assert summary == {"still_open": 0, "closed": 1}
++    assert marked == []
++
++
+ def test_check_open_positions_no_mark_price_skips_partial_profit(monkeypatch):
+     # markPrice отсутствует/0 (например, поле не пришло от биржи) - не
+     # должны падать или вызывать частичный профит с мусорной ценой.

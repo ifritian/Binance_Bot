@@ -120,6 +120,17 @@ MIN_SIGNAL_SCORE_TO_PUBLISH = int(os.environ.get("MIN_SIGNAL_SCORE_TO_PUBLISH", 
 # теоретического.
 MIN_RISK_REWARD_RATIO = float(os.environ.get("MIN_RISK_REWARD_RATIO", "1.2"))
 
+# Cooldown (в часах) на конкретный символ после закрытия реальной позиции
+# по стопу (см. futures_position_monitor._determine_close_reason_and_cleanup,
+# futures_signal_bridge.execute_signal) - если сигнал по этому же символу
+# приходит раньше, чем прошло это время с последнего стоп-аута, он
+# пропускается для РЕАЛЬНОГО исполнения (посты в Telegram/Binance Square
+# не затрагиваются - см. queue_manager.mark_stopped_out). Идея: сразу
+# после стоп-аута повышен статистический шанс, что цена продолжает
+# "пилить" в районе того же уровня, а не даёт чистый новый сетап - см.
+# роадмап фазы 2, пункт P1.1.
+FUTURES_SYMBOL_COOLDOWN_HOURS = float(os.environ.get("FUTURES_SYMBOL_COOLDOWN_HOURS", "4"))
+
 # Ручной денай-лист тикеров (без USDT, через запятую, например "PHB,FLOKI") -
 # для монет, которые формально проходят фильтр по объёму (scanner.
 # MIN_QUOTE_VOLUME_24H), но по своей природе слишком тонкие/волатильные и

@@ -280,6 +280,14 @@ def check_open_positions(client) -> dict:
         reason = _determine_close_reason_and_cleanup(client, record, symbol)
         pnl = _realized_pnl_since(client, symbol, record.get("opened_at", 0))
 
+        # Cooldown по символу (см. config.FUTURES_SYMBOL_COOLDOWN_HOURS) -
+        # только для НАСТОЯЩЕГО стоп-лосса, не для стопа в безубытке после
+        # частичного профита: там цена уже успела пройти в нашу пользу и
+        # статистического сигнала "монета пилит у этого уровня" нет в той
+        # же мере - см. роадмап фазы 2, пункт P1.1.
+        if reason == "стоп-лосс (SL)":
+            queue_manager.mark_stopped_out(symbol)
+
         closed_record = dict(record, closed_at=time.time(), close_reason=reason, realized_pnl=pnl)
         newly_closed.append(closed_record)
 
