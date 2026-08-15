@@ -127,6 +127,7 @@ def test_process_signal_candidate_calls_callback_when_accepted(monkeypatch):
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
     monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
+    monkeypatch.setattr(scanner.shadow_filters, "evaluate_and_log", lambda signal, symbol: None)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -146,6 +147,7 @@ def test_process_signal_candidate_without_callback_is_backward_compatible(monkey
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
     monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
+    monkeypatch.setattr(scanner.shadow_filters, "evaluate_and_log", lambda signal, symbol: None)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -160,6 +162,7 @@ def test_process_signal_candidate_callback_exception_does_not_propagate(monkeypa
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
     monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
+    monkeypatch.setattr(scanner.shadow_filters, "evaluate_and_log", lambda signal, symbol: None)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -177,6 +180,7 @@ def test_process_signal_candidate_callback_not_called_when_below_score(monkeypat
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
     monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
+    monkeypatch.setattr(scanner.shadow_filters, "evaluate_and_log", lambda signal, symbol: None)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
 
     calls = []
@@ -198,6 +202,7 @@ def test_process_signal_candidate_accepts_score_exactly_at_threshold(monkeypatch
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
     monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
+    monkeypatch.setattr(scanner.shadow_filters, "evaluate_and_log", lambda signal, symbol: None)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -231,6 +236,7 @@ def test_process_signal_candidate_rejected_when_risk_reward_below_threshold(monk
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
     monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
+    monkeypatch.setattr(scanner.shadow_filters, "evaluate_and_log", lambda signal, symbol: None)
     monkeypatch.setattr(config, "MIN_RISK_REWARD_RATIO", 1.2)
 
     calls = []
@@ -248,6 +254,7 @@ def test_process_signal_candidate_accepts_risk_reward_exactly_at_threshold(monke
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
     monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
+    monkeypatch.setattr(scanner.shadow_filters, "evaluate_and_log", lambda signal, symbol: None)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -267,6 +274,7 @@ def test_process_signal_candidate_high_score_does_not_rescue_poor_risk_reward(mo
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
     monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
+    monkeypatch.setattr(scanner.shadow_filters, "evaluate_and_log", lambda signal, symbol: None)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(config, "MIN_RISK_REWARD_RATIO", 1.2)
 
@@ -291,6 +299,7 @@ def test_process_signal_candidate_not_blocked_when_ratio_cannot_be_computed(monk
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda s, sym: s)
     monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
+    monkeypatch.setattr(scanner.shadow_filters, "evaluate_and_log", lambda signal, symbol: None)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)

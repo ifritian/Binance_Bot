@@ -860,6 +860,29 @@ def append_closed_outcomes(new_items: list[dict]) -> None:
     _set("closed_outcomes", items)
 
 
+# --- P3.9: теневые (shadow) вердикты будущих фильтров (shadow_filters.py) ---
+# Отдельно от open/closed_outcomes выше - это НЕ трекинг результата
+# сделки, а лог "заблокировал бы фильтр X этот сигнал или нет", записанный
+# ДО публикации, чтобы позже (см. shadow_filters.get_shadow_stats)
+# сопоставить его с РЕАЛЬНЫМ исходом из closed_outcomes и сравнить
+# win-rate "заблокировано" vs "пропущено" - без того, чтобы фильтр
+# реально резал сигналы вслепую первые 1-2 недели.
+
+_SHADOW_VERDICTS_MAX = 5000  # много разных фильтров * много сигналов - выше потолок, чем у outcomes
+
+
+def get_shadow_verdicts() -> list[dict]:
+    return _get("shadow_filter_verdicts", [])
+
+
+def add_shadow_verdict(record: dict) -> None:
+    items = get_shadow_verdicts()
+    items.append(record)
+    if len(items) > _SHADOW_VERDICTS_MAX:
+        items = items[-_SHADOW_VERDICTS_MAX:]
+    _set("shadow_filter_verdicts", items)
+
+
 def get_recent_post_openers() -> list:
     """Опенеры (первые символы) последних опубликованных постов across
     ВСЕХ форматов - см. post_memory.py (anti-repetition guard)."""

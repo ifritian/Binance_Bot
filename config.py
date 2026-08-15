@@ -507,6 +507,26 @@ ATR_PERCENTILE_THRESHOLD = float(os.environ.get("ATR_PERCENTILE_THRESHOLD", "95"
 # надёжнее одного - отсюда и бонус к score.
 STRATEGY_CONFLUENCE_BONUS = int(os.environ.get("STRATEGY_CONFLUENCE_BONUS", "10"))
 
+# --- P3.9: теневой (shadow) прогон будущих фильтров (shadow_filters.py) ---
+# Параметры для КОНКРЕТНЫХ теневых проверок, зарегистрированных в
+# shadow_filters.SHADOW_FILTERS. Сами проверки НИЧЕГО не блокируют
+# (см. docstring shadow_filters.py) - эти константы просто задают
+# ПОРОГ, при котором каждая проверка сочла бы сигнал подозрительным,
+# если/когда фильтр когда-нибудь станет боевым.
+#
+# P1.3 (в тени): часы UTC с исторически тонкой ликвидностью на крипто-
+# рынке - примерно 00:00-06:00 UTC, когда закрыты и азиатская дневная
+# сессия, и американская/европейская. Не точная наука, отправная точка
+# для сбора статистики, а не окончательное утверждение - именно для
+# этого и нужен теневой прогон, а не сразу боевой порог.
+THIN_HOURS_UTC = frozenset(
+    int(h) for h in os.environ.get("THIN_HOURS_UTC", "0,1,2,3,4,5").split(",") if h.strip()
+)
+# Выходные (суббота/воскресенье) - оборот на споте и деривативах Binance
+# заметно ниже будних дней, что статистически может означать более
+# рваные движения и менее надёжные пробои/развороты.
+THIN_LIQUIDITY_WEEKEND_ENABLED = os.environ.get("THIN_LIQUIDITY_WEEKEND_ENABLED", "true").strip().lower() == "true"
+
 # --- Автоматическое исполнение сигналов (см. futures_signal_bridge.py/
 # futures_auto_trade.py) ---
 # ОТДЕЛЬНЫЙ (и по умолчанию СТРОЖЕ) порог score от MIN_SIGNAL_SCORE_TO_PUBLISH
