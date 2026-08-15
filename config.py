@@ -131,6 +131,18 @@ MIN_RISK_REWARD_RATIO = float(os.environ.get("MIN_RISK_REWARD_RATIO", "1.2"))
 # роадмап фазы 2, пункт P1.1.
 FUTURES_SYMBOL_COOLDOWN_HOURS = float(os.environ.get("FUTURES_SYMBOL_COOLDOWN_HOURS", "4"))
 
+# Сколько часов реальная futures-позиция может простоять открытой без
+# срабатывания ни стопа, ни тейка, прежде чем futures_position_monitor
+# принудительно закроет её по рынку (см. _close_timed_out_position,
+# futures_executor.emergency_close_all) с close_reason "таймаут". Аналог
+# OUTCOME_MAX_TRACK_HOURS выше, но для РЕАЛЬНЫХ денег, а не для трекинга
+# статистики: без верхней границы позиция может зависнуть на недели в
+# затяжном боковике далеко от обоих уровней, замораживая маржу и держа
+# риск открытым куда дольше, чем предполагал исходный сетап сигнала.
+# Значение по умолчанию совпадает с OUTCOME_MAX_TRACK_HOURS намеренно -
+# тот же горизонт "сетап уже не тот же самый", что и для симуляций.
+BINANCE_FUTURES_MAX_POSITION_AGE_HOURS = float(os.environ.get("BINANCE_FUTURES_MAX_POSITION_AGE_HOURS", "48"))
+
 # Ручной денай-лист тикеров (без USDT, через запятую, например "PHB,FLOKI") -
 # для монет, которые формально проходят фильтр по объёму (scanner.
 # MIN_QUOTE_VOLUME_24H), но по своей природе слишком тонкие/волатильные и
