@@ -19,7 +19,7 @@ Bands(20, 2) на 15-минутных свечах, ищет:
 """
 import logging
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 import requests
@@ -169,6 +169,50 @@ def _atr_percentile_exceeded(symbol: str) -> bool:
     history = sorted(atr_series[-(lookback + 1):-1])
     threshold = _percentile(history, config.ATR_PERCENTILE_THRESHOLD)
     return current_atr > threshold
+
+
+def _apply_strategy_confluence_bonus(candidates: list) -> list:
+    """P2.6 - бонус к score, если 2+ РАЗНЫЕ стратегии сигналят
+    ОДНОВРЕМЕННО (на одном и том же тике сканера, см. run_scan) по
+    ОДНОМУ И ТОМУ ЖЕ символу в ОДНОМ И ТОМ ЖЕ направлении. Называется
+    strategy_confluence (см. config.STRATEGY_CONFLUENCE_BONUS), а не
+    просто "confluence" - это слово уже занято multi_timeframe.
+    evaluate_confluence (согласие СТАРШИХ ТАЙМФРЕЙМОВ ОДНОЙ и той же
+    стратегии). Здесь другая ось: согласие НЕСКОЛЬКИХ РАЗНЫХ стратегий
+    на одном и том же таймфрейме - см. роадмап фазы 2, пункт P2.6.
+
+    Работает на уровне СПИСКА кандидатов ОДНОГО тика по ОДНОМУ символу
+    (см. run_scan, где _build_signal и все strategies.
+    ADDITIONAL_STRATEGIES пробуются на одних и тех же свечах) - если бы
+    эта проверка делалась уже после того, как сигналы разошлись по
+    отдельным вызовам _process_signal_candidate, не было бы способа
+    узнать про "соседние" сигналы того же тика.
+
+    len(strategies_agreeing) < 2 (а не просто len(indices) < 2) -
+    защита от вырожденного случая (одна и та же строка strategy дважды
+    в списке кандидатов): согласие сигнала САМ С СОБОЙ - не конфлюенция,
+    должны быть РАЗНЫЕ стратегии."""
+    if len(candidates) < 2:
+        return candidates
+
+    by_direction: dict = {}
+    for i, c in enumerate(candidates):
+        key = "long" if signal_parser.is_long_direction(c.direction) else "short"
+        by_direction.setdefault(key, []).append(i)
+
+    boosted = list(candidates)
+    for indices in by_direction.values():
+        strategies_agreeing = {candidates[i].strategy for i in indices}
+        if len(strategies_agreeing) < 2:
+            continue
+
+        for i in indices:
+            c = boosted[i]
+            new_score = min(int(c.score) + config.STRATEGY_CONFLUENCE_BONUS, 100)
+            boosted[i] = replace(
+                c, score=str(new_score), quality=strategies._quality_from_score(new_score),
+            )
+    return boosted
 
 
 def _calc_rsi_series(closes: list[float], period: int = RSI_PERIOD) -> list[float]:
@@ -508,6 +552,8 @@ def run_scan(on_signal_accepted=None) -> int:
     strategies.ADDITIONAL_STRATEGIES (MACD Crossover, Donchian Breakout
     и т.п.). Стратегии не обязаны совпадать друг с другом - сигнал от
     ЛЮБОЙ из них независимо проходит дальше (см. _process_signal_candidate).
+    Если 2+ из них согласны по символу и направлению в ЭТОМ ЖЕ тике -
+    score каждого бустится (см. _apply_strategy_confluence_bonus, P2.6).
     Это НЕ увеличивает число сетевых запросов - все стратегии работают
     на одном и том же наборе свечей одного fetch'а на символ."""
     universe = _fetch_universe()
@@ -527,6 +573,8 @@ def run_scan(on_signal_accepted=None) -> int:
         candidates = [c for c in candidates if c is not None]
         if not candidates:
             continue  # ни одна стратегия ничего не нашла по этой паре прямо сейчас
+
+        candidates = _apply_strategy_confluence_bonus(candidates)
 
         if not _is_actively_trading(symbol):
             # Пара всё ещё встречается в /ticker/24hr зеркала (иногда
