@@ -77,6 +77,34 @@ def _quality_from_score(score: int) -> str:
     return "Aggressive"
 
 
+def calc_atr_series(candles: list, period: int = 14) -> list[float]:
+    """Как calc_atr ниже, но возвращает ВЕСЬ ряд ATR (одно значение на
+    каждую свечу начиная с period-й), а не только последнее число.
+    Нужно, чтобы сравнить ТЕКУЩИЙ ATR с распределением ATR за
+    предыдущие N свечей - см. P2.5 (config.ATR_PERCENTILE_LOOKBACK_DAYS/
+    _THRESHOLD, scanner._atr_percentile_exceeded). calc_atr ниже - это
+    просто calc_atr_series(...)[-1], один и тот же расчёт, без
+    дублирования логики Уайлдера в двух местах.
+
+    [] (не None), если данных недостаточно - вызывающему коду проще
+    работать с пустым списком (можно сразу проверить len()/срез), чем
+    отдельно обрабатывать None."""
+    if len(candles) < period + 1:
+        return []
+    true_ranges = []
+    for i in range(1, len(candles)):
+        high, low, prev_close = candles[i].high, candles[i].low, candles[i - 1].close
+        true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+    if len(true_ranges) < period:
+        return []
+    atr = sum(true_ranges[:period]) / period
+    series = [atr]
+    for tr in true_ranges[period:]:
+        atr = (atr * (period - 1) + tr) / period
+        series.append(atr)
+    return series
+
+
 def calc_atr(candles: list, period: int = 14) -> Optional[float]:
     """Average True Range по Уайлдеру (то же рекурсивное сглаживание,
     что и RSI в этом проекте - см. multi_timeframe._calc_rsi_last) -
@@ -97,18 +125,8 @@ def calc_atr(candles: list, period: int = 14) -> Optional[float]:
     чего (нет предыдущего close). Вызывающий код (scanner._build_signal
     и стратегии этого файла) в этом случае тихо откатывается на старую
     формулу с фиксированным %, а не пропускает сигнал."""
-    if len(candles) < period + 1:
-        return None
-    true_ranges = []
-    for i in range(1, len(candles)):
-        high, low, prev_close = candles[i].high, candles[i].low, candles[i - 1].close
-        true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
-    if len(true_ranges) < period:
-        return None
-    atr = sum(true_ranges[:period]) / period
-    for tr in true_ranges[period:]:
-        atr = (atr * (period - 1) + tr) / period
-    return atr
+    series = calc_atr_series(candles, period)
+    return series[-1] if series else None
 
 
 def build_macd_signal(symbol: str, candles: list, quote_volume: float) -> Optional[RsiSignal]:

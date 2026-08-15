@@ -73,6 +73,29 @@ def test_calc_atr_small_for_flat_candles():
     assert atr == pytest_approx_or_close(0.1, 0.01)
 
 
+# --- calc_atr_series (P2.5) ---
+
+def test_calc_atr_series_empty_with_insufficient_candles():
+    assert strat.calc_atr_series(_flat_candles(n=5), period=14) == []
+
+
+def test_calc_atr_series_last_value_matches_calc_atr():
+    # calc_atr - это ровно calc_atr_series(...)[-1] (см. docstring) -
+    # оба должны давать одно и то же число на одних и тех же свечах.
+    candles = _sine_candles(n=80)
+    series = strat.calc_atr_series(candles, period=14)
+    assert series != []
+    assert math.isclose(series[-1], strat.calc_atr(candles, period=14), rel_tol=1e-12)
+
+
+def test_calc_atr_series_length_matches_candles_minus_period():
+    # period+1 свечей дают РОВНО 1 значение (первое, "seed") - дальше
+    # плюс один элемент ряда на каждую дополнительную свечу.
+    candles = _flat_candles(n=20)
+    series = strat.calc_atr_series(candles, period=14)
+    assert len(series) == len(candles) - 14
+
+
 def pytest_approx_or_close(expected, tol):
     """Мини-хелпер вместо pytest.approx - раннер этого файла не
     гарантированно имеет pytest (см. __main__ ниже, это самодостаточный

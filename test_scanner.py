@@ -126,6 +126,7 @@ def _accepted_signal(ticker="SOL", score="85"):
 def test_process_signal_candidate_calls_callback_when_accepted(monkeypatch):
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -144,6 +145,7 @@ def test_process_signal_candidate_without_callback_is_backward_compatible(monkey
     # Поведение по умолчанию (on_signal_accepted=None) не должно меняться.
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -157,6 +159,7 @@ def test_process_signal_candidate_callback_exception_does_not_propagate(monkeypa
     # превращать успешный accept в исключение наружу.
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -173,6 +176,7 @@ def test_process_signal_candidate_callback_exception_does_not_propagate(monkeypa
 def test_process_signal_candidate_callback_not_called_when_below_score(monkeypatch):
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
 
     calls = []
@@ -193,6 +197,7 @@ def test_process_signal_candidate_accepts_score_exactly_at_threshold(monkeypatch
     # отбрасывались - ни в очередь постов, ни колбэку futures-автотрейдинга.
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -225,6 +230,7 @@ def _poor_rr_signal(ratio: float, score="85"):
 def test_process_signal_candidate_rejected_when_risk_reward_below_threshold(monkeypatch):
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
     monkeypatch.setattr(config, "MIN_RISK_REWARD_RATIO", 1.2)
 
     calls = []
@@ -241,6 +247,7 @@ def test_process_signal_candidate_accepts_risk_reward_exactly_at_threshold(monke
     # проходит", та же логика, что и в off-by-one тесте для score выше).
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -259,6 +266,7 @@ def test_process_signal_candidate_high_score_does_not_rescue_poor_risk_reward(mo
     # ключевая идея фильтра: плохой R:R не спасти высоким score.
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(config, "MIN_RISK_REWARD_RATIO", 1.2)
 
@@ -282,6 +290,7 @@ def test_process_signal_candidate_not_blocked_when_ratio_cannot_be_computed(monk
     )
     monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
     monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda s, sym: s)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: False)
     monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
     monkeypatch.setattr(scanner.queue_manager, "push_pending_signal", lambda signal: None)
     monkeypatch.setattr(scanner.queue_manager, "mark_alerted", lambda ticker, direction: None)
@@ -289,6 +298,86 @@ def test_process_signal_candidate_not_blocked_when_ratio_cannot_be_computed(monk
 
     accepted = scanner._process_signal_candidate(signal, "SOLUSDT", "SOL", min_score_cfg=70)
     assert accepted is True
+
+
+# --- P2.5: фильтр по перцентилю ATR (config.ATR_PERCENTILE_LOOKBACK_DAYS/_THRESHOLD) ---
+
+def _daily_kline_row(high: float, low: float, close: float):
+    """Подделка под сырую строку /klines от Binance - _fetch_klines
+    читает open=[1], high=[2], low=[3], close=[4], объём=[7] по индексу."""
+    return ["0", "0", str(high), str(low), str(close), "0", "0", "0"]
+
+
+def _flat_daily_rows(n: int, price: float = 100.0, day_range: float = 1.0):
+    """n дневных свечей с одинаковым диапазоном day_range - ATR должен
+    сойтись к этому же диапазону и оставаться постоянным изо дня в день."""
+    return [_daily_kline_row(price + day_range / 2, price - day_range / 2, price) for _ in range(n)]
+
+
+def test_percentile_matches_hand_computed_linear_interpolation():
+    # [10, 20, 30, 40, 50], перцентиль 75 -> k=(5-1)*0.75=3.0 -> ровно 40.
+    assert scanner._percentile([10, 20, 30, 40, 50], 75) == 40
+    # перцентиль 50 (медиана нечётной длины) -> ровно средний элемент.
+    assert scanner._percentile([10, 20, 30, 40, 50], 50) == 30
+    # перцентиль 0/100 -> крайние значения.
+    assert scanner._percentile([10, 20, 30], 0) == 10
+    assert scanner._percentile([10, 20, 30], 100) == 30
+
+
+def test_atr_percentile_exceeded_false_on_insufficient_data(monkeypatch):
+    monkeypatch.setattr(config, "ATR_PERCENTILE_LOOKBACK_DAYS", 30)
+    monkeypatch.setattr(config, "ATR_PERIOD", 14)
+    # Свечей меньше, чем lookback+period+1 - мягкий отказ, не блокируем.
+    monkeypatch.setattr(scanner.requests, "get", lambda *a, **k: _FakeResponse(_flat_daily_rows(10)))
+    assert scanner._atr_percentile_exceeded("BTCUSDT") is False
+
+
+def test_atr_percentile_exceeded_false_on_network_error(monkeypatch):
+    def _boom(*a, **k):
+        raise scanner.requests.RequestException("симулированная сетевая ошибка")
+    monkeypatch.setattr(config, "ATR_PERCENTILE_LOOKBACK_DAYS", 30)
+    monkeypatch.setattr(config, "ATR_PERIOD", 14)
+    monkeypatch.setattr(scanner.requests, "get", _boom)
+    assert scanner._atr_percentile_exceeded("BTCUSDT") is False
+
+
+def test_atr_percentile_exceeded_false_for_stable_volatility(monkeypatch):
+    # Волатильность стабильна изо дня в день - текущий ATR примерно
+    # равен всей своей же истории, не должен превышать 95-й перцентиль.
+    monkeypatch.setattr(config, "ATR_PERCENTILE_LOOKBACK_DAYS", 30)
+    monkeypatch.setattr(config, "ATR_PERIOD", 14)
+    monkeypatch.setattr(config, "ATR_PERCENTILE_THRESHOLD", 95)
+    rows = _flat_daily_rows(30 + 14 + 1, price=100.0, day_range=1.0)
+    monkeypatch.setattr(scanner.requests, "get", lambda *a, **k: _FakeResponse(rows))
+    assert scanner._atr_percentile_exceeded("BTCUSDT") is False
+
+
+def test_atr_percentile_exceeded_true_for_volatility_spike(monkeypatch):
+    # 30+14 дней стабильной узкой волатильности (диапазон 1.0), затем
+    # РЕЗКИЙ всплеск последнего дня (диапазон 50.0) - текущий ATR
+    # должен намного превысить 95-й перцентиль спокойной истории.
+    monkeypatch.setattr(config, "ATR_PERCENTILE_LOOKBACK_DAYS", 30)
+    monkeypatch.setattr(config, "ATR_PERIOD", 14)
+    monkeypatch.setattr(config, "ATR_PERCENTILE_THRESHOLD", 95)
+    rows = _flat_daily_rows(30 + 14, price=100.0, day_range=1.0)
+    rows.append(_daily_kline_row(high=150.0, low=100.0, close=100.0))  # диапазон 50 - аномалия
+    monkeypatch.setattr(scanner.requests, "get", lambda *a, **k: _FakeResponse(rows))
+    assert scanner._atr_percentile_exceeded("BTCUSDT") is True
+
+
+def test_process_signal_candidate_rejected_when_atr_percentile_exceeded(monkeypatch):
+    monkeypatch.setattr(scanner.queue_manager, "was_recently_alerted", lambda *a, **k: False)
+    monkeypatch.setattr(scanner.multi_timeframe, "refine_signal", lambda signal, symbol: signal)
+    monkeypatch.setattr(scanner.strategy_tuner, "get_effective_min_score", lambda strategy, cfg: cfg)
+    monkeypatch.setattr(scanner, "_atr_percentile_exceeded", lambda symbol: True)
+
+    calls = []
+    accepted = scanner._process_signal_candidate(
+        _accepted_signal(), "SOLUSDT", "SOL", min_score_cfg=70,
+        on_signal_accepted=lambda s, sym: calls.append((s.ticker, sym)),
+    )
+    assert accepted is False
+    assert calls == []
 
 
 if __name__ == "__main__":
