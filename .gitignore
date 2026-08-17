@@ -10,3 +10,5 @@ __pycache__/
 # Виртуальное окружение
 .venv/
 venv/
+
+bot_state.db
