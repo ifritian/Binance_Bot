@@ -167,6 +167,23 @@ def set_cached_coingecko_id(ticker: str, coingecko_id: str) -> None:
     _set(f"coingecko_id:{ticker.upper()}", coingecko_id)
 
 
+# --- Кэш беты монеты к BTC (см. risk_guard._get_symbol_beta, P3.7) ---
+# В отличие от coingecko_id выше - ЭТОТ кэш имеет TTL (бета пересчитана
+# на несвежих данных вводит в заблуждение, а не просто неоптимальна), но
+# TTL проверяется НА СТОРОНЕ risk_guard (см. get_cached_symbol_beta -
+# отдаёт (beta, computed_at), а не только beta), а не здесь - здесь
+# только хранение, без знания о том, какой TTL сейчас актуален.
+
+def get_cached_symbol_beta(symbol: str) -> Optional[tuple[float, float]]:
+    """(beta, computed_at) или None, если для символа ещё ничего не
+    посчитано."""
+    return _get(f"symbol_beta:{symbol.upper()}", None)
+
+
+def set_cached_symbol_beta(symbol: str, beta: float) -> None:
+    _set(f"symbol_beta:{symbol.upper()}", (beta, time.time()))
+
+
 # --- Отложенный пост, ждущий своего окна публикации ---
 # Может быть двух видов: "digest" (текстовый дайджест с числами)
 # или "image" (качественный инсайт по картинке, без чисел).

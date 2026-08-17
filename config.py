@@ -432,6 +432,37 @@ BINANCE_FUTURES_TRAILING_CALLBACK_PCT = float(os.environ.get("BINANCE_FUTURES_TR
 _max_same_dir_env = os.environ.get("BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS", "2").strip()
 BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS = int(_max_same_dir_env) if _max_same_dir_env else None
 
+# --- P3.7: лимит экспозиции по КОРРЕЛЯЦИИ/БЕТА к BTC (см. risk_guard.
+# _beta_weighted_exposure), не по простому счёту позиций из A4 выше -
+# A4 сам по себе не различает "2 лонга по низко-коррелированным
+# монетам" и "2 лонга по монетам, которые почти всегда двигаются как
+# BTC" - во втором случае это статистически куда ближе к ОДНОЙ большой
+# ставке, чем ко второму независимому лонгу, даже если формально это
+# два разных слота из A4. Здесь вместо счёта позиций суммируется их
+# БЕТА к BTC (см. risk_guard._calc_beta) - высоко-бетовая монета
+# "весит" в лимите больше, чем низко-бетовая.
+#
+# None = проверка выключена (как и у A4 - opt-in, не ломает старое
+# поведение по умолчанию). НЕ включено по умолчанию (в отличие от A4) -
+# это НОВЫЙ, менее обкатанный механизм, отдельная сознательная
+# настройка, а не автоматическая замена A4 (оба лимита могут работать
+# одновременно - они проверяют разные вещи и не исключают друг друга).
+BINANCE_FUTURES_MAX_BETA_EXPOSURE = (
+    float(os.environ["BINANCE_FUTURES_MAX_BETA_EXPOSURE"])
+    if os.environ.get("BINANCE_FUTURES_MAX_BETA_EXPOSURE", "").strip()
+    else None
+)
+# Сколько дней дневных свечей использовать для расчёта беты (ковариация
+# дневных лог-доходностей монеты и BTC, делённая на дисперсию доходностей
+# BTC - тот же класс расчёта, что в любом финансовом учебнике для беты
+# акции к индексу, только индекс здесь один - BTCUSDT).
+SYMBOL_BETA_LOOKBACK_DAYS = int(os.environ.get("SYMBOL_BETA_LOOKBACK_DAYS", "30"))
+# Бета не пересчитывается на КАЖДУЮ попытку открыть позицию (лишний
+# сетевой запрос на каждый вызов check_new_position_allowed, а бета
+# монеты не меняется от часа к часу) - кэшируется персистентно (см.
+# queue_manager.get/set_cached_symbol_beta) на это число часов.
+SYMBOL_BETA_CACHE_TTL_HOURS = float(os.environ.get("SYMBOL_BETA_CACHE_TTL_HOURS", "24"))
+
 # --- A5: вето по funding rate перед входом в перпетуалку (см.
 # futures_signal_bridge._funding_rate_veto) - если funding rate сильно
 # ПРОТИВ направления сделки (лонг платит при высоком положительном
