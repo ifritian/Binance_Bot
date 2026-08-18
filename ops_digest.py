@@ -5,19 +5,23 @@ ops_digest.py - ежедневный отчёт владельцу в личку
 ПРОБЛЕМА, которую закрывает этот модуль: сейчас, чтобы понять, всё ли в
 порядке с ботом, нужно руками лезть в GitHub Actions и читать вывод
 check_state.py по частям (мы это делали вручную весь этот разговор).
-Этот модуль раз в сутки сам присылает в личку короткую сводку: когда
+Этот модуль раз в сутки, под конец дня по UTC (см. config.
+OPS_DIGEST_HOUR_UTC), сам присылает в личку короткую сводку: когда
 последний раз публиковалось, что со статистикой сигналов (симуляция по
 цене) и реальными сделками testnet за последние 24ч и за всё время,
 взведён ли kill switch, сколько открыто позиций.
 
 Переиспользует уже существующую инфраструктуру, не добавляет новую:
-- alerting.send_owner_alert - та же функция, что шлёт алерты о сбоях
-  (см. её docstring про троттлинг) - дайджест использует тот же
-  механизм с alert_key="daily_ops_digest" и порогом
-  config.OPS_DIGEST_MIN_REPEAT_HOURS, поэтому не нужен отдельный
+- _is_end_of_day_window (см. config.OPS_DIGEST_HOUR_UTC) - гейт по часу
+  UTC, чтобы отправка была привязана к концу дня, а не плавала по
+  времени суток. alerting.send_owner_alert - та же функция, что шлёт
+  алерты о сбоях (см. её docstring про троттлинг) - дайджест использует
+  тот же механизм с alert_key="daily_ops_digest" и порогом
+  config.OPS_DIGEST_MIN_REPEAT_HOURS как подстраховку от дубля внутри
+  окна конца дня (см. её докстринг выше), поэтому не нужен отдельный
   APScheduler/cron - этот скрипт можно (и нужно) запускать на каждом
-  обычном тике бота (как futures_position_monitor.py), а троттлинг
-  внутри send_owner_alert сам не даст слать чаще раза в сутки.
+  обычном тике бота (как futures_position_monitor.py): вне окна конца
+  дня main() выходит сразу же, почти бесплатно.
 - outcome_tracker.get_accuracy_stats/get_futures_trade_stats - те же
   функции, что видно в check_state.py, просто с days=1 и days=None.
 - risk_guard.status - тот же снимок, что risk_guard_cli.py status.
@@ -37,6 +41,7 @@ check_state.py по частям (мы это делали вручную вес
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 import alerting
 import config
@@ -104,6 +109,16 @@ def _risk_section() -> str:
     )
 
 
+def _is_end_of_day_window() -> bool:
+    """True, если сейчас "конец дня" по UTC (см. config.OPS_DIGEST_HOUR_UTC) -
+    т.е. текущий час >= порога. НЕ "час ровно == порогу", потому что
+    GitHub Actions не гарантирует cron минута-в-минуту (см. .github/
+    workflows/bot.yml) - строгое равенство рискует пропустить окно
+    целиком, если конкретно этот тик задержался и попал уже на
+    следующий час."""
+    return datetime.now(timezone.utc).hour >= config.OPS_DIGEST_HOUR_UTC
+
+
 def build_digest() -> str:
     return (
         f"{_publishing_section()}\n\n"
@@ -114,6 +129,13 @@ def build_digest() -> str:
 
 
 def main() -> int:
+    if not _is_end_of_day_window():
+        logger.debug(
+            "ops_digest: сейчас не конец дня по UTC (порог час %d) - пропускаю без попытки отправки",
+            config.OPS_DIGEST_HOUR_UTC,
+        )
+        return 0
+
     message = build_digest()
     sent = alerting.send_owner_alert(
         "daily_ops_digest", message, min_repeat_hours=config.OPS_DIGEST_MIN_REPEAT_HOURS,

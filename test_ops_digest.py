@@ -132,6 +132,7 @@ def test_main_uses_neutral_prefix_not_alert(monkeypatch):
         captured["alert_key"] = alert_key
         return True
 
+    monkeypatch.setattr(ops_digest, "_is_end_of_day_window", lambda: True)
     monkeypatch.setattr(ops_digest, "build_digest", lambda: "digest text")
     monkeypatch.setattr(ops_digest.alerting, "send_owner_alert", fake_send_owner_alert)
 
@@ -139,3 +140,45 @@ def test_main_uses_neutral_prefix_not_alert(monkeypatch):
 
     assert captured["alert_key"] == "daily_ops_digest"
     assert captured["prefix"] != "\u26a0\ufe0f Bot alert"
+
+
+# --- Гейт "конец дня" (config.OPS_DIGEST_HOUR_UTC) ---
+
+def test_is_end_of_day_window_true_at_and_after_threshold_hour(monkeypatch):
+    monkeypatch.setattr(ops_digest.config, "OPS_DIGEST_HOUR_UTC", 23)
+
+    class _FakeDatetime(ops_digest.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 7, 27, 23, 0, tzinfo=ops_digest.timezone.utc)
+
+    monkeypatch.setattr(ops_digest, "datetime", _FakeDatetime)
+    assert ops_digest._is_end_of_day_window() is True
+
+
+def test_is_end_of_day_window_false_before_threshold_hour(monkeypatch):
+    monkeypatch.setattr(ops_digest.config, "OPS_DIGEST_HOUR_UTC", 23)
+
+    class _FakeDatetime(ops_digest.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 7, 27, 14, 0, tzinfo=ops_digest.timezone.utc)
+
+    monkeypatch.setattr(ops_digest, "datetime", _FakeDatetime)
+    assert ops_digest._is_end_of_day_window() is False
+
+
+def test_main_skips_without_attempting_send_outside_window(monkeypatch):
+    monkeypatch.setattr(ops_digest, "_is_end_of_day_window", lambda: False)
+
+    def _boom():
+        raise AssertionError("build_digest не должен вызываться вне окна конца дня")
+    monkeypatch.setattr(ops_digest, "build_digest", _boom)
+
+    called = []
+    monkeypatch.setattr(ops_digest.alerting, "send_owner_alert", lambda *a, **k: called.append(1) or True)
+
+    result = ops_digest.main()
+
+    assert result == 0
+    assert called == []
