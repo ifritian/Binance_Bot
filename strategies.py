@@ -129,6 +129,24 @@ def calc_atr(candles: list, period: int = 14) -> Optional[float]:
     return series[-1] if series else None
 
 
+def _atr_target(entry_price: float, is_long: bool, atr: Optional[float]) -> Optional[float]:
+    """P3.8 - цель (target), масштабированная по ТЕКУЩЕЙ волатильности
+    (ATR) от цены входа, вместо фиксированной СТРУКТУРНОЙ дистанции
+    (измеренное движение канала / ближайший экстремум последних N
+    свечей - см. config.USE_ATR_TARGETS про мотивацию). На затихшем
+    рынке структурная цель может оказаться нереалистично широкой
+    относительно текущего потенциала хода, на резко разогнавшемся -
+    наоборот, заниженной.
+
+    None, если atr не посчитан (недостаточно свечей, см. calc_atr) -
+    вызывающий код сам решает откат на прежнюю (структурную) логику,
+    та же ответственность за фолбэк, что и у ATR-буфера стопа (A2)."""
+    if atr is None:
+        return None
+    distance = atr * config.ATR_TARGET_MULTIPLIER
+    return entry_price + distance if is_long else entry_price - distance
+
+
 def build_macd_signal(symbol: str, candles: list, quote_volume: float) -> Optional[RsiSignal]:
     """Ищет свежее пересечение линии MACD и сигнальной линии на ПОСЛЕДНЕЙ
     свече (пересечение произошло только что, не несколько свечей назад -
@@ -180,21 +198,25 @@ def build_macd_signal(symbol: str, candles: list, quote_volume: float) -> Option
 
     recent_high = max(c.high for c in candles[-20:])
     recent_low = min(c.low for c in candles[-20:])
-    atr_buffer = None
-    if config.USE_ATR_STOPS:
+    atr = None
+    if config.USE_ATR_STOPS or config.USE_ATR_TARGETS:
         atr = calc_atr(candles, config.ATR_PERIOD)
-        atr_buffer = atr * config.ATR_STOP_MULTIPLIER if atr else None
+    atr_buffer = atr * config.ATR_STOP_MULTIPLIER if (config.USE_ATR_STOPS and atr) else None
 
     if bullish_cross:
         direction = "Лонг (бычье пересечение MACD)"
         entry_low, entry_high = current_price * 0.999, current_price * 1.002
         invalidation = recent_low - atr_buffer if atr_buffer else recent_low * 0.997
-        target = recent_high
+        target = _atr_target(current_price, True, atr) if config.USE_ATR_TARGETS else None
+        if target is None:
+            target = recent_high
     else:
         direction = "Шорт (медвежье пересечение MACD)"
         entry_low, entry_high = current_price * 0.998, current_price * 1.001
         invalidation = recent_high + atr_buffer if atr_buffer else recent_high * 1.003
-        target = recent_low
+        target = _atr_target(current_price, False, atr) if config.USE_ATR_TARGETS else None
+        if target is None:
+            target = recent_low
 
     ticker = symbol.replace("USDT", "")
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -256,10 +278,10 @@ def build_breakout_signal(symbol: str, candles: list, quote_volume: float) -> Op
     current_price = current.close
     breakout_strength_pct = abs(current_price - level) / level * 100 if level else 0.0
 
-    atr_buffer = None
-    if config.USE_ATR_STOPS:
+    atr = None
+    if config.USE_ATR_STOPS or config.USE_ATR_TARGETS:
         atr = calc_atr(candles, config.ATR_PERIOD)
-        atr_buffer = atr * config.ATR_STOP_MULTIPLIER if atr else None
+    atr_buffer = atr * config.ATR_STOP_MULTIPLIER if (config.USE_ATR_STOPS and atr) else None
 
     score = 30 + min(breakout_strength_pct * 25, 30)
     score += min((volume_ratio - BREAKOUT_VOLUME_RATIO_MIN) * 10, 20)  # чем сильнее объём выше порога, тем увереннее пробой
@@ -281,12 +303,22 @@ def build_breakout_signal(symbol: str, candles: list, quote_volume: float) -> Op
         direction = "Лонг (пробой диапазона вверх)"
         entry_low, entry_high = current_price * 0.999, current_price * 1.003
         invalidation = level - atr_buffer if atr_buffer else level * 0.995
-        target = level + range_height
+        # P3.8 - см. _atr_target и config.USE_ATR_TARGETS: тот же
+        # принцип, что и в build_signal выше - фиксированное измеренное
+        # движение канала (range_height) может оказаться нереалистично
+        # узким на резко разогнавшемся после пробоя рынке (ATR тогда
+        # выше своей нормы) или неоправданно широким на затихшем.
+        # Фолбэк на range_height, если ATR не посчитан или выключено.
+        target = _atr_target(current_price, True, atr) if config.USE_ATR_TARGETS else None
+        if target is None:
+            target = level + range_height
     else:
         direction = "Шорт (пробой диапазона вниз)"
         entry_low, entry_high = current_price * 0.997, current_price * 1.001
         invalidation = level + atr_buffer if atr_buffer else level * 1.005
-        target = level - range_height
+        target = _atr_target(current_price, False, atr) if config.USE_ATR_TARGETS else None
+        if target is None:
+            target = level - range_height
 
     description = (
         f"Пробой {BREAKOUT_LOOKBACK}-свечного диапазона {'вверх' if breakout_up else 'вниз'} на 15m, "

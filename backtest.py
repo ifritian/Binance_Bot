@@ -308,6 +308,13 @@ def main() -> None:
                          help=f"Период ATR при --use-atr-stops (по умолчанию {config.ATR_PERIOD})")
     parser.add_argument("--atr-multiplier", type=float, default=config.ATR_STOP_MULTIPLIER,
                          help=f"Множитель ATR при --use-atr-stops (по умолчанию {config.ATR_STOP_MULTIPLIER})")
+    parser.add_argument("--use-atr-targets", action="store_true",
+                         help="P3.8: ATR вместо фиксированного измеренного движения/экстремума для цели "
+                              "(см. config.USE_ATR_TARGETS) - для сравнения с дефолтным поведением "
+                              "прогоните ОДНИ И ТЕ ЖЕ --symbols/--days дважды, с этим флагом и без, "
+                              "и сравните aggregate_report, как и с --use-atr-stops")
+    parser.add_argument("--atr-target-multiplier", type=float, default=config.ATR_TARGET_MULTIPLIER,
+                         help=f"Множитель ATR при --use-atr-targets (по умолчанию {config.ATR_TARGET_MULTIPLIER})")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -321,6 +328,13 @@ def main() -> None:
         config.ATR_STOP_MULTIPLIER = args.atr_multiplier
         logger.info("A2: ATR-стопы ВКЛЮЧЕНЫ для этого прогона (период=%d, множитель=%.2f)",
                     args.atr_period, args.atr_multiplier)
+
+    if args.use_atr_targets:
+        config.USE_ATR_TARGETS = True
+        config.ATR_PERIOD = args.atr_period
+        config.ATR_TARGET_MULTIPLIER = args.atr_target_multiplier
+        logger.info("P3.8: ATR-цели ВКЛЮЧЕНЫ для этого прогона (период=%d, множитель=%.2f)",
+                    args.atr_period, args.atr_target_multiplier)
 
     if args.symbols:
         symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
