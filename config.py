@@ -495,6 +495,18 @@ ATR_STOP_MULTIPLIER = float(os.environ.get("ATR_STOP_MULTIPLIER", "1.5"))
 ATR_PERCENTILE_LOOKBACK_DAYS = int(os.environ.get("ATR_PERCENTILE_LOOKBACK_DAYS", "30"))
 ATR_PERCENTILE_THRESHOLD = float(os.environ.get("ATR_PERCENTILE_THRESHOLD", "95"))
 
+# --- P2.6: бонус к score за конфлюенцию НЕСКОЛЬКИХ СТРАТЕГИЙ (scanner.
+# _apply_strategy_confluence_bonus) ---
+# Намеренно НЕ "confluence" без уточнения - это слово уже занято
+# multi_timeframe.evaluate_confluence, где речь о согласии СТАРШИХ
+# ТАЙМФРЕЙМОВ ОДНОЙ и той же стратегии. Здесь другая ось: согласие
+# НЕСКОЛЬКИХ РАЗНЫХ стратегий (RSI/Bollinger, MACD Crossover, Donchian
+# Breakout и т.п. - см. strategies.ADDITIONAL_STRATEGIES) на ОДНОМ и
+# том же таймфрейме и тике сканера по одному и тому же символу и
+# направлению. Два независимых сигнала о том же самом статистически
+# надёжнее одного - отсюда и бонус к score.
+STRATEGY_CONFLUENCE_BONUS = int(os.environ.get("STRATEGY_CONFLUENCE_BONUS", "10"))
+
 # --- Автоматическое исполнение сигналов (см. futures_signal_bridge.py/
 # futures_auto_trade.py) ---
 # ОТДЕЛЬНЫЙ (и по умолчанию СТРОЖЕ) порог score от MIN_SIGNAL_SCORE_TO_PUBLISH

@@ -380,6 +380,115 @@ def test_process_signal_candidate_rejected_when_atr_percentile_exceeded(monkeypa
     assert calls == []
 
 
+# --- P2.6: конфлюенция нескольких стратегий (config.STRATEGY_CONFLUENCE_BONUS) ---
+
+def _confluence_signal(strategy: str, direction: str, score: str = "60"):
+    from signal_parser import RsiSignal
+    return RsiSignal(
+        ticker="SOL", timeframe="15m", strategy=strategy, direction=direction,
+        current_price="100", rsi_now="25", score=score, quality="Moderate",
+        entry_low="99", entry_high="101", invalidation="95", target="110",
+        change_24h="+1%", volume="10M", rsi_live="25", created_at="2026-07-29 00:00:00 UTC",
+        description="тест", raw_text="тест",
+    )
+
+
+def test_confluence_bonus_not_applied_to_single_candidate():
+    candidates = [_confluence_signal("RSI", "Лонг (перепроданность)")]
+    result = scanner._apply_strategy_confluence_bonus(candidates)
+    assert result[0].score == "60"
+
+
+def test_confluence_bonus_applied_when_two_strategies_agree(monkeypatch):
+    monkeypatch.setattr(config, "STRATEGY_CONFLUENCE_BONUS", 10)
+    candidates = [
+        _confluence_signal("RSI + Bollinger Touch", "Лонг (перепроданность)", score="60"),
+        _confluence_signal("MACD Crossover", "Лонг (бычье пересечение MACD)", score="55"),
+    ]
+    result = scanner._apply_strategy_confluence_bonus(candidates)
+    assert result[0].score == "70"
+    assert result[1].score == "65"
+    # score вырос сквозь границу 70 - quality должно пересчитаться (Aggressive -> Moderate).
+    assert result[0].quality == "Moderate"
+
+
+def test_confluence_bonus_not_applied_when_directions_disagree():
+    # Одна LONG, одна SHORT по тому же символу в этом же тике - это не
+    # согласие, а конфликт, бонуса быть не должно ни у одной из них.
+    candidates = [
+        _confluence_signal("RSI + Bollinger Touch", "Лонг (перепроданность)", score="60"),
+        _confluence_signal("MACD Crossover", "Шорт (медвежье пересечение MACD)", score="55"),
+    ]
+    result = scanner._apply_strategy_confluence_bonus(candidates)
+    assert result[0].score == "60"
+    assert result[1].score == "55"
+
+
+def test_confluence_bonus_not_applied_when_same_strategy_appears_twice():
+    # Вырожденный случай: одна и та же strategy дважды в списке -
+    # согласие сигнала САМ С СОБОЙ не считается конфлюенцией, нужны
+    # РАЗНЫЕ стратегии (см. docstring _apply_strategy_confluence_bonus).
+    candidates = [
+        _confluence_signal("RSI + Bollinger Touch", "Лонг (перепроданность)", score="60"),
+        _confluence_signal("RSI + Bollinger Touch", "Лонг (перепроданность)", score="55"),
+    ]
+    result = scanner._apply_strategy_confluence_bonus(candidates)
+    assert result[0].score == "60"
+    assert result[1].score == "55"
+
+
+def test_confluence_bonus_score_capped_at_100(monkeypatch):
+    monkeypatch.setattr(config, "STRATEGY_CONFLUENCE_BONUS", 10)
+    candidates = [
+        _confluence_signal("RSI + Bollinger Touch", "Лонг (перепроданность)", score="95"),
+        _confluence_signal("MACD Crossover", "Лонг (бычье пересечение MACD)", score="98"),
+    ]
+    result = scanner._apply_strategy_confluence_bonus(candidates)
+    assert result[0].score == "100"
+    assert result[1].score == "100"
+
+
+def test_confluence_bonus_applies_to_all_three_when_three_strategies_agree(monkeypatch):
+    monkeypatch.setattr(config, "STRATEGY_CONFLUENCE_BONUS", 5)
+    candidates = [
+        _confluence_signal("RSI + Bollinger Touch", "Лонг (перепроданность)", score="60"),
+        _confluence_signal("MACD Crossover", "Лонг (бычье пересечение MACD)", score="60"),
+        _confluence_signal("Donchian Breakout", "Лонг (пробой вверх)", score="60"),
+    ]
+    result = scanner._apply_strategy_confluence_bonus(candidates)
+    assert [c.score for c in result] == ["65", "65", "65"]
+
+
+def test_run_scan_applies_confluence_bonus_before_processing(monkeypatch):
+    # Интеграционный тест: убеждаемся, что _apply_strategy_confluence_bonus
+    # реально встроен в конвейер run_scan (не только протестирован как
+    # изолированная функция) - базовая RSI-стратегия и одна доп.
+    # стратегия из ADDITIONAL_STRATEGIES соглашаются по направлению на
+    # одном и том же символе/тике, и _process_signal_candidate должен
+    # получить УЖЕ забустенный score.
+    monkeypatch.setattr(config, "STRATEGY_CONFLUENCE_BONUS", 10)
+    monkeypatch.setattr(scanner, "_fetch_universe", lambda: [("SOLUSDT", 10_000_000.0)])
+    monkeypatch.setattr(scanner, "_fetch_klines", lambda symbol, **k: [object()])  # непустой список - достаточно
+    monkeypatch.setattr(scanner, "_is_actively_trading", lambda symbol: True)
+    monkeypatch.setattr(
+        scanner, "_build_signal",
+        lambda symbol, candles, qv: _confluence_signal("RSI + Bollinger Touch", "Лонг (перепроданность)", score="60"),
+    )
+    monkeypatch.setattr(
+        scanner.strategies, "ADDITIONAL_STRATEGIES",
+        [lambda symbol, candles, qv: _confluence_signal("MACD Crossover", "Лонг (бычье пересечение MACD)", score="55")],
+    )
+
+    seen_scores = []
+    monkeypatch.setattr(
+        scanner, "_process_signal_candidate",
+        lambda signal, symbol, ticker, min_score_cfg, on_signal_accepted=None: seen_scores.append(signal.score) or False,
+    )
+
+    scanner.run_scan()
+    assert seen_scores == ["70", "65"]  # 60+10 и 55+10 - оба забустены
+
+
 if __name__ == "__main__":
     import sys
     import types
