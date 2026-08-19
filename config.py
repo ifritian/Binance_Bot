@@ -187,7 +187,9 @@ POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))
 # был другим (например, 24ч для более сглаженной картины) - по умолчанию
 # совпадают, но это не обязано быть так.
 TREASURY_PERIOD_HOURS = float(os.environ.get("TREASURY_PERIOD_HOURS", "12"))
-TREASURY_INTERVAL_HOURS = float(os.environ.get("TREASURY_INTERVAL_HOURS", "12"))
+# Было 12 (дважды в день) - слишком часто для "среза" индекса, снижает
+# ценность каждого отдельного поста. Раз в сутки.
+TREASURY_INTERVAL_HOURS = float(os.environ.get("TREASURY_INTERVAL_HOURS", "24"))
 TREASURY_JITTER_HOURS = float(os.environ.get("TREASURY_JITTER_HOURS", "1"))
 
 # Сколько часов сигнал/картинка может пролежать в очереди публикации,
@@ -212,16 +214,23 @@ OUTCOME_MAX_TRACK_HOURS = float(os.environ.get("OUTCOME_MAX_TRACK_HOURS", "48"))
 # предупреждение не дублируется чаще, чем раз в DEAD_MANS_SWITCH_HOURS
 # (см. alerting.send_owner_alert).
 DEAD_MANS_SWITCH_HOURS = float(os.environ.get("DEAD_MANS_SWITCH_HOURS", "24"))
-# Ежедневный дайджест владельцу (см. ops_digest.py) - не строгий
-# интервал с джиттером (как у публичных форматов - см. TREASURY_INTERVAL_HOURS
-# и соседей), а троттлинг-порог для alerting.send_owner_alert: "не чаще,
-# чем раз в ЭТО число часов". 20, а не 24 - чтобы прогон, случившийся
-# чуть раньше суток из-за дрожания расписания cron, не откладывал
-# дайджест на лишние часы (та же идея, что и джиттер у публичных
-# форматов, только реализована через порог троттлинга, а не отдельное
-# окно - дайджест не идёт в публичную ленту, ему не нужна такая же
-# точность момента публикации).
+# Ежедневный дайджест владельцу (см. ops_digest.py) - привязан к
+# КОНКРЕТНОМУ часу UTC (см. OPS_DIGEST_HOUR_UTC ниже), не к плавающему
+# интервалу от последнего запуска - раньше был именно троттлинг-порог
+# "не чаще раза в ЭТО число часов" без привязки к времени суток, из-за
+# чего момент отправки постепенно "дрейфовал" на произвольное время
+# дня. Теперь OPS_DIGEST_HOUR_UTC решает, В КАКОЙ час отправлять
+# (под конец дня), а это число часов - подстраховка от дубля: воркфлоу
+# гоняется каждые ~10 минут (см. .github/workflows/bot.yml), значит
+# внутри целевого часа UTC этот шаг попытается сработать до 6 раз -
+# троттлинг гарантирует, что реально уйдёт только первая попытка.
 OPS_DIGEST_MIN_REPEAT_HOURS = float(os.environ.get("OPS_DIGEST_MIN_REPEAT_HOURS", "20"))
+# Час UTC, начиная с которого дайджест считается "под конец дня" (см.
+# ops_digest._is_end_of_day_window) - используется как ">= этого часа",
+# а не "== этому часу ровно", чтобы задержка запуска воркфлоу (GitHub
+# Actions не гарантирует cron минута-в-минуту) не пропустила окно
+# целиком. 23 = последний час UTC-суток.
+OPS_DIGEST_HOUR_UTC = int(os.environ.get("OPS_DIGEST_HOUR_UTC", "23"))
 
 # --- Еженедельный отчёт точности сигналов (accuracy_report_generator.py) ---
 # Отдельный формат от currency/opinion/treasury/article - публикует
@@ -277,7 +286,9 @@ TELEGRAM_GLOSSARY_JITTER_HOURS = float(os.environ.get("TELEGRAM_GLOSSARY_JITTER_
 # --- Формат "Опросы/AMA" (Telegram, Этап 3) - см. telegram_engagement.py ---
 TELEGRAM_POLL_INTERVAL_HOURS = float(os.environ.get("TELEGRAM_POLL_INTERVAL_HOURS", "120"))
 TELEGRAM_POLL_JITTER_HOURS = float(os.environ.get("TELEGRAM_POLL_JITTER_HOURS", "10"))
-TELEGRAM_AMA_INTERVAL_HOURS = float(os.environ.get("TELEGRAM_AMA_INTERVAL_HOURS", "240"))
+# Было 240 (раз в 10 дней) - слишком редко для формата, который держит
+# вовлечённость аудитории. Раз в 2 дня.
+TELEGRAM_AMA_INTERVAL_HOURS = float(os.environ.get("TELEGRAM_AMA_INTERVAL_HOURS", "48"))
 TELEGRAM_AMA_JITTER_HOURS = float(os.environ.get("TELEGRAM_AMA_JITTER_HOURS", "12"))
 
 # --- Формат "Предложения по ребалансировке" (Telegram, Этап 4, A) ---
