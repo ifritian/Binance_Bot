@@ -98,17 +98,17 @@ def _fetch_universe() -> list[tuple[str, float]]:
     return candidates[:TOP_N_BY_VOLUME]
 
 
-def _fetch_klines(symbol: str, limit: int = 100) -> list[_Candle]:
+def _fetch_klines(symbol: str, limit: int = 100, interval: str = TIMEFRAME) -> list[_Candle]:
     try:
         resp = requests.get(
             f"{_BASE_URL}/klines",
-            params={"symbol": symbol, "interval": TIMEFRAME, "limit": limit},
+            params={"symbol": symbol, "interval": interval, "limit": limit},
             timeout=15,
         )
         resp.raise_for_status()
         rows = resp.json()
     except requests.RequestException as e:
-        logger.debug("Не удалось получить свечи %s: %s", symbol, e)
+        logger.debug("Не удалось получить свечи %s (%s): %s", symbol, interval, e)
         return []
 
     return [
@@ -118,6 +118,57 @@ def _fetch_klines(symbol: str, limit: int = 100) -> list[_Candle]:
         )
         for r in rows
     ]
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    """Линейная интерполяция перцентиля (та же формула, что у
+    numpy.percentile с method='linear' по умолчанию) - pct от 0 до 100,
+    sorted_values уже отсортирован по возрастанию. Не используем
+    statistics.quantiles напрямую - та требует n>=2 точек и возвращает
+    фиксированный набор cut-точек, а не произвольный процент, plus для
+    ATR_PERCENTILE_THRESHOLD=95 (не круглое n=100) пришлось бы всё равно
+    делать index-арифметику поверх неё - проще одна явная функция."""
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    k = (len(sorted_values) - 1) * (pct / 100)
+    f = int(k)
+    c = min(f + 1, len(sorted_values) - 1)
+    if f == c:
+        return sorted_values[f]
+    return sorted_values[f] + (sorted_values[c] - sorted_values[f]) * (k - f)
+
+
+def _atr_percentile_exceeded(symbol: str) -> bool:
+    """P2.5 - см. docstring у config.ATR_PERCENTILE_LOOKBACK_DAYS/
+    _THRESHOLD про то, почему именно дневные свечи. Тянет
+    ATR_PERCENTILE_LOOKBACK_DAYS + ATR_PERIOD + 1 дневных свечей,
+    считает по ним ряд ATR(ATR_PERIOD) (см. strategies.calc_atr_series)
+    и сравнивает ПОСЛЕДНЕЕ (текущее) значение с перцентилем
+    ATR_PERCENTILE_THRESHOLD по ПРЕДЫДУЩИМ ATR_PERCENTILE_LOOKBACK_DAYS
+    значениям (БЕЗ учёта самого текущего - иначе текущий экстремум сам
+    себя "разбавлял" бы в собственном распределении, и порог было бы
+    почти невозможно превысить).
+
+    Мягкий отказ (False - НЕ отсеиваем сигнал) при недостатке данных
+    или сетевой ошибке - тот же принцип, что и у остальных "мягких"
+    проверок в этом модуле (ratio is None и т.п. в
+    _process_signal_candidate): фильтр не должен ронять публикацию
+    сигнала из-за собственного сбоя, а не потому что волатильность
+    реально аномальна."""
+    lookback = config.ATR_PERCENTILE_LOOKBACK_DAYS
+    period = config.ATR_PERIOD
+    daily_candles = _fetch_klines(symbol, limit=lookback + period + 1, interval="1d")
+    atr_series = strategies.calc_atr_series(daily_candles, period)
+
+    # Нужно минимум lookback+1 точек: 1 "текущая" + lookback предыдущих
+    # для построения распределения, которое с ней сравниваем.
+    if len(atr_series) < lookback + 1:
+        return False
+
+    current_atr = atr_series[-1]
+    history = sorted(atr_series[-(lookback + 1):-1])
+    threshold = _percentile(history, config.ATR_PERCENTILE_THRESHOLD)
+    return current_atr > threshold
 
 
 def _calc_rsi_series(closes: list[float], period: int = RSI_PERIOD) -> list[float]:
@@ -348,7 +399,9 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
     RSI/Bollinger (см. _build_signal выше) или от любой стратегии из
     strategies.ADDITIONAL_STRATEGIES: cooldown -> подтверждение старшими
     ТФ (multi_timeframe.refine_signal) -> минимальный R:R (см.
-    config.MIN_RISK_REWARD_RATIO) -> порог публикации -> очередь.
+    config.MIN_RISK_REWARD_RATIO) -> перцентиль ATR (см.
+    config.ATR_PERCENTILE_LOOKBACK_DAYS/_THRESHOLD, P2.5) -> порог
+    публикации -> очередь.
     Возвращает True, если сигнал был добавлен в очередь.
 
     on_signal_accepted(signal, symbol) - опциональный колбэк, вызывается
@@ -396,6 +449,17 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
         logger.info(
             "Сканер: %s %s - R:R 1:%.2f хуже порога 1:%.2f - отсеян",
             ticker, signal.strategy, ratio, config.MIN_RISK_REWARD_RATIO,
+        )
+        return False
+
+    if _atr_percentile_exceeded(symbol):
+        # Аномально высокая ДЛЯ ЭТОЙ МОНЕТЫ волатильность прямо сейчас
+        # (см. config.ATR_PERCENTILE_LOOKBACK_DAYS/_THRESHOLD, P2.5) -
+        # тоже структурная отбраковка по цифрам, не по score, той же
+        # природы, что и R:R-фильтр выше.
+        logger.info(
+            "Сканер: %s %s - текущий ATR выше %.0f перцентиля за %dд - отсеян",
+            ticker, signal.strategy, config.ATR_PERCENTILE_THRESHOLD, config.ATR_PERCENTILE_LOOKBACK_DAYS,
         )
         return False
 
