@@ -15,6 +15,12 @@ calc_position_size). Каждая позиция по отдельности м�
    get_risk_multiplier ниже про пункт 4 - это НЕ то же самое: там про
    размер риска одной сделки после серии убытков, а не про то, сколько
    сделок можно набрать в одну сторону.
+2b. (P3.7) Та же идея, что и пункт 2, но точнее: вместо ПРОСТОГО СЧЁТА
+   позиций в одну сторону - сумма их БЕТА к BTC (см.
+   _beta_weighted_exposure, config.BINANCE_FUTURES_MAX_BETA_EXPOSURE).
+   Две высоко-коррелированные с BTC монеты весят в лимите больше, чем
+   две низко-коррелированные - пункт 2 их не различал бы. Опционален,
+   работает НЕЗАВИСИМО и одновременно с пунктом 2, не заменяет его.
 3. Дневной лимит убытка в % от баланса на начало UTC-дня.
 4. Серия убыточных сделок ПОДРЯД (по факту закрытия на бирже).
 5. Мягкое снижение риска НОВОЙ сделки (см. get_risk_multiplier), ещё
@@ -56,12 +62,16 @@ check_new_position_allowed ПЕРВЫМ делом - до единого API-в�
 аварийно закрыта".
 """
 import logging
+import math
+import statistics
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+import config
 import queue_manager
+import scanner
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +95,14 @@ class RiskLimits:
     # старый код/тесты, которые создают RiskLimits(...) без этого поля,
     # не начали внезапно ловить отказ по лимиту, который они не просили.
     max_same_direction_positions: Optional[int] = None
+    # P3.7: лимит СУММЫ БЕТА к BTC уже открытых позиций в ТУ ЖЕ сторону
+    # (см. модульный докстринг про A4 выше и config.
+    # BINANCE_FUTURES_MAX_BETA_EXPOSURE) - более тонкая версия A4:
+    # считает не штуки позиций, а насколько они РЕАЛЬНО коррелируют
+    # друг с другом через движение BTC. None = выключено (дефолт),
+    # работает НЕЗАВИСИМО и одновременно с max_same_direction_positions,
+    # не вместо него.
+    max_beta_exposure: Optional[float] = None
     # Автоснятие kill switch по таймауту - см. docstring модуля и
     # config.BINANCE_FUTURES_KILL_SWITCH_AUTO_RESET_HOURS. None/0 =
     # выключено (дефолт - требуется ручной risk_guard_cli.py reset).
@@ -100,6 +118,7 @@ def limits_from_config(config) -> RiskLimits:
         soft_derisk_multiplier=config.BINANCE_FUTURES_SOFT_DERISK_MULTIPLIER,
         max_same_direction_positions=config.BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS,
         kill_switch_auto_reset_hours=config.BINANCE_FUTURES_KILL_SWITCH_AUTO_RESET_HOURS,
+        max_beta_exposure=config.BINANCE_FUTURES_MAX_BETA_EXPOSURE,
     )
 
 
@@ -218,18 +237,121 @@ def _same_direction_open_count(open_positions: list, side: str) -> int:
     )
 
 
-def check_new_position_allowed(client, limits: RiskLimits, side: Optional[str] = None) -> Optional[str]:
+def _fetch_daily_log_returns(symbol: str, lookback_days: int) -> list[float]:
+    """Дневные лог-доходности (ln(close_i / close_i-1)) за последние
+    lookback_days дней - сырьё для расчёта беты (см. _calc_beta).
+    Переиспользует scanner._fetch_klines (тот же публичный market-data
+    endpoint Binance, что и для ATR-перцентиля в scanner.py, P2.5) -
+    не заводит отдельный сетевой клиент ради одного и того же REST API.
+    [] при недостатке данных/сетевой ошибке (_fetch_klines сама уже
+    мягко откатывается на [] - см. её докстринг)."""
+    candles = scanner._fetch_klines(symbol, limit=lookback_days + 1, interval="1d")
+    if len(candles) < 2:
+        return []
+    closes = [c.close for c in candles]
+    return [
+        math.log(closes[i] / closes[i - 1])
+        for i in range(1, len(closes))
+        if closes[i - 1] > 0 and closes[i] > 0
+    ]
+
+
+def _calc_beta(symbol_returns: list[float], btc_returns: list[float]) -> Optional[float]:
+    """Бета монеты к BTC - covariance(символ, BTC) / variance(BTC) по
+    дневным лог-доходностям, тот же расчёт, каким считают бету акции к
+    индексу в любом учебнике по финансам, только "индекс" тут один -
+    BTCUSDT (см. P3.7 в config.py про то, почему именно BTC, а не
+    какой-то отдельный индекс рынка). Бета=1.0 - монета в среднем
+    двигается как BTC, >1.0 - сильнее (высоко-бетовая альта), <1.0 -
+    слабее/менее коррелированно, отрицательная - движется в среднем
+    ПРОТИВ BTC (редко, но не невозможно).
+
+    None, если точек меньше 5 (слишком мало для осмысленной оценки) или
+    дисперсия BTC равна 0 (не может быть в норме, кроме дефектных
+    данных - деление на 0)."""
+    n = min(len(symbol_returns), len(btc_returns))
+    if n < 5:
+        return None
+    sym, btc = symbol_returns[-n:], btc_returns[-n:]
+    mean_sym, mean_btc = statistics.mean(sym), statistics.mean(btc)
+    covariance = sum((s - mean_sym) * (b - mean_btc) for s, b in zip(sym, btc)) / n
+    variance_btc = sum((b - mean_btc) ** 2 for b in btc) / n
+    if variance_btc == 0:
+        return None
+    return covariance / variance_btc
+
+
+def _get_symbol_beta(symbol: str) -> Optional[float]:
+    """Бета символа к BTC с персистентным TTL-кэшем (см.
+    queue_manager.get/set_cached_symbol_beta, config.
+    SYMBOL_BETA_CACHE_TTL_HOURS) - бета не пересчитывается на КАЖДЫЙ
+    вызов check_new_position_allowed (это происходит перед КАЖДОЙ
+    попыткой открыть позицию - лишний сетевой запрос на каждую сделку
+    ради числа, которое не меняется от часа к часу).
+
+    BTCUSDT сам к себе - тривиально 1.0, без похода в кэш/сеть.
+
+    None при сбое расчёта (недостаточно данных и т.п. - см. _calc_beta)
+    - вызывающий код (_beta_weighted_exposure) сам решает, как мягко
+    откатиться (см. её докстринг), эта функция не подставляет дефолт
+    сама, чтобы не путать «не смогли посчитать» с «посчитали и
+    получили 1.0»."""
+    if symbol.upper() == "BTCUSDT":
+        return 1.0
+
+    cached = queue_manager.get_cached_symbol_beta(symbol)
+    if cached is not None:
+        beta, computed_at = cached
+        if (time.time() - computed_at) < config.SYMBOL_BETA_CACHE_TTL_HOURS * 3600:
+            return beta
+
+    symbol_returns = _fetch_daily_log_returns(symbol, config.SYMBOL_BETA_LOOKBACK_DAYS)
+    btc_returns = _fetch_daily_log_returns("BTCUSDT", config.SYMBOL_BETA_LOOKBACK_DAYS)
+    beta = _calc_beta(symbol_returns, btc_returns)
+    if beta is not None:
+        queue_manager.set_cached_symbol_beta(symbol, beta)
+    return beta
+
+
+def _beta_weighted_exposure(open_positions: list, side: str) -> float:
+    """P3.7 - сумма БЕТА к BTC всех уже открытых позиций в ТУ ЖЕ
+    сторону, что и side (см. модульный докстринг risk_guard.py, пункт 2,
+    и config.BINANCE_FUTURES_MAX_BETA_EXPOSURE). Как _same_direction_
+    open_count, но каждая позиция "весит" не 1, а её бету - две
+    высоко-бетовые альты (бета~1.5 каждая) весят в лимите как 3.0,
+    условная низко-бетовая монета (бета~0.3) - почти не весит.
+
+    Мягкий откат на бету=1.0 (не 0!), если посчитать не удалось (см.
+    _get_symbol_beta) - позиция с НЕИЗВЕСТНОЙ бетой учитывается как
+    "средняя" (полный вес), а не как "не считается вообще" - иначе
+    сетевой сбой при расчёте беты стал бы дырой в лимите риска, а не
+    безопасным откатом."""
+    is_long_side = side == "BUY"
+    total = 0.0
+    for p in open_positions:
+        if (float(p.get("positionAmt", 0)) > 0) != is_long_side:
+            continue
+        beta = _get_symbol_beta(p.get("symbol", ""))
+        total += beta if beta is not None else 1.0
+    return total
+
+
+def check_new_position_allowed(
+    client, limits: RiskLimits, side: Optional[str] = None, symbol: Optional[str] = None,
+) -> Optional[str]:
     """None - можно открывать новую позицию. Иначе - строка с причиной
     отказа. Намеренно НЕ бросает исключение сама - futures_executor
     оборачивает результат в ExecutionError на своей стороне,
     единообразно с остальными отказами до входа (недостаточный баланс
     и т.п.).
 
-    side - "BUY"/"SELL" направление НОВОЙ сделки, нужен только для
-    лимита A4 (max_same_direction_positions, см. RiskLimits) - если не
-    передан (None, дефолт для обратной совместимости со старыми
-    вызывающими местами/тестами), проверка A4 просто пропускается, как
-    будто лимита нет, а не отказывает вслепую."""
+    side - "BUY"/"SELL" направление НОВОЙ сделки, нужен для лимита A4
+    (max_same_direction_positions, см. RiskLimits) и P3.7
+    (max_beta_exposure). symbol - тикер НОВОЙ сделки, нужен ТОЛЬКО для
+    P3.7 (чтобы посчитать её бету к BTC). Если не переданы (None,
+    дефолт для обратной совместимости со старыми вызывающими местами/
+    тестами) - соответствующие проверки просто пропускаются, как будто
+    лимита нет, а не отказывают вслепую."""
     kill_switch = queue_manager.get_kill_switch()
     if kill_switch is not None:
         auto_reset_hours = limits.kill_switch_auto_reset_hours
@@ -267,6 +389,19 @@ def check_new_position_allowed(client, limits: RiskLimits, side: Optional[str] =
                 f"{direction_label} - лимит на коррелированные позиции (не набирать несколько "
                 "разных монет одной большой ставкой в одну сторону), новая позиция в ту же "
                 "сторону не откроется, пока одна из текущих не закроется"
+            )
+
+    if side is not None and symbol is not None and limits.max_beta_exposure is not None:
+        current_exposure = _beta_weighted_exposure(open_positions, side)
+        new_symbol_beta = _get_symbol_beta(symbol)
+        prospective_exposure = current_exposure + (new_symbol_beta if new_symbol_beta is not None else 1.0)
+        if prospective_exposure > limits.max_beta_exposure:
+            direction_label = "лонг" if side == "BUY" else "шорт"
+            return (
+                f"бета-экспозиция в сторону {direction_label} выросла бы до {prospective_exposure:.2f} "
+                f"(лимит {limits.max_beta_exposure:.2f}) - слишком много уже открытых позиций с "
+                "высокой корреляцией к BTC в эту сторону (см. P3.7), новая позиция не откроется, "
+                "пока одна из текущих не закроется"
             )
 
     loss_pct, baseline, current = _daily_loss_pct(client)

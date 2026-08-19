@@ -31,12 +31,14 @@ class _FakeClient:
         return self.income_rows
 
 
-def _limits(max_open=3, max_daily_loss_pct=5.0, max_consecutive_losses=3, max_same_direction=None):
+def _limits(max_open=3, max_daily_loss_pct=5.0, max_consecutive_losses=3, max_same_direction=None,
+            max_beta_exposure=None):
     return risk_guard.RiskLimits(
         max_open_positions=max_open,
         max_daily_loss_pct=max_daily_loss_pct,
         max_consecutive_losses=max_consecutive_losses,
         max_same_direction_positions=max_same_direction,
+        max_beta_exposure=max_beta_exposure,
     )
 
 
@@ -377,6 +379,169 @@ def test_all_clear_returns_none(monkeypatch):
     client = _FakeClient(positions=[{"symbol": "BTCUSDT"}], wallet_balance=10_100.0, income_rows=_income([10, 20]))
     reason = risk_guard.check_new_position_allowed(client, _limits(max_open=3, max_daily_loss_pct=5.0, max_consecutive_losses=3))
     assert reason is None
+
+
+# --- P3.7: бета-взвешенная экспозиция (config.BINANCE_FUTURES_MAX_BETA_EXPOSURE) ---
+
+def test_calc_beta_matches_hand_computed_value():
+    # BTC доходности: [0.02, -0.01, 0.03, 0.00, 0.01] (variance != 0).
+    # Символ идёт РОВНО в 2 раза сильнее BTC каждый день - бета должна
+    # сойтись точно к 2.0 (никакого шума, чистая линейная связь).
+    btc = [0.02, -0.01, 0.03, 0.00, 0.01]
+    sym = [x * 2 for x in btc]
+    beta = risk_guard._calc_beta(sym, btc)
+    assert beta == pytest_approx_or_close(2.0, 1e-9)
+
+
+def test_calc_beta_none_with_too_few_points():
+    assert risk_guard._calc_beta([0.01, 0.02], [0.01, 0.02]) is None
+
+
+def test_calc_beta_none_when_btc_variance_zero():
+    # BTC "доходности" постоянны (variance=0) - деление на 0, мягкий None.
+    btc = [0.01] * 6
+    sym = [0.01, 0.02, -0.01, 0.03, 0.0, 0.01]
+    assert risk_guard._calc_beta(sym, btc) is None
+
+
+def test_get_symbol_beta_btc_itself_is_always_one(monkeypatch):
+    # Тривиальный случай не должен даже пытаться идти в кэш/сеть.
+    monkeypatch.setattr(risk_guard.queue_manager, "get_cached_symbol_beta",
+                         lambda symbol: (_ for _ in ()).throw(AssertionError("не должно вызываться для BTCUSDT")))
+    assert risk_guard._get_symbol_beta("BTCUSDT") == 1.0
+
+
+def test_get_symbol_beta_uses_fresh_cache(monkeypatch):
+    monkeypatch.setattr(risk_guard.config, "SYMBOL_BETA_CACHE_TTL_HOURS", 24.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_cached_symbol_beta", lambda symbol: (1.7, time.time()))
+
+    def _boom(symbol, lookback_days):
+        raise AssertionError("не должно ходить за свежими данными, если кэш свежий")
+    monkeypatch.setattr(risk_guard, "_fetch_daily_log_returns", _boom)
+
+    assert risk_guard._get_symbol_beta("SOLUSDT") == 1.7
+
+
+def test_get_symbol_beta_recomputes_when_cache_stale(monkeypatch):
+    monkeypatch.setattr(risk_guard.config, "SYMBOL_BETA_CACHE_TTL_HOURS", 24.0)
+    stale_ts = time.time() - 25 * 3600  # старше TTL
+    monkeypatch.setattr(risk_guard.queue_manager, "get_cached_symbol_beta", lambda symbol: (1.7, stale_ts))
+    saved = {}
+    monkeypatch.setattr(risk_guard.queue_manager, "set_cached_symbol_beta", lambda symbol, beta: saved.setdefault(symbol, beta))
+
+    btc = [0.02, -0.01, 0.03, 0.00, 0.01]
+    sym = [x * 1.5 for x in btc]
+    monkeypatch.setattr(risk_guard, "_fetch_daily_log_returns",
+                         lambda symbol, lookback_days: sym if symbol == "SOLUSDT" else btc)
+
+    beta = risk_guard._get_symbol_beta("SOLUSDT")
+    assert beta == pytest_approx_or_close(1.5, 1e-9)
+    assert saved["SOLUSDT"] == pytest_approx_or_close(1.5, 1e-9)
+
+
+def test_get_symbol_beta_none_when_calc_fails_does_not_cache(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_cached_symbol_beta", lambda symbol: None)
+    saved = {}
+    monkeypatch.setattr(risk_guard.queue_manager, "set_cached_symbol_beta", lambda symbol, beta: saved.setdefault(symbol, beta))
+    monkeypatch.setattr(risk_guard, "_fetch_daily_log_returns", lambda symbol, lookback_days: [])  # недостаточно данных
+
+    assert risk_guard._get_symbol_beta("SOLUSDT") is None
+    assert saved == {}
+
+
+def test_beta_weighted_exposure_sums_only_matching_side(monkeypatch):
+    positions = [
+        {"symbol": "SOLUSDT", "positionAmt": "1.0"},   # лонг, бета 1.5
+        {"symbol": "ETHUSDT", "positionAmt": "1.0"},   # лонг, бета 0.8
+        {"symbol": "XRPUSDT", "positionAmt": "-1.0"},  # шорт - не считается для BUY
+    ]
+    betas = {"SOLUSDT": 1.5, "ETHUSDT": 0.8, "XRPUSDT": 3.0}
+    monkeypatch.setattr(risk_guard, "_get_symbol_beta", lambda symbol: betas[symbol])
+
+    assert risk_guard._beta_weighted_exposure(positions, "BUY") == pytest_approx_or_close(2.3, 1e-9)
+    assert risk_guard._beta_weighted_exposure(positions, "SELL") == pytest_approx_or_close(3.0, 1e-9)
+
+
+def test_beta_weighted_exposure_falls_back_to_one_when_beta_unknown(monkeypatch):
+    # Бету посчитать не удалось (None) - учитываем как "средний вес"
+    # (1.0), а не пропускаем позицию вовсе - см. docstring
+    # _beta_weighted_exposure про то, почему НЕ 0.
+    positions = [{"symbol": "SOLUSDT", "positionAmt": "1.0"}]
+    monkeypatch.setattr(risk_guard, "_get_symbol_beta", lambda symbol: None)
+    assert risk_guard._beta_weighted_exposure(positions, "BUY") == 1.0
+
+
+def test_beta_exposure_limit_blocks_when_prospective_exceeds(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    positions = [{"symbol": "SOLUSDT", "positionAmt": "1.0"}]  # бета 1.5, уже в лонге
+    monkeypatch.setattr(risk_guard, "_get_symbol_beta", lambda symbol: {"SOLUSDT": 1.5, "ETHUSDT": 1.0}[symbol])
+    client = _FakeClient(positions=positions)
+
+    # текущая экспозиция 1.5 + новая ETH (бета 1.0) = 2.5 > лимита 2.0
+    reason = risk_guard.check_new_position_allowed(
+        client, _limits(max_open=5, max_beta_exposure=2.0), side="BUY", symbol="ETHUSDT",
+    )
+    assert reason is not None
+    assert "бета-экспозиция" in reason
+
+
+def test_beta_exposure_limit_allows_when_prospective_within_limit(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    positions = [{"symbol": "SOLUSDT", "positionAmt": "1.0"}]  # бета 0.5
+    monkeypatch.setattr(risk_guard, "_get_symbol_beta", lambda symbol: {"SOLUSDT": 0.5, "ETHUSDT": 1.0}[symbol])
+    client = _FakeClient(positions=positions, wallet_balance=10_000.0)
+
+    # 0.5 + 1.0 = 1.5, укладывается в лимит 2.0
+    reason = risk_guard.check_new_position_allowed(
+        client, _limits(max_open=5, max_beta_exposure=2.0), side="BUY", symbol="ETHUSDT",
+    )
+    assert reason is None
+
+
+def test_beta_exposure_limit_disabled_when_not_configured(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    positions = [{"symbol": "SOLUSDT", "positionAmt": "1.0"}]
+    monkeypatch.setattr(risk_guard, "_get_symbol_beta",
+                         lambda symbol: (_ for _ in ()).throw(AssertionError("бета не должна считаться при выключенном лимите")))
+    client = _FakeClient(positions=positions, wallet_balance=10_000.0)
+
+    # max_beta_exposure=None (дефолт _limits()) - проверка полностью пропущена
+    reason = risk_guard.check_new_position_allowed(client, _limits(max_open=5), side="BUY", symbol="ETHUSDT")
+    assert reason is None
+
+
+def test_beta_exposure_limit_skipped_when_symbol_not_passed(monkeypatch):
+    monkeypatch.setattr(risk_guard.queue_manager, "get_kill_switch", lambda: None)
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_daily_baseline", lambda day: 10_000.0)
+    monkeypatch.setattr(risk_guard.queue_manager, "set_risk_daily_baseline", lambda day, bal: None)
+    positions = [{"symbol": "SOLUSDT", "positionAmt": "1.0"}]
+    monkeypatch.setattr(risk_guard, "_get_symbol_beta",
+                         lambda symbol: (_ for _ in ()).throw(AssertionError("не должно вызываться без symbol")))
+    client = _FakeClient(positions=positions, wallet_balance=10_000.0)
+
+    # symbol не передан (старый вызывающий код) - лимит настроен, но не проверяется.
+    reason = risk_guard.check_new_position_allowed(
+        client, _limits(max_open=5, max_beta_exposure=2.0), side="BUY",
+    )
+    assert reason is None
+
+
+def pytest_approx_or_close(expected, tol):
+    """Мини-хелпер вместо pytest.approx - раннер этого файла не
+    гарантированно имеет pytest (см. __main__ ниже)."""
+    class _Approx:
+        def __init__(self, expected, tol):
+            self.expected = expected
+            self.tol = tol
+
+        def __eq__(self, other):
+            return abs(other - self.expected) <= self.tol
+
+    return _Approx(expected, tol)
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ import requests
 import config
 import multi_timeframe
 import queue_manager
+import shadow_filters
 import strategies
 import strategy_tuner
 import signal_parser
@@ -445,7 +446,8 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
     ТФ (multi_timeframe.refine_signal) -> минимальный R:R (см.
     config.MIN_RISK_REWARD_RATIO) -> перцентиль ATR (см.
     config.ATR_PERCENTILE_LOOKBACK_DAYS/_THRESHOLD, P2.5) -> порог
-    публикации -> очередь.
+    публикации -> теневые проверки будущих фильтров (см. shadow_filters.py,
+    P3.9, ничего не блокируют) -> очередь.
     Возвращает True, если сигнал был добавлен в очередь.
 
     on_signal_accepted(signal, symbol) - опциональный колбэк, вызывается
@@ -518,6 +520,20 @@ def _process_signal_candidate(signal: RsiSignal, symbol: str, ticker: str, min_s
         # просто вытесняли друг друга при переполнении (>30), никогда не
         # доходя до публикации.
         return False
+
+    # P3.9: теневые проверки будущих фильтров (P2.4, P1.3) - ПОСЛЕ всех
+    # реальных фильтров (сигнал уже гарантированно будет опубликован),
+    # ничего не блокируют, только логируют вердикт для последующего
+    # сравнения win-rate - см. shadow_filters.py. Ошибка внутри не
+    # должна ронять публикацию - та же логика, что и у on_signal_accepted
+    # ниже (см. try/except там).
+    try:
+        shadow_filters.evaluate_and_log(signal, symbol)
+    except Exception:
+        logger.exception(
+            "Сканер: shadow_filters.evaluate_and_log упал на %s - "
+            "публикация продолжается, это только теневой лог", ticker,
+        )
 
     queue_manager.push_pending_signal(signal)
     queue_manager.mark_alerted(ticker, direction_key)

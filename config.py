@@ -432,6 +432,37 @@ BINANCE_FUTURES_TRAILING_CALLBACK_PCT = float(os.environ.get("BINANCE_FUTURES_TR
 _max_same_dir_env = os.environ.get("BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS", "2").strip()
 BINANCE_FUTURES_MAX_SAME_DIRECTION_POSITIONS = int(_max_same_dir_env) if _max_same_dir_env else None
 
+# --- P3.7: лимит экспозиции по КОРРЕЛЯЦИИ/БЕТА к BTC (см. risk_guard.
+# _beta_weighted_exposure), не по простому счёту позиций из A4 выше -
+# A4 сам по себе не различает "2 лонга по низко-коррелированным
+# монетам" и "2 лонга по монетам, которые почти всегда двигаются как
+# BTC" - во втором случае это статистически куда ближе к ОДНОЙ большой
+# ставке, чем ко второму независимому лонгу, даже если формально это
+# два разных слота из A4. Здесь вместо счёта позиций суммируется их
+# БЕТА к BTC (см. risk_guard._calc_beta) - высоко-бетовая монета
+# "весит" в лимите больше, чем низко-бетовая.
+#
+# None = проверка выключена (как и у A4 - opt-in, не ломает старое
+# поведение по умолчанию). НЕ включено по умолчанию (в отличие от A4) -
+# это НОВЫЙ, менее обкатанный механизм, отдельная сознательная
+# настройка, а не автоматическая замена A4 (оба лимита могут работать
+# одновременно - они проверяют разные вещи и не исключают друг друга).
+BINANCE_FUTURES_MAX_BETA_EXPOSURE = (
+    float(os.environ["BINANCE_FUTURES_MAX_BETA_EXPOSURE"])
+    if os.environ.get("BINANCE_FUTURES_MAX_BETA_EXPOSURE", "").strip()
+    else None
+)
+# Сколько дней дневных свечей использовать для расчёта беты (ковариация
+# дневных лог-доходностей монеты и BTC, делённая на дисперсию доходностей
+# BTC - тот же класс расчёта, что в любом финансовом учебнике для беты
+# акции к индексу, только индекс здесь один - BTCUSDT).
+SYMBOL_BETA_LOOKBACK_DAYS = int(os.environ.get("SYMBOL_BETA_LOOKBACK_DAYS", "30"))
+# Бета не пересчитывается на КАЖДУЮ попытку открыть позицию (лишний
+# сетевой запрос на каждый вызов check_new_position_allowed, а бета
+# монеты не меняется от часа к часу) - кэшируется персистентно (см.
+# queue_manager.get/set_cached_symbol_beta) на это число часов.
+SYMBOL_BETA_CACHE_TTL_HOURS = float(os.environ.get("SYMBOL_BETA_CACHE_TTL_HOURS", "24"))
+
 # --- A5: вето по funding rate перед входом в перпетуалку (см.
 # futures_signal_bridge._funding_rate_veto) - если funding rate сильно
 # ПРОТИВ направления сделки (лонг платит при высоком положительном
@@ -506,6 +537,26 @@ ATR_PERCENTILE_THRESHOLD = float(os.environ.get("ATR_PERCENTILE_THRESHOLD", "95"
 # направлению. Два независимых сигнала о том же самом статистически
 # надёжнее одного - отсюда и бонус к score.
 STRATEGY_CONFLUENCE_BONUS = int(os.environ.get("STRATEGY_CONFLUENCE_BONUS", "10"))
+
+# --- P3.9: теневой (shadow) прогон будущих фильтров (shadow_filters.py) ---
+# Параметры для КОНКРЕТНЫХ теневых проверок, зарегистрированных в
+# shadow_filters.SHADOW_FILTERS. Сами проверки НИЧЕГО не блокируют
+# (см. docstring shadow_filters.py) - эти константы просто задают
+# ПОРОГ, при котором каждая проверка сочла бы сигнал подозрительным,
+# если/когда фильтр когда-нибудь станет боевым.
+#
+# P1.3 (в тени): часы UTC с исторически тонкой ликвидностью на крипто-
+# рынке - примерно 00:00-06:00 UTC, когда закрыты и азиатская дневная
+# сессия, и американская/европейская. Не точная наука, отправная точка
+# для сбора статистики, а не окончательное утверждение - именно для
+# этого и нужен теневой прогон, а не сразу боевой порог.
+THIN_HOURS_UTC = frozenset(
+    int(h) for h in os.environ.get("THIN_HOURS_UTC", "0,1,2,3,4,5").split(",") if h.strip()
+)
+# Выходные (суббота/воскресенье) - оборот на споте и деривативах Binance
+# заметно ниже будних дней, что статистически может означать более
+# рваные движения и менее надёжные пробои/развороты.
+THIN_LIQUIDITY_WEEKEND_ENABLED = os.environ.get("THIN_LIQUIDITY_WEEKEND_ENABLED", "true").strip().lower() == "true"
 
 # --- Автоматическое исполнение сигналов (см. futures_signal_bridge.py/
 # futures_auto_trade.py) ---
