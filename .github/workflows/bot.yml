@@ -10,13 +10,17 @@ on:
   push:
     branches: [main]  # запуск при любом коммите в main - удобно как замена кнопке "Run workflow" с телефона
 
-# Раньше здесь стояло permissions: contents: write - нужно было для
-# git push в шаге "Save bot state back to the repository". Этот шаг
-# убран (bot_state.db больше не отслеживается в git, см. .gitignore) -
-# workflow'у больше не нужно ничего коммитить обратно, значит и
-# write-доступ к содержимому репозитория ему не нужен (принцип
-# наименьших привилегий - GITHUB_TOKEN по умолчанию и так read-only
-# для contents, специально разрешать write незачем).
+# Нужно явно разрешить workflow коммитить изменения обратно в
+# репозиторий - см. шаг "Save bot state back to the repository" ниже.
+# Это НЕ просто бэкап: каждый запуск воркфлоу - это новая чистая
+# виртуалка без памяти о предыдущих запусках, единственный способ
+# передать состояние бота (кулдауны, время последних постов по каждому
+# формату, прогресс последовательных форматов вроде глоссария) в
+# следующий запуск - закоммитить bot_state.db обратно в репозиторий.
+# Без этого шага и этого разрешения бот "теряет память" каждые 10
+# минут - убирали это по ошибке (см. историю коммитов), вернули назад.
+permissions:
+  contents: write
 
 # Защита от параллельных запусков - если предыдущий прогон ещё не
 # закончился (например, нажали "Run workflow" вручную во время
@@ -140,3 +144,12 @@ jobs:
       - name: Show queue state (diagnostics)
         if: always()
         run: python check_state.py
+
+      - name: Save bot state back to the repository
+        if: always()
+        run: |
+          git config user.name "square-signal-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add bot_state.db
+          git diff --quiet --cached || git commit -m "Обновление состояния бота [skip ci]"
+          git push
