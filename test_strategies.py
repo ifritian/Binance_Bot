@@ -158,6 +158,86 @@ def test_atr_stop_falls_back_to_fixed_pct_when_atr_unavailable(monkeypatch):
     assert math.isclose(float(signal.invalidation), recent_low * 0.997, rel_tol=1e-6)
 
 
+# --- P3.8: ATR-цели вместо фиксированного измеренного движения/экстремума ---
+
+def test_atr_target_none_when_atr_none():
+    assert strat._atr_target(100.0, True, None) is None
+
+
+def test_atr_target_long_adds_distance_from_entry():
+    target = strat._atr_target(100.0, True, atr=2.0)
+    # config.ATR_TARGET_MULTIPLIER по умолчанию 3.0 -> 100 + 2*3 = 106
+    assert math.isclose(target, 106.0, rel_tol=1e-9)
+
+
+def test_atr_target_short_subtracts_distance_from_entry():
+    target = strat._atr_target(100.0, False, atr=2.0)
+    assert math.isclose(target, 94.0, rel_tol=1e-9)
+
+
+def test_macd_uses_structural_target_by_default(monkeypatch):
+    monkeypatch.setattr(strat.config, "USE_ATR_TARGETS", False)
+    candles = _macd_bullish_cross_candles()
+    signal = strat.build_macd_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    recent_high = max(c.high for c in candles[-20:])
+    assert math.isclose(float(signal.target), recent_high, rel_tol=1e-5)
+
+
+def test_macd_uses_atr_target_when_enabled(monkeypatch):
+    monkeypatch.setattr(strat.config, "USE_ATR_TARGETS", True)
+    monkeypatch.setattr(strat.config, "ATR_PERIOD", 14)
+    monkeypatch.setattr(strat.config, "ATR_TARGET_MULTIPLIER", 3.0)
+    candles = _macd_bullish_cross_candles()
+    signal = strat.build_macd_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    atr = strat.calc_atr(candles, 14)
+    current_price = candles[-1].close
+    expected = current_price + atr * 3.0
+    assert math.isclose(float(signal.target), expected, rel_tol=1e-6)
+    # НЕ должно совпадать со старой формулой - иначе флаг никак не подействовал
+    recent_high = max(c.high for c in candles[-20:])
+    assert not math.isclose(float(signal.target), recent_high, rel_tol=1e-6)
+
+
+def test_breakout_uses_structural_target_by_default(monkeypatch):
+    monkeypatch.setattr(strat.config, "USE_ATR_TARGETS", False)
+    candles = _sideways_then_breakout()
+    signal = strat.build_breakout_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    channel_high = max(c.high for c in candles[-(strat.BREAKOUT_LOOKBACK + 1):-1])
+    channel_low = min(c.low for c in candles[-(strat.BREAKOUT_LOOKBACK + 1):-1])
+    range_height = channel_high - channel_low
+    expected = channel_high + range_height  # измеренное движение от уровня пробоя
+    assert math.isclose(float(signal.target), expected, rel_tol=1e-6)
+
+
+def test_breakout_uses_atr_target_when_enabled(monkeypatch):
+    monkeypatch.setattr(strat.config, "USE_ATR_TARGETS", True)
+    monkeypatch.setattr(strat.config, "ATR_PERIOD", 14)
+    monkeypatch.setattr(strat.config, "ATR_TARGET_MULTIPLIER", 3.0)
+    candles = _sideways_then_breakout()
+    signal = strat.build_breakout_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    atr = strat.calc_atr(candles, 14)
+    current_price = candles[-1].close
+    expected = current_price + atr * 3.0
+    assert math.isclose(float(signal.target), expected, rel_tol=1e-6)
+
+
+def test_atr_target_falls_back_to_structural_when_atr_unavailable(monkeypatch):
+    # USE_ATR_TARGETS включён, но свечей МЕНЬШЕ ATR_PERIOD+1 - calc_atr
+    # вернёт None, target должен тихо откатиться на структурную формулу,
+    # а не упасть/пропустить сигнал - тот же принцип, что и у ATR-стопа.
+    monkeypatch.setattr(strat.config, "USE_ATR_TARGETS", True)
+    monkeypatch.setattr(strat.config, "ATR_PERIOD", 999)
+    candles = _macd_bullish_cross_candles()
+    signal = strat.build_macd_signal("TESTUSDT", candles, 8_000_000)
+    assert signal is not None
+    recent_high = max(c.high for c in candles[-20:])
+    assert math.isclose(float(signal.target), recent_high, rel_tol=1e-5)
+
+
 def _macd_bullish_cross_candles():
     """Обрезка _sine_candles() ровно до момента бычьего пересечения MACD -
     та же техника поиска пересечений, что и в
