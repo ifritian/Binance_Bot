@@ -4,6 +4,8 @@
 частичный профит/безубыток/трейлинг-стоп (A1) и полный проход
 check_open_positions - на ПОДДЕЛЬНОМ FuturesClient (никакой реальной сети).
 """
+import time
+
 import config
 import futures_position_monitor as fpm
 from futures_client import FuturesApiError
@@ -47,6 +49,11 @@ class _FakeClient:
         self.call_log.append(("get_income_history", income_type))
         return self.income_rows
 
+    def place_market_order(self, symbol, side, quantity):
+        self._maybe_fail("place_market_order")
+        self.call_log.append(("place_market_order", symbol, side, quantity))
+        return {}
+
     def get_symbol_filters(self, symbol):
         return {"step_size": self.step_size, "tick_size": 0.01, "min_notional": 5.0}
 
@@ -78,7 +85,11 @@ def _record(**overrides):
         "entry_price": 100.0, "stop_price": 90.0, "take_profit_price": 120.0,
         "stop_order_id": 11, "take_profit_order_id": 12,
         "ticker": "BTC", "direction": "LONG", "strategy": "rsi", "score": 90,
-        "opened_at": 1_000.0,
+        # Открыта "недавно" (1 час назад), а не в момент unix-эпохи -
+        # иначе любая позиция в тестах считалась бы миллионы часов
+        # "зависшей" и попадала бы под BINANCE_FUTURES_MAX_POSITION_AGE_HOURS
+        # (см. P1.2) в тестах, которые вообще не про таймаут.
+        "opened_at": time.time() - 3600,
     }
     base.update(overrides)
     return base
@@ -273,8 +284,11 @@ def test_check_open_positions_uses_original_quantity_for_pnl_pct(monkeypatch):
                          lambda key, message, **k: captured.setdefault("message", message))
 
     # Позиция закрылась (positionAmt == 0), финальный PnL с биржи 10 USDT.
+    # income "time" должен быть ПОСЛЕ opened_at записи (см. _realized_pnl_since) -
+    # берём заведомо позже момента открытия, а не абсолютную дату в прошлом.
+    income_time_ms = int((time.time()) * 1000)
     client = _FakeClient(position=None, open_orders=[], income_rows=[
-        {"symbol": "BTCUSDT", "income": "10.0", "time": 2_000_000},
+        {"symbol": "BTCUSDT", "income": "10.0", "time": income_time_ms},
     ])
     summary = fpm.check_open_positions(client)
 
@@ -353,6 +367,68 @@ def test_check_open_positions_no_mark_price_skips_partial_profit(monkeypatch):
     summary = fpm.check_open_positions(client)
     assert summary == {"still_open": 1, "closed": 0}
     assert not any(c[0] == "place_reduce_only_market_order" for c in client.call_log)
+
+
+# --- check_open_positions: таймаут зависшей позиции (P1.2) ---
+
+def test_check_open_positions_force_closes_position_past_max_age(monkeypatch):
+    monkeypatch.setattr(config, "BINANCE_FUTURES_MAX_POSITION_AGE_HOURS", 48.0)
+    old_record = _record(opened_at=time.time() - 49 * 3600)  # открыта 49ч назад > лимита 48ч
+    monkeypatch.setattr(fpm.queue_manager, "get_open_futures_positions", lambda: [old_record])
+    saved = {}
+    monkeypatch.setattr(fpm.queue_manager, "replace_open_futures_positions", lambda items: saved.setdefault("still_open", items))
+    monkeypatch.setattr(fpm.queue_manager, "append_closed_futures_positions", lambda items: saved.setdefault("closed", items))
+    captured = {}
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert",
+                         lambda key, message, **k: captured.setdefault("message", message))
+
+    # positionAmt != 0 - позиция формально ещё открыта на бирже (ни стоп,
+    # ни тейк не сработали), но она старше лимита.
+    client = _FakeClient(position={"positionAmt": "1.0", "markPrice": "0"},
+                          income_rows=[{"symbol": "BTCUSDT", "income": "-2.0", "time": int(time.time() * 1000)}])
+    summary = fpm.check_open_positions(client)
+
+    assert summary == {"still_open": 0, "closed": 1}
+    assert saved["still_open"] == []
+    assert saved["closed"][0]["close_reason"].startswith("таймаут")
+    assert saved["closed"][0]["realized_pnl"] == -2.0
+    # Принудительное закрытие: сначала отмена условных ордеров, потом маркет-закрытие.
+    assert ("cancel_all_open_orders", "BTCUSDT") in client.call_log
+    assert ("cancel_all_algo_orders", "BTCUSDT") in client.call_log
+    assert any(c[0] == "place_market_order" for c in client.call_log)
+    assert "таймаут" in captured["message"]
+
+
+def test_check_open_positions_keeps_position_open_under_max_age(monkeypatch):
+    monkeypatch.setattr(config, "BINANCE_FUTURES_MAX_POSITION_AGE_HOURS", 48.0)
+    fresh_record = _record(opened_at=time.time() - 3600)  # открыта всего час назад
+    monkeypatch.setattr(fpm.queue_manager, "get_open_futures_positions", lambda: [fresh_record])
+    saved = {}
+    monkeypatch.setattr(fpm.queue_manager, "replace_open_futures_positions", lambda items: saved.setdefault("still_open", items))
+    monkeypatch.setattr(fpm.queue_manager, "append_closed_futures_positions", lambda items: None)
+
+    client = _FakeClient(position={"positionAmt": "1.0", "markPrice": "0"})
+    summary = fpm.check_open_positions(client)
+
+    assert summary == {"still_open": 1, "closed": 0}
+    assert not any(c[0] == "place_market_order" for c in client.call_log)
+
+
+def test_check_open_positions_keeps_timed_out_position_tracked_if_force_close_fails(monkeypatch):
+    monkeypatch.setattr(config, "BINANCE_FUTURES_MAX_POSITION_AGE_HOURS", 48.0)
+    old_record = _record(opened_at=time.time() - 49 * 3600)
+    monkeypatch.setattr(fpm.queue_manager, "get_open_futures_positions", lambda: [old_record])
+    saved = {}
+    monkeypatch.setattr(fpm.queue_manager, "replace_open_futures_positions", lambda items: saved.setdefault("still_open", items))
+    monkeypatch.setattr(fpm.queue_manager, "append_closed_futures_positions", lambda items: saved.setdefault("closed", items))
+
+    # place_market_order (внутри emergency_close_all) падает - позиция
+    # должна ОСТАТЬСЯ в трекинге, не потеряться молча.
+    client = _FakeClient(position={"positionAmt": "1.0", "markPrice": "0"}, fail_on={"place_market_order"})
+    summary = fpm.check_open_positions(client)
+
+    assert summary == {"still_open": 1, "closed": 0}
+    assert saved["still_open"] == [old_record]
 
 
 if __name__ == "__main__":

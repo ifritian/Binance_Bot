@@ -53,6 +53,7 @@ import logging
 import os
 import sys
 import time
+from typing import Optional
 
 import alerting
 import config
@@ -242,6 +243,87 @@ def _manage_partial_profit(client, record: dict, mark_price: float) -> dict:
     return updated
 
 
+def _finalize_closed_position(record: dict, symbol: str, reason: str, pnl: float) -> dict:
+    """Строит запись закрытой позиции, шлёт уведомление владельцу и
+    логирует - общая часть для двух путей закрытия: (1) позиция уже
+    закрылась НА БИРЖЕ сама (по стопу/тейку/вручную - см.
+    _determine_close_reason_and_cleanup) и (2) позицию принудительно
+    закрыл САМ БОТ по таймауту (см. _close_timed_out_position), пока она
+    формально ещё оставалась открытой. Раньше это было частью
+    check_open_positions только для случая (1); вынесено в отдельную
+    функцию, чтобы не дублировать форматирование сообщения и подсчёт
+    pnl_pct для случая (2)."""
+    closed_record = dict(record, closed_at=time.time(), close_reason=reason, realized_pnl=pnl)
+
+    entry = record.get("entry_price", 0) or 0
+    # original_quantity (весь риск сделки на момент входа) - не
+    # "quantity" (может быть уже уменьшено частичным профитом, см.
+    # _manage_partial_profit) - иначе % PnL считался бы только от
+    # ОСТАВШЕЙСЯ части позиции и выглядел бы задранным relative к
+    # исходному риску. Старые записи без этого поля (до A1) просто
+    # используют quantity - никакого поведенческого изменения для них.
+    original_quantity = record.get("original_quantity") or record.get("quantity", 0) or 0
+    notional = entry * original_quantity
+    pnl_pct = (pnl / notional * 100) if notional else 0.0
+    emoji = "\U0001F7E2" if pnl > 0 else ("\U0001F534" if pnl < 0 else "\u26AA")
+
+    partial_note = ""
+    if record.get("partial_tp_done"):
+        partial_note = (
+            f" (включает ~{record.get('partial_tp_realized_pnl', 0):+.4f} USDT, "
+            "зафиксированные ранее частичным профитом)"
+        )
+
+    message = (
+        f"{emoji} Позиция закрыта: {record.get('ticker', symbol)} {record.get('direction', '')}\n"
+        f"Причина: {reason}\n"
+        f"Вход: {entry:.6g}  Кол-во (исходное): {original_quantity:.8g}\n"
+        f"Реализованный PnL: {pnl:+.4f} USDT ({pnl_pct:+.2f}% от исходного размера позиции){partial_note}\n"
+        f"Стратегия: {record.get('strategy', '?')} (score {record.get('score', '?')})"
+    )
+    alerting.send_owner_alert(
+        f"futures_position_closed:{symbol}:{record.get('opened_at', 0)}",
+        message,
+        min_repeat_hours=0,  # ключ уникален на конкретную позицию - троттлить тут нечего
+    )
+    logger.info("futures_position_monitor: %s закрыта (%s), PnL %.4f USDT", symbol, reason, pnl)
+    return closed_record
+
+
+def _close_timed_out_position(client, record: dict, symbol: str, max_age_hours: float) -> Optional[dict]:
+    """Позиция открыта дольше config.BINANCE_FUTURES_MAX_POSITION_AGE_HOURS -
+    закрываем её ПРИНУДИТЕЛЬНО по рынку, не дожидаясь стопа/тейка (которые
+    могут вообще не сработать, если рынок ушёл в затяжной боковик далеко
+    от обоих уровней - изначальный сетап сигнала к этому моменту уже не
+    имеет отношения к текущей цене). Используем futures_executor.
+    emergency_close_all - тот же штатный путь "отменить оба условных
+    ордера, закрыть по рынку", что и ручная команда владельца, а НЕ
+    _emergency_close_or_raise (тот - только для error path сразу после
+    открытия позиции, см. futures_executor docstring, и бросает
+    исключение наружу вместо возврата результата).
+
+    Возвращает готовую closed_record при успехе, None при сбое API -
+    в этом случае позиция остаётся в трекинге до следующего прогона
+    (см. вызывающий код), как и при любой другой сетевой ошибке в этом
+    модуле."""
+    logger.warning(
+        "futures_position_monitor: %s открыта дольше %.0fч (лимит %.0fч) - закрываю принудительно по рынку",
+        symbol, (time.time() - record.get("opened_at", 0)) / 3600, max_age_hours,
+    )
+    try:
+        futures_executor.emergency_close_all(client, symbol)
+    except FuturesApiError as e:
+        logger.error(
+            "futures_position_monitor: не удалось закрыть по таймауту зависшую позицию %s: %s - "
+            "оставляю в трекинге, попробую на следующем прогоне", symbol, e,
+        )
+        return None
+
+    pnl = _realized_pnl_since(client, symbol, record.get("opened_at", 0))
+    reason = f"таймаут (позиция была открыта дольше {max_age_hours:.0f}ч)"
+    return _finalize_closed_position(record, symbol, reason, pnl)
+
+
 def check_open_positions(client) -> dict:
     """Проходит по всем отслеживаемым позициям (queue_manager.
     get_open_futures_positions), для каждой проверяет, закрылась ли она
@@ -274,6 +356,19 @@ def check_open_positions(client) -> dict:
             mark_price = float(position.get("markPrice", 0) or 0)
             if mark_price > 0:
                 record = _manage_partial_profit(client, record, mark_price)
+
+            age_hours = (time.time() - record.get("opened_at", 0)) / 3600
+            if age_hours >= config.BINANCE_FUTURES_MAX_POSITION_AGE_HOURS:
+                closed_record = _close_timed_out_position(
+                    client, record, symbol, config.BINANCE_FUTURES_MAX_POSITION_AGE_HOURS,
+                )
+                if closed_record is not None:
+                    newly_closed.append(closed_record)
+                    continue
+                # emergency_close_all не удался (сбой API) - остаётся в
+                # трекинге, попробуем снова на следующем прогоне (см.
+                # _close_timed_out_position docstring).
+
             still_open.append(record)
             continue
 
@@ -288,41 +383,7 @@ def check_open_positions(client) -> dict:
         if reason == "стоп-лосс (SL)":
             queue_manager.mark_stopped_out(symbol)
 
-        closed_record = dict(record, closed_at=time.time(), close_reason=reason, realized_pnl=pnl)
-        newly_closed.append(closed_record)
-
-        entry = record.get("entry_price", 0) or 0
-        # original_quantity (весь риск сделки на момент входа) - не
-        # "quantity" (может быть уже уменьшено частичным профитом, см.
-        # _manage_partial_profit) - иначе % PnL считался бы только от
-        # ОСТАВШЕЙСЯ части позиции и выглядел бы задранным relative к
-        # исходному риску. Старые записи без этого поля (до A1) просто
-        # используют quantity - никакого поведенческого изменения для них.
-        original_quantity = record.get("original_quantity") or record.get("quantity", 0) or 0
-        notional = entry * original_quantity
-        pnl_pct = (pnl / notional * 100) if notional else 0.0
-        emoji = "\U0001F7E2" if pnl > 0 else ("\U0001F534" if pnl < 0 else "\u26AA")
-
-        partial_note = ""
-        if record.get("partial_tp_done"):
-            partial_note = (
-                f" (включает ~{record.get('partial_tp_realized_pnl', 0):+.4f} USDT, "
-                "зафиксированные ранее частичным профитом)"
-            )
-
-        message = (
-            f"{emoji} Позиция закрыта: {record.get('ticker', symbol)} {record.get('direction', '')}\n"
-            f"Причина: {reason}\n"
-            f"Вход: {entry:.6g}  Кол-во (исходное): {original_quantity:.8g}\n"
-            f"Реализованный PnL: {pnl:+.4f} USDT ({pnl_pct:+.2f}% от исходного размера позиции){partial_note}\n"
-            f"Стратегия: {record.get('strategy', '?')} (score {record.get('score', '?')})"
-        )
-        alerting.send_owner_alert(
-            f"futures_position_closed:{symbol}:{record.get('opened_at', 0)}",
-            message,
-            min_repeat_hours=0,  # ключ уникален на конкретную позицию - троттлить тут нечего
-        )
-        logger.info("futures_position_monitor: %s закрыта (%s), PnL %.4f USDT", symbol, reason, pnl)
+        newly_closed.append(_finalize_closed_position(record, symbol, reason, pnl))
 
     queue_manager.replace_open_futures_positions(still_open)
     if newly_closed:
