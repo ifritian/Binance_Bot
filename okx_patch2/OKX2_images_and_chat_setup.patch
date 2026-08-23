@@ -1,0 +1,159 @@
+diff --git a/chart_generator.py b/chart_generator.py
+index e06d3428e..5d55f5c92 100644
+--- a/chart_generator.py
++++ b/chart_generator.py
+@@ -203,15 +203,20 @@ def _draw_volume(ax, candles: list[dict]) -> None:
+         ax.axhline(max_vol * frac, color=_GRID_COLOR, linewidth=0.5, zorder=0)
+ 
+ 
+-def _draw_watermark(ax) -> None:
+-    """Полупрозрачный ромб + надпись BINANCE по центру графика, как
+-    водяной знак на скриншотах с самой площадки."""
++def _draw_watermark(ax, text: str | None = "BINANCE") -> None:
++    """Полупрозрачный ромб + надпись по центру графика, как водяной
++    знак на скриншотах с самой площадки. text=None - не рисовать
++    вообще (используется для графиков под другие площадки, см.
++    okx_orbit_generator.generate_chart_for_post - водяной знак BINANCE
++    там неуместен)."""
++    if text is None:
++        return
+     ax.text(
+         0.5, 0.52, "◆", transform=ax.transAxes, ha="center", va="center",
+         fontsize=46, color=_WATERMARK_COLOR, alpha=0.05, zorder=0,
+     )
+     ax.text(
+-        0.5, 0.46, "BINANCE", transform=ax.transAxes, ha="center", va="center",
++        0.5, 0.46, text, transform=ax.transAxes, ha="center", va="center",
+         fontsize=20, color=_WATERMARK_COLOR, alpha=0.05, fontweight="bold",
+         family="monospace", zorder=0,
+     )
+@@ -326,10 +331,17 @@ def generate_cumulative_pnl_chart(records: list[dict], out_name: str = "weekly_d
+     return out_path
+ 
+ 
+-def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None) -> Path | None:
++def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None,
++                          watermark_text: str | None = "BINANCE", filename_suffix: str = "") -> Path | None:
+     """
+     Возвращает путь к PNG со свечным графиком тикера (MA7/25/99 +
+     объём снизу + водяной знак, в стиле самого Binance), либо None.
++
++    watermark_text - см. _draw_watermark (None - без водяного знака,
++    для графиков под другие площадки, см. okx_orbit_generator.py).
++    filename_suffix - добавляется к имени файла (например "_okx"),
++    чтобы графики под разные площадки для одного тикера не
++    перезаписывали друг друга при параллельной генерации.
+     """
+     try:
+         candles = fetch_klines(ticker, days)
+@@ -361,7 +373,7 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
+     _, _, time_fmt = _INTERVAL_BY_DAYS.get(days, ("1h", days * 24, "%H:%M"))
+ 
+     _CHARTS_DIR.mkdir(exist_ok=True)
+-    out_path = _CHARTS_DIR / f"{ticker}_chart.png"
++    out_path = _CHARTS_DIR / f"{ticker}{filename_suffix}_chart.png"
+ 
+     fig = plt.figure(figsize=(8, 5), dpi=150)
+     fig.patch.set_facecolor(_BG_COLOR)
+@@ -369,7 +381,7 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
+     ax_price = fig.add_subplot(gs[0])
+     ax_vol = fig.add_subplot(gs[1], sharex=ax_price)
+ 
+-    _draw_watermark(ax_price)
++    _draw_watermark(ax_price, watermark_text)
+     _draw_candles(ax_price, candles)
+     _draw_moving_averages(ax_price, candles)
+     _style_axis(ax_price, show_xticks=False)
+diff --git a/main.py b/main.py
+index 534e5568d..e2142513c 100644
+--- a/main.py
++++ b/main.py
+@@ -869,8 +869,14 @@ def try_publish_okx_orbit_draft() -> None:
+         queue_manager.set_retry_backoff("okx_orbit", 1)
+         return
+ 
++    chart_path = None
+     try:
+-        delivered = okx_draft_publisher.send_draft(post_text, format_type)
++        chart_path = okx_orbit_generator.generate_chart_for_post(theme)
++    except Exception as e:
++        logger.warning("Не удалось сгенерировать график для черновика OKX Orbit: %s - шлю без картинки", e)
++
++    try:
++        delivered = okx_draft_publisher.send_draft(post_text, format_type, image_path=chart_path)
+     except okx_draft_publisher.DraftDeliveryError as e:
+         logger.error("Ошибка доставки черновика OKX Orbit в Telegram: %s", e)
+         queue_manager.set_retry_backoff("okx_orbit", 1)
+diff --git a/okx_orbit_generator.py b/okx_orbit_generator.py
+index c8282d293..2791782ee 100644
+--- a/okx_orbit_generator.py
++++ b/okx_orbit_generator.py
+@@ -27,11 +27,13 @@ Binance-бота) - LLM получает готовые цифры и пишет
+ везде в проекте, чтобы не выдумывать данные.
+ """
+ import logging
++from pathlib import Path
+ from typing import Optional
+ 
+ import cliche_filter
+ import config
+ import voice_guidelines
++from chart_generator import generate_chart_image
+ from groq_client import call_groq
+ from opinion_generator import THEMES, calc_theme_stats, pick_theme
+ from post_format import DISCLAIMER
+@@ -175,3 +177,24 @@ def validate_okx_orbit_post_text(text: str, allowed_numbers: set[float]) -> tupl
+         return False, f"В тексте есть шаблонные ИИ-фразы: {', '.join(found)}"
+ 
+     return True, ""
++
++
++def generate_chart_for_post(theme: str) -> Optional[Path]:
++    """Возвращает путь к PNG-графику для темы, БЕЗ водяного знака
++    BINANCE (см. chart_generator._draw_watermark) - график для чужой
++    площадки не должен выглядеть как скриншот с Binance.
++
++    Для темы 'market' (несколько тикеров в корзине) строим график по
++    первому тикеру корзины как представительный - тащить график сразу
++    по нескольким активам сюда не нужно, OKX-пост и так даёт разбивку
++    текстом.
++
++    Отдельный filename_suffix='_okx' - чтобы не перезаписывать график,
++    который в это же время мог генерироваться для Binance Square по
++    тому же тикеру (main.py дёргает форматы в одном процессе).
++    Возвращает None, если график построить не удалось - вызывающий код
++    (main.try_publish_okx_orbit_draft) в этом случае просто шлёт
++    черновик без картинки, а не пропускает публикацию целиком.
++    """
++    ticker = THEMES[theme]["tickers"][0]
++    return generate_chart_image(ticker, days=2, watermark_text=None, filename_suffix="_okx")
+diff --git a/test_okx_orbit_generator.py b/test_okx_orbit_generator.py
+index ea3655ebf..88af94e1b 100644
+--- a/test_okx_orbit_generator.py
++++ b/test_okx_orbit_generator.py
+@@ -94,6 +94,25 @@ def test_validate_okx_orbit_post_text_passes_valid_text():
+     assert ok is True, reason
+ 
+ 
++def test_generate_chart_for_post_uses_first_ticker_and_no_watermark(monkeypatch):
++    calls = []
++
++    def _fake_generate_chart_image(ticker, days=2, expected_price=None, watermark_text="BINANCE", filename_suffix=""):
++        calls.append((ticker, watermark_text, filename_suffix))
++        return "/tmp/fake_chart.png"
++
++    monkeypatch.setattr(okx_orbit_generator, "generate_chart_image", _fake_generate_chart_image)
++
++    result = okx_orbit_generator.generate_chart_for_post("market")
++
++    assert result == "/tmp/fake_chart.png"
++    assert len(calls) == 1
++    ticker, watermark_text, filename_suffix = calls[0]
++    assert ticker == okx_orbit_generator.THEMES["market"]["tickers"][0]
++    assert watermark_text is None
++    assert filename_suffix == "_okx"
++
++
+ if __name__ == "__main__":
+     import sys
+     import types

@@ -402,3 +402,40 @@
 2026-07-23 03:43:00,122 [INFO] main: Опубликовано приглашение на AMA в Telegram
 2026-07-23 03:43:00,123 [INFO] main: Опубликован пост глоссария (test_topic) в Telegram
 2026-07-23 03:43:00,125 [INFO] main: Опубликован опрос в Telegram: Тестовый вопрос?
+2026-08-23 14:01:37,987 [INFO] main: Бот запущен. Интервал проверки: 60с. Окна публикации - валюта: 4.0ч, мнение: 48.0ч, treasury: 24.0ч, статья: 168.0ч, отчёт точности: 168.0ч
+2026-08-23 14:01:38,026 [INFO] apscheduler.scheduler: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-08-23 14:01:48,990 [INFO] multi_timeframe: HTF veto: NEARUSDT Шорт (перекупленность) (score был 42) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:01:56,300 [INFO] multi_timeframe: HTF veto: OPUSDT Шорт (перекупленность) (score был 30) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:02:08,644 [INFO] multi_timeframe: HTF veto: DYDXUSDT Шорт (перекупленность) (score был 36) отклонён - против тренда старших ТФ (4h/1d)
+2026-08-23 14:02:19,491 [INFO] multi_timeframe: HTF veto: MANTAUSDT Шорт (перекупленность) (score был 36) отклонён - смешанная картина по ТФ (за: 1h, против: 4h/1d)
+2026-08-23 14:02:25,597 [INFO] multi_timeframe: HTF veto: PENDLEUSDT Шорт (перекупленность) (score был 39) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:02:25,602 [INFO] telegram_listener: Проверяем обновления Telegram (offset: 0)
+2026-08-23 14:02:26,214 [INFO] telegram_listener: После фильтрации: 0 постов с текстом или картинкой
+2026-08-23 14:02:52,629 [INFO] multi_timeframe: HTF veto: ENAUSDT Шорт (перекупленность) (score был 48) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:02:59,895 [INFO] multi_timeframe: HTF confluence: TUTUSDT Лонг (бычье пересечение MACD) score 51 -> 75 (подтверждено старшими ТФ (1h/4h/1d))
+2026-08-23 14:02:59,895 [INFO] scanner: Сканер: TUT MACD Crossover - R:R 1:0.74 хуже порога 1:1.20 - отсеян
+2026-08-23 14:03:12,508 [INFO] multi_timeframe: HTF veto: NEARUSDT Шорт (перекупленность) (score был 46) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:03:32,288 [INFO] multi_timeframe: HTF veto: ACEUSDT Шорт (медвежье пересечение MACD) (score был 35) отклонён - смешанная картина по ТФ (за: 1h, против: 4h/1d)
+2026-08-23 14:03:39,367 [INFO] multi_timeframe: HTF confluence: EURUSDT Лонг (перепроданность) score 37 -> 53 (подтверждено старшими ТФ (4h/1d))
+2026-08-23 14:03:40,764 [INFO] scanner: Сканер: EUR RSI - текущий ATR выше 95 перцентиля за 30д - отсеян
+2026-08-23 14:03:49,196 [INFO] multi_timeframe: HTF veto: ONDOUSDT Шорт (перекупленность) (score был 38) отклонён - смешанная картина по ТФ (за: 1h, против: 4h/1d)
+2026-08-23 14:04:04,644 [INFO] multi_timeframe: HTF confluence: EURIUSDT Лонг (перепроданность) score 36 -> 52 (подтверждено старшими ТФ (4h/1d))
+2026-08-23 14:04:06,039 [INFO] scanner: Сканер: EURI RSI - текущий ATR выше 95 перцентиля за 30д - отсеян
+2026-08-23 14:04:31,833 [INFO] multi_timeframe: HTF veto: STXUSDT Шорт (медвежье пересечение MACD) (score был 51) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:04:34,697 [INFO] scanner: Сканер: TONUSDT имеет статус 'BREAK' (не TRADING) - отсеян
+2026-08-23 14:04:41,929 [INFO] multi_timeframe: HTF veto: ETHFIUSDT Шорт (перекупленность) (score был 98) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:05:06,371 [INFO] multi_timeframe: HTF veto: INJUSDT Шорт (перекупленность) (score был 36) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:05:13,520 [INFO] multi_timeframe: HTF veto: PAXGUSDT Шорт (перекупленность) (score был 83) отклонён - против тренда старших ТФ (4h/1d)
+2026-08-23 14:05:23,388 [INFO] multi_timeframe: HTF veto: XAUTUSDT Шорт (перекупленность) (score был 55) отклонён - против тренда старших ТФ (4h/1d)
+2026-08-23 14:05:38,843 [INFO] scanner: Сканер: NFPUSDT имеет статус 'BREAK' (не TRADING) - отсеян
+2026-08-23 14:06:01,385 [INFO] multi_timeframe: HTF veto: LDOUSDT Шорт (перекупленность) (score был 31) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:06:08,422 [INFO] scanner: Сканер: BFUSD RSI - R:R 1:0.31 хуже порога 1:1.20 - отсеян
+2026-08-23 14:06:26,955 [INFO] multi_timeframe: HTF veto: PENDLEUSDT Шорт (перекупленность) (score был 41) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:06:35,381 [INFO] multi_timeframe: HTF veto: EIGENUSDT Шорт (перекупленность) (score был 94) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:06:39,636 [INFO] multi_timeframe: HTF confluence: EIGENUSDT Лонг (пробой диапазона вверх) score 67 -> 91 (подтверждено старшими ТФ (1h/4h/1d))
+2026-08-23 14:06:41,046 [INFO] scanner: Сканер: EIGEN Donchian Breakout - текущий ATR выше 95 перцентиля за 30д - отсеян
+2026-08-23 14:06:59,383 [INFO] multi_timeframe: HTF veto: MOVEUSDT Шорт (перекупленность) (score был 54) отклонён - смешанная картина по ТФ (за: 1d, против: 1h/4h)
+2026-08-23 14:07:10,663 [INFO] multi_timeframe: HTF veto: LUNCUSDT Шорт (перекупленность) (score был 53) отклонён - смешанная картина по ТФ (за: 1h, против: 4h/1d)
+2026-08-23 14:07:20,554 [INFO] multi_timeframe: HTF veto: SAGAUSDT Шорт (перекупленность) (score был 46) отклонён - против тренда старших ТФ (1h/4h/1d)
+2026-08-23 14:07:24,894 [INFO] scanner: Сканер: VANRYUSDT имеет статус 'BREAK' (не TRADING) - отсеян
+2026-08-23 14:07:45,415 [INFO] multi_timeframe: HTF confluence: HEIUSDT Шорт (пробой диапазона вниз) score 40 -> 46 (смешанная картина по ТФ (за: 1h/4h, против: 1d))

@@ -203,15 +203,20 @@ def _draw_volume(ax, candles: list[dict]) -> None:
         ax.axhline(max_vol * frac, color=_GRID_COLOR, linewidth=0.5, zorder=0)
 
 
-def _draw_watermark(ax) -> None:
-    """Полупрозрачный ромб + надпись BINANCE по центру графика, как
-    водяной знак на скриншотах с самой площадки."""
+def _draw_watermark(ax, text: str | None = "BINANCE") -> None:
+    """Полупрозрачный ромб + надпись по центру графика, как водяной
+    знак на скриншотах с самой площадки. text=None - не рисовать
+    вообще (используется для графиков под другие площадки, см.
+    okx_orbit_generator.generate_chart_for_post - водяной знак BINANCE
+    там неуместен)."""
+    if text is None:
+        return
     ax.text(
         0.5, 0.52, "◆", transform=ax.transAxes, ha="center", va="center",
         fontsize=46, color=_WATERMARK_COLOR, alpha=0.05, zorder=0,
     )
     ax.text(
-        0.5, 0.46, "BINANCE", transform=ax.transAxes, ha="center", va="center",
+        0.5, 0.46, text, transform=ax.transAxes, ha="center", va="center",
         fontsize=20, color=_WATERMARK_COLOR, alpha=0.05, fontweight="bold",
         family="monospace", zorder=0,
     )
@@ -326,10 +331,17 @@ def generate_cumulative_pnl_chart(records: list[dict], out_name: str = "weekly_d
     return out_path
 
 
-def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None) -> Path | None:
+def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None,
+                          watermark_text: str | None = "BINANCE", filename_suffix: str = "") -> Path | None:
     """
     Возвращает путь к PNG со свечным графиком тикера (MA7/25/99 +
     объём снизу + водяной знак, в стиле самого Binance), либо None.
+
+    watermark_text - см. _draw_watermark (None - без водяного знака,
+    для графиков под другие площадки, см. okx_orbit_generator.py).
+    filename_suffix - добавляется к имени файла (например "_okx"),
+    чтобы графики под разные площадки для одного тикера не
+    перезаписывали друг друга при параллельной генерации.
     """
     try:
         candles = fetch_klines(ticker, days)
@@ -361,7 +373,7 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
     _, _, time_fmt = _INTERVAL_BY_DAYS.get(days, ("1h", days * 24, "%H:%M"))
 
     _CHARTS_DIR.mkdir(exist_ok=True)
-    out_path = _CHARTS_DIR / f"{ticker}_chart.png"
+    out_path = _CHARTS_DIR / f"{ticker}{filename_suffix}_chart.png"
 
     fig = plt.figure(figsize=(8, 5), dpi=150)
     fig.patch.set_facecolor(_BG_COLOR)
@@ -369,7 +381,7 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
     ax_price = fig.add_subplot(gs[0])
     ax_vol = fig.add_subplot(gs[1], sharex=ax_price)
 
-    _draw_watermark(ax_price)
+    _draw_watermark(ax_price, watermark_text)
     _draw_candles(ax_price, candles)
     _draw_moving_averages(ax_price, candles)
     _style_axis(ax_price, show_xticks=False)

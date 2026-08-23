@@ -43,6 +43,8 @@ import index_signal_generator
 import index_signal_scanner
 import loss_review_generator
 import mini_lesson_generator
+import okx_draft_publisher
+import okx_orbit_generator
 import opinion_generator
 import outcome_tracker
 import post_format
@@ -816,6 +818,76 @@ def try_publish_opinion_post() -> None:
     _crosspost_to_bluesky(post_text)
     queue_manager.set_last_post_time("opinion")
     queue_manager.roll_new_jitter("opinion", config.OPINION_JITTER_HOURS * 3600)
+
+
+def try_publish_okx_orbit_draft() -> None:
+    """Готовит черновик поста для OKX Orbit и присылает его владельцу в
+    Telegram (см. okx_draft_publisher.py) - НЕ публикует ничего сам, у
+    OKX Orbit нет API для этого (см. README_OKX1.md). Выключено по
+    умолчанию (config.OKX_ORBIT_ENABLED) и требует
+    config.OKX_ORBIT_DRAFT_CHAT_ID."""
+    if not config.OKX_ORBIT_ENABLED:
+        return
+    if not okx_draft_publisher.is_configured():
+        logger.warning("OKX_ORBIT_ENABLED=true, но OKX_ORBIT_DRAFT_CHAT_ID не задан - пропускаю формат")
+        return
+
+    seconds_elapsed = queue_manager.seconds_since_last_post("okx_orbit")
+    min_seconds = config.OKX_ORBIT_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("okx_orbit")
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("okx_orbit"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+
+    logger.info("Окно черновика (OKX Orbit) открыто - генерирую пост")
+
+    theme = opinion_generator.pick_theme(queue_manager.get_last_okx_orbit_theme())
+    format_type = okx_orbit_generator.pick_format(queue_manager.get_last_okx_orbit_format())
+
+    try:
+        result = okx_orbit_generator.generate_okx_orbit_post(theme, format_type)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на черновике OKX Orbit - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("okx_orbit", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации черновика OKX Orbit: %s", e)
+        queue_manager.set_retry_backoff("okx_orbit", 1)
+        return
+
+    if result is None:
+        logger.warning("Не удалось получить данные для темы %s (OKX Orbit) - пропускаю до следующего окна", theme)
+        queue_manager.set_retry_backoff("okx_orbit", 1)
+        return
+
+    post_text, allowed_numbers, _headline_pct, format_type = result
+    ok, reason = okx_orbit_generator.validate_okx_orbit_post_text(post_text, allowed_numbers)
+    if not ok:
+        logger.error("Черновик OKX Orbit не прошёл проверку, доставка отменена: %s", reason)
+        queue_manager.set_retry_backoff("okx_orbit", 1)
+        return
+
+    chart_path = None
+    try:
+        chart_path = okx_orbit_generator.generate_chart_for_post(theme)
+    except Exception as e:
+        logger.warning("Не удалось сгенерировать график для черновика OKX Orbit: %s - шлю без картинки", e)
+
+    try:
+        delivered = okx_draft_publisher.send_draft(post_text, format_type, image_path=chart_path)
+    except okx_draft_publisher.DraftDeliveryError as e:
+        logger.error("Ошибка доставки черновика OKX Orbit в Telegram: %s", e)
+        queue_manager.set_retry_backoff("okx_orbit", 1)
+        return
+
+    queue_manager.set_last_okx_orbit_theme(theme)
+    queue_manager.set_last_okx_orbit_format(format_type)
+
+    logger.info("Черновик OKX Orbit доставлен: %s", delivered)
+    queue_manager.set_last_post_time("okx_orbit")
+    queue_manager.roll_new_jitter("okx_orbit", config.OKX_ORBIT_JITTER_HOURS * 3600)
 
 
 # ============================================================
@@ -1619,6 +1691,7 @@ def tick() -> None:
         try_publish_currency_post()
         try_publish_binance_promo()
         try_publish_opinion_post()
+        try_publish_okx_orbit_draft()
         try_publish_hot_take()
         try_publish_mini_lesson()
         try_publish_audience_question()
