@@ -1,0 +1,16 @@
+diff --git a/.github/workflows/bot.yml b/.github/workflows/bot.yml
+index 98f79a267..231ba7960 100644
+--- a/.github/workflows/bot.yml
++++ b/.github/workflows/bot.yml
+@@ -82,6 +82,11 @@ jobs:
+       BINANCE_SPOT_API_KEY: ${{ secrets.BINANCE_SPOT_API_KEY }}
+       BINANCE_SPOT_API_SECRET: ${{ secrets.BINANCE_SPOT_API_SECRET }}
+       PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT: ${{ secrets.PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT || '5.0' }}
++
++      OKX_ORBIT_ENABLED: 'true'
++      OKX_ORBIT_DRAFT_CHAT_ID: ${{ secrets.OKX_ORBIT_DRAFT_CHAT_ID }}
++      OKX_ORBIT_INTERVAL_HOURS: ${{ secrets.OKX_ORBIT_INTERVAL_HOURS || '8' }}
++      OKX_ORBIT_JITTER_HOURS: ${{ secrets.OKX_ORBIT_JITTER_HOURS || '2' }}
+     steps:
+       - name: Checkout repository
+         uses: actions/checkout@v4
