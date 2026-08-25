@@ -211,8 +211,19 @@ class FuturesClient:
     # --- ордера (с подписью) ---
 
     def place_market_order(self, symbol: str, side: str, quantity: float) -> dict:
+        # newOrderRespType="RESULT" обязателен: по умолчанию Binance отвечает
+        # в режиме ACK, где avgPrice для MARKET-ордера НЕ заполняется
+        # ("0.00000") - именно это заставляло futures_executor._extract_fill_price
+        # ВСЕГДА откатываться на fallback_price (mark price до входа), из-за
+        # чего slippage_pct был 0.0 на 100% реальных сделок, а не только в
+        # редком случае, для которого писался fallback (см. P1.1 отчёт по
+        # проверке демо/реальных условий исполнения - slippage_pct=0.0 без
+        # исключений на всех закрытых сделках был симптомом именно этого).
+        # RESULT возвращает финальный FILLED-результат ордера сразу же,
+        # включая настоящий avgPrice.
         return self._signed_request("POST", "/fapi/v1/order", {
             "symbol": symbol, "side": side, "type": "MARKET", "quantity": quantity,
+            "newOrderRespType": "RESULT",
         })
 
     def place_stop_market(self, symbol: str, side: str, stop_price: float,
