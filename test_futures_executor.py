@@ -128,6 +128,52 @@ def test_round_to_step_zero_step_is_noop():
     assert fe.round_to_step(20.0037, 0) == 20.0037
 
 
+# --- _warn_if_position_size_rounding_too_large ---
+
+def test_position_size_rounding_warns_on_small_balance(caplog):
+    """3% риска от $100 = $3, дистанция до стопа $0.01 -> raw_qty=300,
+    но округление до кратного step_size=50 даёт qty=300 (0 отклонения)
+    в этом случае vs если бы raw_qty было не кратно - берём пример,
+    где округление реально режет риск заметно (>20%)."""
+    caplog.set_level("WARNING")
+    # risk=$3, дистанция до стопа=$0.01 -> raw_qty=300; step_size=130 ->
+    # округление вниз до 260 -> фактический риск = 260*0.01 = $2.60,
+    # отклонение (3-2.6)/3 = 13.3% - ниже порога, не должно предупреждать.
+    fe._warn_if_position_size_rounding_too_large(
+        "TESTUSDT", intended_risk_amount=3.0, quantity=260.0, entry_price=1.0, stop_price=0.99,
+    )
+    assert not caplog.records
+
+    caplog.clear()
+    # Тот же целевой риск $3, но округление ушло сильнее - фактический
+    # риск всего $1.50 (50% от целевого) - должно предупредить.
+    fe._warn_if_position_size_rounding_too_large(
+        "TESTUSDT", intended_risk_amount=3.0, quantity=150.0, entry_price=1.0, stop_price=0.99,
+    )
+    assert len(caplog.records) == 1
+    assert "TESTUSDT" in caplog.records[0].message
+
+
+def test_position_size_rounding_no_warning_on_large_balance(caplog):
+    """На крупном балансе (риск в сотни/тысячи USDT) тот же абсолютный
+    step_size даёт пренебрежимое отклонение - предупреждения быть не
+    должно."""
+    caplog.set_level("WARNING")
+    fe._warn_if_position_size_rounding_too_large(
+        "TESTUSDT", intended_risk_amount=5000.0, quantity=4995.0, entry_price=1.0, stop_price=0.0,
+    )
+    # quantity*|entry-stop| = 4995*1.0 = 4995, отклонение (5000-4995)/5000 = 0.1%
+    assert not caplog.records
+
+
+def test_position_size_rounding_skips_when_intended_risk_zero(caplog):
+    caplog.set_level("WARNING")
+    fe._warn_if_position_size_rounding_too_large(
+        "TESTUSDT", intended_risk_amount=0.0, quantity=100.0, entry_price=1.0, stop_price=0.5,
+    )
+    assert not caplog.records
+
+
 # --- open_protected_position: happy path ---
 
 def test_open_protected_position_long_happy_path():

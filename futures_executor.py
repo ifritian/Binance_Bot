@@ -61,6 +61,18 @@ _LIQUIDATION_SAFETY_MARGIN = 1.2
 # внимание к необычно плохому исполнению конкретного ордера.
 _SLIPPAGE_WARN_THRESHOLD_PCT = 0.3
 
+# Насколько сильно округление размера позиции round_to_step вниз может
+# сместить РЕАЛЬНЫЙ риск сделки от целевого risk_pct% баланса, прежде
+# чем предупреждать явно. На крупном балансе raw_quantity велика
+# относительно step_size биржи, и отклонение обычно <1% - незаметно.
+# На маленьком балансе (см. обсуждение перехода на реальные деньги с
+# урезанным риском, напр. риск 3% от $100) тот же step_size даёт
+# отклонение на порядки больше, вплоть до открытия позиции с риском,
+# заметно отличающимся от заявленного - раньше это нигде не
+# проверялось и не логировалось (см. P1.1 отчёт по проверке округления
+# лота на маленьких суммах).
+_POSITION_SIZE_ROUNDING_WARN_THRESHOLD_PCT = 20.0
+
 
 class ExecutionError(Exception):
     """Что-то в цикле открытия защищённой позиции пошло не так - текст
@@ -174,6 +186,34 @@ def _warn_if_liquidation_before_stop(side: str, entry_price: float, stop_price: 
         )
 
 
+def _warn_if_position_size_rounding_too_large(
+    symbol: str, intended_risk_amount: float, quantity: float, entry_price: float, stop_price: float,
+) -> None:
+    """round_to_step (используется при расчёте quantity) всегда округляет
+    ВНИЗ до кратного step_size биржи (см. докстринг round_to_step) - на
+    крупном балансе raw_quantity велика относительно step_size, и это
+    округление съедает доли процента от целевого риска, незаметно. На
+    маленьком балансе (риск в единицы-десятки USDT) тот же step_size
+    может увести реальный риск сделки далеко от заявленного risk_pct -
+    вплоть до открытия позиции, риск по которой заметно (см.
+    _POSITION_SIZE_ROUNDING_WARN_THRESHOLD_PCT) отличается от того, что
+    предполагал вызывающий код/пользователь. Раньше нигде не
+    проверялось. Не блокирует исполнение - решение остаётся за
+    вызывающим кодом/пользователем, как и в _warn_if_liquidation_before_stop."""
+    if intended_risk_amount <= 0:
+        return
+    actual_risk_amount = quantity * abs(entry_price - stop_price)
+    deviation_pct = abs(intended_risk_amount - actual_risk_amount) / intended_risk_amount * 100
+    if deviation_pct >= _POSITION_SIZE_ROUNDING_WARN_THRESHOLD_PCT:
+        logger.warning(
+            "ВНИМАНИЕ: %s - округление размера позиции по step_size биржи сместило "
+            "реальный риск сделки на %.1f%% от целевого (целевой ~%.2f USDT, "
+            "фактический ~%.2f USDT). На маленьком балансе это может означать, что "
+            "риск сделки заметно отличается от заявленного risk_pct.",
+            symbol, deviation_pct, intended_risk_amount, actual_risk_amount,
+        )
+
+
 def _emergency_close_or_raise(client: FuturesClient, symbol: str, step: str, original_error: Exception) -> None:
     """Вызывается, когда стоп ИЛИ тейк не удалось поставить ПОСЛЕ
     успешного входа - позиция сейчас "голая" (без защиты). Пытается
@@ -264,6 +304,9 @@ def open_protected_position(
             f"меньше минимально допустимой биржей ({filters['min_notional']} USDT) - "
             "риск на сделку слишком мал относительно баланса/плеча."
         )
+
+    intended_risk_amount = balance * risk_pct / 100
+    _warn_if_position_size_rounding_too_large(symbol, intended_risk_amount, quantity, entry_price, stop_price)
 
     tick_size = filters.get("tick_size") or 0.0
     stop_price = round_to_step(stop_price, tick_size) if tick_size else stop_price
