@@ -179,21 +179,12 @@ ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
 # article), чтобы не выходить в одно и то же окно каждый раз.
 BINANCE_PROMO_INTERVAL_HOURS = float(os.environ.get("BINANCE_PROMO_INTERVAL_HOURS", "72"))
 
-# --- OKX Orbit (см. okx_orbit_generator.py / okx_draft_publisher.py) ---
-# У OKX Orbit нет публичного API для постинга (см. README_OKX1.md) -
-# бот только ГОТОВИТ черновик и присылает его в личный Telegram-чат
-# владельца (OKX_ORBIT_DRAFT_CHAT_ID), публикация - вручную. Выключено
-# по умолчанию (OKX_ORBIT_ENABLED=false) - формат опциональный, как и
-# Bluesky-кросспостинг, требует осознанного включения.
-OKX_ORBIT_ENABLED = os.environ.get("OKX_ORBIT_ENABLED", "false").lower() == "true"
-# Личный chat_id (НЕ канал) - получить через @userinfobot в Telegram,
-# либо через getUpdates после первого сообщения боту.
-OKX_ORBIT_DRAFT_CHAT_ID = os.environ.get("OKX_ORBIT_DRAFT_CHAT_ID", "")
-# Интервал сознательно смещён от остальных Square/Bluesky форматов -
-# ориентир: несколько черновиков в день, чтобы владелец успевал
-# публиковать их за свою обычную рутину (пара заходов в день).
-OKX_ORBIT_INTERVAL_HOURS = float(os.environ.get("OKX_ORBIT_INTERVAL_HOURS", "8"))
-OKX_ORBIT_JITTER_HOURS = float(os.environ.get("OKX_ORBIT_JITTER_HOURS", "2"))
+# --- Новостной формат "мнение по новости" (см. news_opinion_generator.py) ---
+# Публичный Telegram-канал, чей t.me/s/<канал> превью-страница читается
+# без какого-либо аккаунта. @forklog - независимое крипто-медиа.
+NEWS_SOURCE_CHANNEL = os.environ.get("NEWS_SOURCE_CHANNEL", "forklog")
+NEWS_TAKE_ENABLED = os.environ.get("NEWS_TAKE_ENABLED", "false").lower() == "true"
+
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))
 
 # --- Treasury Index (собственный инфраструктурный индекс, см. treasury_index.py) ---

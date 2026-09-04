@@ -209,27 +209,6 @@ def set_last_hot_take_theme(theme: str) -> None:
     _set("last_hot_take_theme", theme)
 
 
-def get_last_okx_orbit_theme() -> Optional[str]:
-    """Отдельно от get_last_opinion_theme/get_last_hot_take_theme -
-    формат OKX Orbit публикуется по своему расписанию (см.
-    config.OKX_ORBIT_INTERVAL_HOURS), тема ротируется независимо."""
-    return _get("last_okx_orbit_theme", None)
-
-
-def set_last_okx_orbit_theme(theme: str) -> None:
-    _set("last_okx_orbit_theme", theme)
-
-
-def get_last_okx_orbit_format() -> Optional[str]:
-    """Ротация между форматами okx_orbit_generator.FORMATS
-    ('market_take'/'trading_insight') - независимо от темы."""
-    return _get("last_okx_orbit_format", None)
-
-
-def set_last_okx_orbit_format(format_type: str) -> None:
-    _set("last_okx_orbit_format", format_type)
-
-
 def get_last_win_celebration_angle() -> Optional[str]:
     """Ротация эмоционального фокуса поста 'Забрали профит!' (см.
     win_celebration_generator._ANGLES) - отдельно от остальных ротаций,
@@ -475,6 +454,27 @@ def get_theme_post_history() -> dict:
 
 def set_theme_post_history(history: dict) -> None:
     _set("theme_post_history", history)
+
+
+# --- Новостной формат (см. news_opinion_generator.py) - время
+# последнего новостного поста (гейт частоты ~раз в 3 дня) и список уже
+# использованных id новостей, чтобы не реагировать на одну новость
+# дважды. ---
+
+def get_last_news_take_time() -> float:
+    return _get("last_news_take_time", 0)
+
+
+def set_last_news_take_time(ts: Optional[float] = None) -> None:
+    _set("last_news_take_time", ts if ts is not None else time.time())
+
+
+def get_used_news_post_ids() -> list:
+    return _get("used_news_post_ids", [])
+
+
+def set_used_news_post_ids(post_ids: list) -> None:
+    _set("used_news_post_ids", post_ids)
 
 
 # --- Ряд доходностей по периодам (для index_volatility.py) ---

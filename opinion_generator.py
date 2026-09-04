@@ -157,7 +157,12 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
             f"'2 дня', не пересчитывай и не округляй по-своему (не '24 часа', не 'сутки').\n\n"
             f"Напиши личное мнение/наблюдение об этом движении рынка."
         )
-        allowed_numbers = {s["pct"], s["amplitude_pct"], round(s["current_price"], 2)}
+        # 48/2 разрешены отдельно - промпт сам просит писать именно эти
+        # числа для периода. abs(pct) разрешён отдельно от pct - если
+        # движение отрицательное, LLM естественно пишет "снизился на
+        # 2.11%" без явного минуса (слово "снизился" уже несёт смысл
+        # падения), а без этого валидатор бpaковал бы честный текст.
+        allowed_numbers = {s["pct"], abs(s["pct"]), s["amplitude_pct"], round(s["current_price"], 2), 48.0, 2.0}
         headline_pct = s["pct"]
     else:
         breakdown_lines = "\n".join(
@@ -173,7 +178,10 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
             f"Напиши личное мнение/наблюдение об этом движении рынка - можно "
             f"упомянуть как отдельные активы, так и общую картину."
         )
-        allowed_numbers = set(stats["breakdown"].values()) | {avg}
+        # См. комментарий в ветке "single" выше - те же два фикса
+        # (48/2 разрешены отдельно, и модуль числа наравне со знаком).
+        allowed_numbers = set(stats["breakdown"].values()) | {avg, 48.0, 2.0}
+        allowed_numbers |= {abs(v) for v in stats["breakdown"].values()} | {abs(avg)}
         headline_pct = avg
 
     user_prompt += voice_memory.anti_repeat_block() + voice_memory.continuity_block(theme, label)

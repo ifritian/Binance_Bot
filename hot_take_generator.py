@@ -85,7 +85,11 @@ def generate_hot_take(theme: str, hook_mode: Optional[str] = None) -> Optional[t
             f"не пересчитывай по-своему (не '24 часа', не 'сутки').\n\n"
             f"Напиши хот-тейк - тезис против общего рыночного консенсуса по этому движению."
         )
-        allowed_numbers = {s["pct"]}
+        # См. opinion_generator.py - тот же класс бага, тот же фикс:
+        # 48/2 разрешены отдельно (промпт сам просит их писать), и
+        # модуль числа разрешён наравне со знаком (LLM пишет "снизился
+        # на X%" без минуса при падении).
+        allowed_numbers = {s["pct"], abs(s["pct"]), 48.0, 2.0}
         headline_pct = s["pct"]
     else:
         breakdown_lines = "\n".join(
@@ -100,7 +104,8 @@ def generate_hot_take(theme: str, hook_mode: Optional[str] = None) -> Optional[t
             f"не пересчитывай по-своему (не '24 часа', не 'сутки').\n\n"
             f"Напиши хот-тейк - тезис против общего рыночного консенсуса по рынку в целом."
         )
-        allowed_numbers = set(stats["breakdown"].values()) | {avg}
+        allowed_numbers = set(stats["breakdown"].values()) | {avg, 48.0, 2.0}
+        allowed_numbers |= {abs(v) for v in stats["breakdown"].values()} | {abs(avg)}
         headline_pct = avg
 
     user_prompt += voice_memory.anti_repeat_block() + voice_memory.continuity_block(theme, label)

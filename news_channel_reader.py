@@ -1,0 +1,183 @@
+"""
+news_channel_reader.py - читает последние посты публичного Telegram-
+канала через его превью-страницу t.me/s/<канал>, без какого-либо
+аккаунта или токена (см. README.md - почему выбран именно этот способ,
+а не MTProto/Telethon).
+
+КАК ЭТО РАБОТАЕТ: у любого публичного Telegram-канала есть открытая
+HTML-версия по адресу https://t.me/s/<username> - её показывают даже
+без входа в Telegram, ей исторически пользуются превью-боты и виджеты
+"последние посты с канала" на сайтах. Разметка (data-post,
+tgme_widget_message, tgme_widget_message_text) стабильна уже много лет,
+но это всё равно НЕОФИЦИАЛЬНЫЙ контракт - Telegram не документирует и
+не гарантирует её. Если однажды парсинг перестанет находить посты -
+проверить вручную, не поменялась ли разметка страницы.
+
+ВАЖНО ПРО АВТОРСКИЕ ПРАВА: fetch_recent_posts() возвращает СЫРОЙ текст
+чужих постов - это нужно только чтобы LLM прочитала и сформировала
+СВОЁ мнение. news_opinion_generator.py обязан пересказывать это своими
+словами (и даже проверяет это кодом - см. _has_verbatim_overlap там),
+а не пересылать/копировать исходный текст.
+"""
+import logging
+from pathlib import Path
+from typing import NamedTuple, Optional
+
+import requests
+from bs4 import BeautifulSoup
+
+import config
+
+logger = logging.getLogger(__name__)
+
+NEWS_CHANNEL = config.NEWS_SOURCE_CHANNEL
+
+_IMAGES_DIR = Path(__file__).parent / "charts"  # тот же каталог, что и у графиков - уже в .gitignore
+
+_MIN_TEXT_LENGTH = 40  # короче - скорее всего просто ссылка/картинка без сути, нечего пересказывать
+
+# ForkLog (и похожие каналы) периодически публикует посты-дайджесты -
+# подборку из 5-10 разных заголовков без связи друг с другом (см. пример
+# реального поста forklog/49552 в README.md). Если дать такой пост
+# LLM как "новость, на которую нужно высказать мнение" - результат
+# разваливается на бессвязный список ("с одной стороны..., с другой
+# стороны... а ещё..."), т.к. это не одна новость, а десять. Отличаем
+# по количеству отдельных ссылок на статьи в одном посте.
+_DIGEST_LINK_THRESHOLD = 3  # 3+ отдельных ссылки на разные статьи в одном посте - это дайджест, не одна новость
+
+# Строки нижнего колонтитула-навигации, которые ForkLog (и похожие
+# каналы) добавляют почти в каждый пост ("Новости | AI | YouTube") -
+# это не часть новости, вырезаем, чтобы не путать LLM и не засорять
+# текст, который уходит в промпт.
+_FOOTER_LINK_TEXTS = {"новости", "ai", "youtube", "подробнее", "читать на forklog"}
+
+
+class NewsPost(NamedTuple):
+    post_id: int
+    text: str
+    article_url: Optional[str] = None
+
+
+def _fetch_html(channel: str) -> str:
+    url = f"https://t.me/s/{channel}"
+    resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    return resp.text
+
+
+def _is_digest_post(text_div) -> bool:
+    """True, если в посте несколько (см. _DIGEST_LINK_THRESHOLD) ссылок
+    на разные статьи - признак поста-подборки, а не одной новости."""
+    article_hrefs = set()
+    for a in text_div.find_all("a", href=True):
+        href = a["href"]
+        if "forklog.com/news" in href or "forklog.com/exclusive" in href:
+            article_hrefs.add(href)
+    return len(article_hrefs) >= _DIGEST_LINK_THRESHOLD
+
+
+def _find_article_url(text_div) -> Optional[str]:
+    """Первая ссылка на статью (не на общий раздел "Новости" и не на
+    другие соцсети канала) - используется для картинки превью статьи,
+    см. fetch_article_preview_image()."""
+    for a in text_div.find_all("a", href=True):
+        href = a["href"]
+        if "forklog.com/news/" in href or "forklog.com/exclusive/" in href:
+            return href
+    return None
+
+
+def _extract_text(text_div) -> str:
+    """Текст поста без ссылок нижнего колонтитула-навигации (см.
+    _FOOTER_LINK_TEXTS) - убираем эти <a> перед извлечением текста,
+    чтобы их подписи не попадали в результат."""
+    for a in text_div.find_all("a"):
+        if a.get_text(strip=True).lower() in _FOOTER_LINK_TEXTS:
+            a.decompose()
+    return text_div.get_text("\n", strip=True)
+
+
+def _parse_posts(html: str) -> list[NewsPost]:
+    soup = BeautifulSoup(html, "html.parser")
+    posts = []
+
+    for msg in soup.select("div.tgme_widget_message[data-post]"):
+        data_post = msg.get("data-post", "")
+        if "/" not in data_post:
+            continue
+        try:
+            post_id = int(data_post.split("/")[-1])
+        except ValueError:
+            continue
+
+        text_div = msg.select_one("div.tgme_widget_message_text")
+        if text_div is None:
+            continue  # пост без текста (только медиа/опрос) - нечего пересказывать
+
+        if _is_digest_post(text_div):
+            continue  # подборка из нескольких новостей, не одна история - см. докстринг _is_digest_post
+
+        article_url = _find_article_url(text_div)  # до _extract_text - там ссылки не трогаем, только текст footer-ссылок
+        text = _extract_text(text_div)
+        if len(text) < _MIN_TEXT_LENGTH:
+            continue
+
+        posts.append(NewsPost(post_id=post_id, text=text, article_url=article_url))
+
+    return posts
+
+
+def fetch_recent_posts(limit: int = 10) -> list[NewsPost]:
+    """Последние `limit` постов канала с текстом (медиа-посты без
+    подписи и слишком короткие посты отфильтрованы), от новых к старым.
+    При сетевой ошибке возвращает [] и логирует warning - вызывающий
+    код должен трактовать пустой список как "пропустить окно", не
+    падать намертво (проблема с одним новостным каналом не должна
+    ронять весь остальной поток постов)."""
+    try:
+        html = _fetch_html(NEWS_CHANNEL)
+    except requests.RequestException as e:
+        logger.warning("Не удалось прочитать новостной канал %s: %s", NEWS_CHANNEL, e)
+        return []
+
+    posts = _parse_posts(html)
+    return list(reversed(posts))[:limit]
+
+
+def fetch_article_preview_image(article_url: str, filename_hint: str) -> Optional[Path]:
+    """Скачивает превью-картинку статьи (og:image) - ту же самую, что
+    показал бы сам Telegram/любая соцсеть при вставке этой ссылки как
+    предпросмотр. Не текст статьи, а именно официальная превью-картинка,
+    которую сам сайт указал для этой конкретной статьи через og:image -
+    стандартный, некопирайт-чувствительный способ показать "фото по
+    теме" (то же самое видит любой, кто просто скинет эту ссылку в
+    чат). None, если ссылки нет, og:image не нашёлся, или сеть подвела -
+    отсутствие картинки не должно ронять генерацию поста."""
+    if not article_url:
+        return None
+
+    try:
+        resp = requests.get(article_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        logger.warning("Не удалось открыть страницу статьи %s: %s", article_url, e)
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    og_image = soup.select_one('meta[property="og:image"]')
+    if og_image is None or not og_image.get("content"):
+        return None
+    image_url = og_image["content"]
+
+    try:
+        img_resp = requests.get(image_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        img_resp.raise_for_status()
+    except requests.RequestException as e:
+        logger.warning("Не удалось скачать превью-картинку %s: %s", image_url, e)
+        return None
+
+    _IMAGES_DIR.mkdir(exist_ok=True)
+    suffix = ".jpg" if ".png" not in image_url.lower() else ".png"
+    out_path = _IMAGES_DIR / f"news_{filename_hint}{suffix}"
+    out_path.write_bytes(img_resp.content)
+    return out_path

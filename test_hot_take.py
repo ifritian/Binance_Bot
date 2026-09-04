@@ -34,7 +34,7 @@ def test_generate_hot_take_single_theme_uses_real_pct(monkeypatch):
 
     assert result is not None
     text, allowed_numbers, headline_pct = result
-    assert allowed_numbers == {5.5}
+    assert allowed_numbers == {5.5, 48.0, 2.0}  # 5.5 = сам pct (abs(5.5) с ним совпадает); 48/2 - разрешённый период
     assert post_format.DISCLAIMER in text
     assert "Все празднуют рост" in text
 
@@ -47,7 +47,9 @@ def test_generate_hot_take_basket_theme_allows_each_ticker_and_avg(monkeypatch):
 
     assert result is not None
     _, allowed_numbers, _ = result
-    assert allowed_numbers == {5.5, -2.1, 8.0, 1.0, 3.1}
+    # 2.1 добавлен рядом с -2.1 - см. фикс "модуль отрицательного числа
+    # разрешён наравне со знаком" (LLM пишет "снизился на 2.1%" без минуса).
+    assert allowed_numbers == {5.5, -2.1, 2.1, 8.0, 1.0, 3.1, 48.0, 2.0}
 
 
 def test_generate_hot_take_returns_none_on_empty_llm_response(monkeypatch):
@@ -122,6 +124,14 @@ def test_generate_hot_take_without_hook_mode_uses_neutral_prompt(monkeypatch):
 def test_validate_hot_take_passes_valid_text():
     text = f"$BTC вырос на 5.5% - и это совсем не то, что кажется.\n\n{post_format.DISCLAIMER}"
     ok, reason = hot_take_generator.validate_hot_take(text, {5.5})
+    assert ok is True, reason
+
+
+def test_validate_hot_take_allows_negative_pct_written_without_sign():
+    """Регрессия: см. тот же тест в test_opinion_generator.py - тот же
+    класс бага, та же логика фикса."""
+    text = f"$SOL снизился на 3.4% - все празднуют падение, а я жду разворота.\n\n{post_format.DISCLAIMER}"
+    ok, reason = hot_take_generator.validate_hot_take(text, {-3.4, 3.4})
     assert ok is True, reason
 
 

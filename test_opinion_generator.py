@@ -104,6 +104,37 @@ def test_validate_opinion_post_text_passes_valid_text():
     assert ok is True, reason
 
 
+def test_validate_opinion_post_text_allows_48_hours_and_2_days_mentions():
+    """Регрессия: _build_user_prompt сам явно просит модель писать период
+    времени как "48 часов" или "2 дня" - раньше эти числа не были в
+    allowed_numbers, из-за чего валидатор бpaковал честно выполнивший
+    инструкцию ответ."""
+    text = (
+        f"$BTC вырос на 5.5% за последние 48 часов - и рынок явно не "
+        f"ожидал такого разворота.\n\n{post_format.DISCLAIMER}"
+    )
+    ok, reason = opinion_generator.validate_opinion_post_text(text, {5.5, 48.0, 2.0})
+    assert ok is True, reason
+
+    text_days = (
+        f"$BTC вырос на 5.5% за последние 2 дня - и рынок явно не "
+        f"ожидал такого разворота.\n\n{post_format.DISCLAIMER}"
+    )
+    ok, reason = opinion_generator.validate_opinion_post_text(text_days, {5.5, 48.0, 2.0})
+    assert ok is True, reason
+
+
+def test_validate_opinion_post_text_allows_negative_pct_written_without_sign():
+    """Регрессия: при падении цены LLM естественно пишет "снизился на
+    2.11%" без явного минуса (слово "снизился" уже несёт смысл падения),
+    но валидатор сравнивал число буквально с -2.11 и бpaковал честный
+    текст. Модуль отрицательного pct должен быть в allowed_numbers
+    наравне со знаком."""
+    text = f"$BNB снизился на 2.11% - цена ближе к нижней границе диапазона.\n\n{post_format.DISCLAIMER}"
+    ok, reason = opinion_generator.validate_opinion_post_text(text, {-2.11, 2.11})
+    assert ok is True, reason
+
+
 if __name__ == "__main__":
     import sys
     import types

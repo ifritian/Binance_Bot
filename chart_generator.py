@@ -206,9 +206,8 @@ def _draw_volume(ax, candles: list[dict]) -> None:
 def _draw_watermark(ax, text: str | None = "BINANCE") -> None:
     """Полупрозрачный ромб + надпись по центру графика, как водяной
     знак на скриншотах с самой площадки. text=None - не рисовать
-    вообще (используется для графиков под другие площадки, см.
-    okx_orbit_generator.generate_chart_for_post - водяной знак BINANCE
-    там неуместен)."""
+    вообще (используется для графиков под чужие площадки, где
+    водяной знак BINANCE неуместен)."""
     if text is None:
         return
     ax.text(
@@ -338,7 +337,7 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
     объём снизу + водяной знак, в стиле самого Binance), либо None.
 
     watermark_text - см. _draw_watermark (None - без водяного знака,
-    для графиков под другие площадки, см. okx_orbit_generator.py).
+    для графиков под чужие площадки).
     filename_suffix - добавляется к имени файла (например "_okx"),
     чтобы графики под разные площадки для одного тикера не
     перезаписывали друг друга при параллельной генерации.
