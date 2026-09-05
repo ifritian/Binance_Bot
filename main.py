@@ -1724,10 +1724,11 @@ def main() -> None:
 
     logger.info(
         "Бот запущен. Интервал проверки: %sс. Окна публикации - валюта: %sч, мнение: %sч, "
-        "treasury: %sч, статья: %sч, отчёт точности: %sч",
+        "treasury: %sч, статья: %sч, отчёт точности: %sч, новость: enabled=%s (мин. %sд между постами, канал %s)",
         config.POLL_INTERVAL_SECONDS, config.MIN_POST_INTERVAL_HOURS,
         config.OPINION_INTERVAL_HOURS, config.TREASURY_INTERVAL_HOURS, config.ARTICLE_INTERVAL_HOURS,
         config.ACCURACY_REPORT_INTERVAL_HOURS,
+        config.NEWS_TAKE_ENABLED, news_opinion_generator.MIN_DAYS_BETWEEN_NEWS_POSTS, config.NEWS_SOURCE_CHANNEL,
     )
 
     if once:

@@ -11,6 +11,7 @@ check_state.py - диагностика без побочных эффектов
 """
 import config
 import index_health_monitor
+import news_opinion_generator
 import outcome_tracker
 import queue_manager
 import strategy_tuner
@@ -45,7 +46,7 @@ def report_window(post_type: str, interval_hours: float) -> None:
             mins = remaining / 60
             print(f"  -> окно откроется через ~{remaining/3600:.1f}ч ({mins:.0f} мин)")
 
-    if post_type in ("opinion", "article"):
+    if post_type in ("opinion", "article", "news_take"):
         remaining_backoff = queue_manager.get_retry_backoff_remaining_seconds(post_type)
         if remaining_backoff is not None:
             print(f"  !! БЭКОФФ ПОСЛЕ СБОЯ АКТИВЕН: попыток не будет ещё ~{remaining_backoff/60:.0f} мин, "
@@ -109,6 +110,9 @@ def main() -> None:
     report_window("accuracy_report", config.ACCURACY_REPORT_INTERVAL_HOURS)
     report_window("loss_review", config.LOSS_REVIEW_INTERVAL_HOURS)
     report_window("index_signal", config.INDEX_SIGNAL_INTERVAL_HOURS)
+    report_window("news_take", news_opinion_generator.MIN_DAYS_BETWEEN_NEWS_POSTS * 24)
+    print(f"  канал-источник: {config.NEWS_SOURCE_CHANNEL}, формат {'включён' if config.NEWS_TAKE_ENABLED else 'ВЫКЛЮЧЕН (NEWS_TAKE_ENABLED=false)'}")
+    print(f"  уже разобрано новостей: {len(queue_manager.get_used_news_post_ids())}")
 
     index_queue = queue_manager.pending_index_queue_summary()
     print(f"\nОчередь index_signal (монеты Treasury Index): {len(index_queue)} шт., "

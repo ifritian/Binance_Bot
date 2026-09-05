@@ -89,7 +89,7 @@ GROQ_VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
 # поэтому они не конкурируют с публикацией сигналов за один и тот же
 # TPM/RPM и не выбивают друг друга в 429, когда несколько окон публикации
 # открываются в один тик.
-GROQ_MODEL_SECONDARY = os.environ.get("GROQ_MODEL_SECONDARY", "llama-3.1-8b-instant")
+GROQ_MODEL_SECONDARY = os.environ.get("GROQ_MODEL_SECONDARY", "openai/gpt-oss-20b")
 
 # --- Поведение бота ---
 MIN_POST_INTERVAL_HOURS = float(os.environ.get("MIN_POST_INTERVAL_HOURS", "2"))
