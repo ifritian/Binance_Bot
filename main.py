@@ -135,9 +135,32 @@ def _publish_signal(signal) -> bool:
         logger.error("Пост не прошёл проверку чисел, публикация отменена: %s", reason)
         return False
 
+    signal_annotation = None
+    if random.random() < config.SIGNAL_ANNOTATION_PROBABILITY:
+        # entry_low/entry_high - строки вида "2.205", как их отдал
+        # signal_parser (см. signal_parser.RsiSignal) - тот же паттерн
+        # запятая->точка, что и в signal_parser.pick_entry, здесь же по
+        # месту, чтобы не тянуть приватный _to_float из другого модуля.
+        def _num(raw):
+            try:
+                return float(str(raw).replace(",", "."))
+            except (TypeError, ValueError):
+                return None
+
+        entry_low = _num(signal.entry_low)
+        entry_high = _num(signal.entry_high)
+        if entry_low and entry_high:
+            entry_mid = (entry_low + entry_high) / 2
+        else:
+            entry_mid = entry_low or entry_high or float(signal.current_price)
+
+        direction = "long" if signal_parser.is_long_direction(signal.direction) else "short"
+        signal_annotation = {"entry_price": entry_mid, "direction": direction}
+
     try:
         chart_path = chart_generator.generate_chart_image(
-            signal.ticker, days=2, expected_price=float(signal.current_price)
+            signal.ticker, days=2, expected_price=float(signal.current_price),
+            signal_annotation=signal_annotation,
         )
     except Exception as e:
         logger.warning("Не удалось сгенерировать график для %s: %s", signal.ticker, e)
@@ -620,9 +643,14 @@ def _publish_win_celebrations(closed_records: list) -> None:
             # ровно то, для чего Binance советует добавлять картинку:
             # визуальное подтверждение делает пост убедительнее, чем
             # голые цифры в тексте.
+            win_annotation = None
+            if random.random() < config.WIN_ANNOTATION_PROBABILITY:
+                win_annotation = {"entry_price": record["entry"], "entry_time": record["published_at"]}
+
             try:
                 chart_path = chart_generator.generate_chart_image(
-                    record["ticker"], days=2, expected_price=float(record["exit_price"])
+                    record["ticker"], days=2, expected_price=float(record["exit_price"]),
+                    win_annotation=win_annotation,
                 )
             except Exception as e:
                 logger.warning("Не удалось сгенерировать график для 'Забрали профит!' %s: %s", record["ticker"], e)

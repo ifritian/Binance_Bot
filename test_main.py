@@ -25,6 +25,12 @@ def _closed_record(**overrides) -> dict:
         ticker="BEAT", direction="short", strategy="RSI + Bollinger Touch",
         entry=2.21, stop=2.2371, target=2.1729, result="win",
         exit_price=2.1729, pnl_pct=1.72, mfe_pct=1.9,
+        # published_at - реальные записи outcome_tracker всегда содержат
+        # этот ключ (проставляется в момент публикации сигнала, см.
+        # outcome_tracker.py:98) - main._publish_win_celebrations читает
+        # его для win_annotation (entry_time). Без него фикстура не
+        # отражает реальную форму данных и ловит KeyError только в тесте.
+        published_at=1_700_000_000.0,
         bluesky_ref={"uri": "at://did:plc:abc/app.bsky.feed.post/1", "cid": "bafy1"},
     )
     base.update(overrides)
@@ -183,7 +189,7 @@ def test_win_celebrations_includes_hashtags_and_chart_image(monkeypatch):
     token/topic tags) - см. _publish_win_celebrations в main.py.
     Картинку не тянем из реальной сети - chart_generator замокан."""
     monkeypatch.setattr(main.win_celebration_generator, "generate_win_celebration_hook", lambda angle: "Невероятно!")
-    monkeypatch.setattr(main.chart_generator, "generate_chart_image", lambda ticker, days=2, expected_price=None: "/tmp/fake_chart.png")
+    monkeypatch.setattr(main.chart_generator, "generate_chart_image", lambda *a, **k: "/tmp/fake_chart.png")
 
     calls = []
     monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append((text, k)))
@@ -201,7 +207,7 @@ def test_win_celebrations_chart_failure_still_publishes_without_image(monkeypatc
     блокировать сам пост, просто уходит без картинки."""
     monkeypatch.setattr(main.win_celebration_generator, "generate_win_celebration_hook", lambda angle: "Невероятно!")
 
-    def _boom(ticker, days=2, expected_price=None):
+    def _boom(*a, **k):
         raise RuntimeError("нет данных с биржи")
 
     monkeypatch.setattr(main.chart_generator, "generate_chart_image", _boom)

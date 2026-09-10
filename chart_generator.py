@@ -12,6 +12,8 @@ Binance по определению есть свечи по этой паре, 
 символом (раньше график рисовался через CoinGecko, где это бывало).
 """
 import logging
+import math
+import random
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -330,8 +332,217 @@ def generate_cumulative_pnl_chart(records: list[dict], out_name: str = "weekly_d
     return out_path
 
 
+# Цвет рукописных пометок - тёплый жёлтый (не совпадает ни с _UP_COLOR/
+# _DOWN_COLOR свечей, ни с MA-линиями), как маркер/выделение поверх
+# графика, а не часть самих данных.
+_ANNOTATION_COLOR = "#F0B90B"
+
+
+def _wobbly_ellipse_points(cx: float, cy: float, rx: float, ry: float,
+                            n: int = 60, wobble: float = 0.10,
+                            rng: random.Random | None = None) -> tuple[list[float], list[float]]:
+    """Точки эллипса вокруг (cx, cy) с плавным "дрожанием" радиуса -
+    имитация линии, обведённой от руки маркером, а не идеальной
+    геометрической фигуры (как рисует ax.add_patch(Ellipse(...))).
+
+    Дрожание строится не через независимый шум на КАЖДОЙ точке (это
+    дало бы рваную, "пиксельную" линию), а через небольшое число
+    опорных точек (control points) по кругу с линейной интерполяцией
+    между ними - так колебания получаются плавными, как у настоящей
+    руки, а не как шум.
+    """
+    rng = rng or random.Random()
+    n_control = 8
+    controls = [rng.uniform(1 - wobble, 1 + wobble) for _ in range(n_control)]
+    controls.append(controls[0])  # замыкаем кольцо без разрыва в стыке
+
+    xs: list[float] = []
+    ys: list[float] = []
+    for i in range(n + 1):
+        t = i / n
+        angle = t * 2 * math.pi
+        pos = t * n_control
+        idx = int(pos) % n_control
+        local_t = pos - int(pos)
+        r_mult = controls[idx] * (1 - local_t) + controls[idx + 1] * local_t
+        xs.append(cx + rx * r_mult * math.cos(angle))
+        ys.append(cy + ry * r_mult * math.sin(angle))
+    return xs, ys
+
+
+def _wobbly_line_points(x0: float, y0: float, x1: float, y1: float,
+                         n: int = 16, wobble: float = 0.08,
+                         rng: random.Random | None = None) -> tuple[list[float], list[float]]:
+    """Точки отрезка от (x0,y0) до (x1,y1) со сглаженным поперечным
+    дрожанием (перпендикулярно направлению линии) - тот же приём "рука
+    дрожит плавно, не рвано", что и в _wobbly_ellipse_points, только
+    вдоль прямой, а не по кругу. Используется для стрелок и штрихов
+    галочки."""
+    rng = rng or random.Random()
+    length = math.hypot(x1 - x0, y1 - y0) or 1.0
+    # Смещение по перпендикуляру задаём в единицах длины самой линии,
+    # чтобы короткие штрихи (галочка) дрожали меньше в абсолютных
+    # величинах, чем длинные (стрелка через весь график).
+    amp = length * wobble
+    perp_x, perp_y = -(y1 - y0) / length, (x1 - x0) / length
+
+    n_control = 4
+    controls = [rng.uniform(-amp, amp) for _ in range(n_control)]
+
+    xs: list[float] = []
+    ys: list[float] = []
+    for i in range(n + 1):
+        t = i / n
+        base_x = x0 + (x1 - x0) * t
+        base_y = y0 + (y1 - y0) * t
+        pos = t * (n_control - 1)
+        idx = min(int(pos), n_control - 2)
+        local_t = pos - idx
+        offset = controls[idx] * (1 - local_t) + controls[idx + 1] * local_t
+        xs.append(base_x + perp_x * offset)
+        ys.append(base_y + perp_y * offset)
+    return xs, ys
+
+
+def _nearest_candle_index(candles: list[dict], target_time_ms: float) -> int | None:
+    """Индекс свечи, чей open_time ближе всего к target_time_ms, либо
+    None, если target_time_ms дальше от края диапазона свечей, чем шаг
+    между свечами (например, вход был раньше, чем начинается сам
+    график) - в этом случае лучше не рисовать пометку в случайном
+    месте, а пропустить её."""
+    if not candles:
+        return None
+
+    best_i, best_diff = 0, abs(candles[0]["open_time"] - target_time_ms)
+    for i, c in enumerate(candles):
+        diff = abs(c["open_time"] - target_time_ms)
+        if diff < best_diff:
+            best_i, best_diff = i, diff
+
+    if len(candles) >= 2:
+        step = candles[1]["open_time"] - candles[0]["open_time"]
+    else:
+        step = 0
+    # Запас в один шаг свечи - вход мог случиться чуть раньше первой
+    # свечи на графике (границы диапазона не совпадают ровно), это ещё
+    # нормально привязать к первой свече, а не отбрасывать пометку.
+    if step and best_diff > step * 1.5:
+        return None
+    return best_i
+
+
+def draw_win_annotations(ax, candles: list[dict], entry_price: float, entry_time: float,
+                          exit_price: float, seed: int | None = None) -> bool:
+    """Рисует рукописные пометки формата "Забрали профит!": обведённая
+    от руки точка входа + галочка у точки выхода. Возвращает True, если
+    что-то нарисовано (вызывающий код может это игнорировать - пометка
+    декоративная, отсутствие не должно ронять публикацию).
+
+    entry_time - unix-время в СЕКУНДАХ (как record["published_at"] у
+    outcome_tracker) - переводится в мс здесь же, чтобы вызывающему
+    коду не нужно было об этом помнить.
+    """
+    rng = random.Random(seed)
+    entry_idx = _nearest_candle_index(candles, entry_time * 1000)
+    if entry_idx is None:
+        logger.info("Точка входа вне диапазона графика - пометки 'вход' не будет, только галочка у выхода")
+
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    price_span = max(highs) - min(lows) or 1.0
+    x_span = len(candles) or 1
+
+    drew_something = False
+
+    if entry_idx is not None:
+        rx = max(x_span * 0.045, 1.2)
+        ry = price_span * 0.09
+        ex, ey = _wobbly_ellipse_points(entry_idx, entry_price, rx, ry, rng=rng)
+        ax.plot(ex, ey, color=_ANNOTATION_COLOR, linewidth=2.0, alpha=0.9,
+                solid_capstyle="round", solid_joinstyle="round", zorder=6)
+        drew_something = True
+
+    # Галочка (✓) у точки выхода - два штриха от руки: короткий вниз-
+    # вправо, затем длинный вверх-вправо, классическая форма "check".
+    exit_idx = len(candles) - 1
+    check_w = x_span * 0.05
+    check_h = price_span * 0.07
+    cx, cy = exit_idx + x_span * 0.03, exit_price
+
+    short_x, short_y = _wobbly_line_points(
+        cx - check_w * 0.9, cy - check_h * 0.05,
+        cx - check_w * 0.35, cy - check_h * 0.55,
+        n=8, wobble=0.12, rng=rng,
+    )
+    long_x, long_y = _wobbly_line_points(
+        cx - check_w * 0.35, cy - check_h * 0.55,
+        cx + check_w * 0.65, cy + check_h * 0.55,
+        n=8, wobble=0.10, rng=rng,
+    )
+    ax.plot(short_x, short_y, color=_ANNOTATION_COLOR, linewidth=2.4, alpha=0.95,
+            solid_capstyle="round", zorder=6, clip_on=False)
+    ax.plot(long_x, long_y, color=_ANNOTATION_COLOR, linewidth=2.4, alpha=0.95,
+            solid_capstyle="round", zorder=6, clip_on=False)
+    drew_something = True
+
+    return drew_something
+
+
+def draw_signal_annotations(ax, candles: list[dict], entry_price: float, direction: str,
+                             seed: int | None = None) -> bool:
+    """Рисует рукописную пометку у зоны входа для СВЕЖЕГО (ещё не
+    закрытого) сигнала: обведённая от руки точка + стрелка в сторону
+    сделки (вверх для long, вниз для short). В отличие от
+    draw_win_annotations - без галочки, результат ещё не известен."""
+    if not candles:
+        return False
+
+    rng = random.Random(seed)
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    price_span = max(highs) - min(lows) or 1.0
+    x_span = len(candles) or 1
+
+    idx = len(candles) - 1
+    rx = max(x_span * 0.045, 1.2)
+    ry = price_span * 0.09
+    ex, ey = _wobbly_ellipse_points(idx, entry_price, rx, ry, rng=rng)
+    ax.plot(ex, ey, color=_ANNOTATION_COLOR, linewidth=2.0, alpha=0.9,
+            solid_capstyle="round", solid_joinstyle="round", zorder=6, clip_on=False)
+
+    is_short = str(direction).lower() == "short"
+    arrow_len = price_span * 0.16
+    ax_x = idx + x_span * 0.06
+    # На графике выше цена = выше по оси Y, поэтому для long (рост)
+    # наконечник должен быть ВЫШЕ entry_price, а для short (падение) -
+    # НИЖЕ. (Раньше знаки были перепутаны, и стрелка "long" указывала
+    # вниз - см. рендер-тест, поймавший это визуально.)
+    y0 = entry_price + (-arrow_len * 0.4 if is_short else arrow_len * 0.4)
+    y1 = entry_price + (-arrow_len if is_short else arrow_len)
+    shaft_x, shaft_y = _wobbly_line_points(ax_x, y0, ax_x, y1, n=10, wobble=0.10, rng=rng)
+    ax.plot(shaft_x, shaft_y, color=_ANNOTATION_COLOR, linewidth=2.2, alpha=0.9,
+            solid_capstyle="round", zorder=6, clip_on=False)
+
+    # Наконечник стрелки - два коротких штриха от кончика назад,
+    # V-образно, тем же "дрожащим" стилем.
+    head = price_span * 0.045
+    tip_x, tip_y = ax_x, y1
+    side = -head * 1.1 if is_short else head * 1.1
+    for dx_sign in (-1, 1):
+        hx, hy = _wobbly_line_points(
+            tip_x, tip_y, tip_x + head * 0.9 * dx_sign, tip_y + side,
+            n=6, wobble=0.15, rng=rng,
+        )
+        ax.plot(hx, hy, color=_ANNOTATION_COLOR, linewidth=2.2, alpha=0.9,
+                solid_capstyle="round", zorder=6, clip_on=False)
+
+    return True
+
+
 def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None,
-                          watermark_text: str | None = "BINANCE", filename_suffix: str = "") -> Path | None:
+                          watermark_text: str | None = "BINANCE", filename_suffix: str = "",
+                          win_annotation: dict | None = None,
+                          signal_annotation: dict | None = None) -> Path | None:
     """
     Возвращает путь к PNG со свечным графиком тикера (MA7/25/99 +
     объём снизу + водяной знак, в стиле самого Binance), либо None.
@@ -341,6 +552,17 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
     filename_suffix - добавляется к имени файла (например "_okx"),
     чтобы графики под разные площадки для одного тикера не
     перезаписывали друг друга при параллельной генерации.
+
+    win_annotation - {"entry_price", "entry_time"} - если передан,
+    поверх графика рисуются рукописные пометки "Забрали профит!" (см.
+    draw_win_annotations): круг у входа + галочка у выхода. Только для
+    закрытых сделок, вызывающий код (main._publish_win_celebrations)
+    сам решает, включать ли (см. config.WIN_ANNOTATION_PROBABILITY).
+
+    signal_annotation - {"entry_price", "direction"} - то же самое, но
+    для свежего сигнала (см. draw_signal_annotations): круг у зоны
+    входа + стрелка по направлению сделки, без галочки. Оба параметра
+    не предполагается передавать одновременно.
     """
     try:
         candles = fetch_klines(ticker, days)
@@ -386,6 +608,29 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
     _style_axis(ax_price, show_xticks=False)
     ax_price.set_xlim(-1, len(candles))
     _draw_price_tag(ax_price, last_close, header_color)
+
+    if win_annotation is not None:
+        try:
+            draw_win_annotations(
+                ax_price, candles,
+                entry_price=float(win_annotation["entry_price"]),
+                entry_time=float(win_annotation["entry_time"]),
+                exit_price=last_close,
+            )
+        except Exception:
+            # Пометка декоративная - если что-то пошло не так (плохие
+            # входные данные и т.п.), график всё равно должен уйти в
+            # публикацию без пометок, а не сорваться целиком.
+            logger.exception("Не удалось нарисовать пометки 'Забрали профит!' для %s", ticker)
+    elif signal_annotation is not None:
+        try:
+            draw_signal_annotations(
+                ax_price, candles,
+                entry_price=float(signal_annotation["entry_price"]),
+                direction=signal_annotation.get("direction", "long"),
+            )
+        except Exception:
+            logger.exception("Не удалось нарисовать пометку входа для %s", ticker)
 
     _draw_volume(ax_vol, candles)
     _style_axis(ax_vol, show_xticks=True)

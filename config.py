@@ -49,6 +49,19 @@ BLUESKY_TEASER_PROBABILITY = float(os.environ.get("BLUESKY_TEASER_PROBABILITY", 
 # пост выглядел бы как реклама и мог бы триггернуть модерацию.
 BINANCE_CTA_PROBABILITY = float(os.environ.get("BINANCE_CTA_PROBABILITY", "0.2"))
 
+# Вероятность добавить рукописные "от руки" пометки на график (круг у
+# входа + галочка у выхода, см. chart_generator.draw_win_annotations)
+# к посту "Забрали профит!" - не 100%, чтобы это читалось как живая,
+# спонтанная деталь, а не как штамп на каждой картинке.
+WIN_ANNOTATION_PROBABILITY = float(os.environ.get("WIN_ANNOTATION_PROBABILITY", "0.35"))
+
+# То же самое, но для графика ОБЫЧНОГО (ещё не закрытого) сигнала - круг
+# у зоны входа + стрелка по направлению сделки (см. chart_generator.
+# draw_signal_annotations). Ниже, чем WIN_ANNOTATION_PROBABILITY: у
+# ещё не подтверждённой сделки пометка "от руки" уместна реже, чем у
+# уже сработавшего результата.
+SIGNAL_ANNOTATION_PROBABILITY = float(os.environ.get("SIGNAL_ANNOTATION_PROBABILITY", "0.2"))
+
 # Случайная задержка (в минутах) перед отложенным кросспостом в
 # Telegram/Bluesky после публикации на Binance Square (см.
 # main._schedule_crossposts) - каждая площадка получает свою
