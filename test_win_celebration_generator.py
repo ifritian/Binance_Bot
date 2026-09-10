@@ -40,6 +40,15 @@ def test_pick_angle_handles_unknown_last_angle():
     assert chosen in win_celebration_generator._ANGLES
 
 
+def test_gratitude_angle_is_addressed_to_subscribers_staying_through_trade():
+    # Фиксирует смысл угла "gratitude" по референсу пользователя ("to
+    # everyone who stayed with me") - адресная благодарность за то, что
+    # были рядом ВЕСЬ путь сделки, а не расплывчатая формулировка.
+    text = win_celebration_generator._ANGLES["gratitude"].lower()
+    assert "подписчик" in text
+    assert "с самого входа" in text
+
+
 def test_generate_win_celebration_hook_returns_text(monkeypatch):
     monkeypatch.setattr(win_celebration_generator, "call_groq", lambda *a, **k: "Невероятно, снова получилось!")
 
@@ -75,6 +84,46 @@ def test_validate_win_celebration_hook_accepts_clean_hype_text():
     ok, reason = win_celebration_generator.validate_win_celebration_hook(
         "Не могу поверить, но снова получилось! Обожаю такие дни."
     )
+    assert ok
+    assert reason == ""
+
+
+def test_validate_win_celebration_hook_accepts_warm_emoji():
+    ok, reason = win_celebration_generator.validate_win_celebration_hook(
+        "Не могу поверить, что снова получилось! 🔥 Спасибо всем, кто оставался со мной 🙏"
+    )
+    assert ok
+    assert reason == ""
+
+
+def test_validate_win_celebration_hook_rejects_speculative_emoji():
+    ok, reason = win_celebration_generator.validate_win_celebration_hook(
+        "Снова в плюсе, полетели дальше 🚀"
+    )
+    assert not ok
+    assert "спекулятивн" in reason.lower()
+
+
+def test_validate_win_celebration_hook_rejects_money_emoji():
+    ok, reason = win_celebration_generator.validate_win_celebration_hook(
+        "Обожаю такие дни 💰"
+    )
+    assert not ok
+    assert "спекулятивн" in reason.lower()
+
+
+def test_validate_win_celebration_hook_rejects_emoji_spam():
+    ok, reason = win_celebration_generator.validate_win_celebration_hook(
+        "Невероятно 🔥🔥🔥🔥🔥🔥"
+    )
+    assert not ok
+    assert "спам" in reason.lower()
+
+
+def test_validate_win_celebration_hook_allows_up_to_max_emoji():
+    # Ровно на границе (_MAX_EMOJI_IN_HOOK) - ещё должно проходить.
+    hook = "Невероятно " + "🔥" * win_celebration_generator._MAX_EMOJI_IN_HOOK
+    ok, reason = win_celebration_generator.validate_win_celebration_hook(hook)
     assert ok
     assert reason == ""
 
