@@ -120,6 +120,14 @@ def log_signal_history(signal: RsiSignal) -> None:
         "strategy": signal.strategy,
         "change_pct": signal.change_24h,
         "score": signal.score,
+        # Цена на момент публикации сигнала - уже есть в самом RsiSignal
+        # (см. signal_parser.RsiSignal.current_price), никакого нового
+        # API-вызова не нужно. Раньше не сохранялась вообще, из-за чего
+        # article_generator не мог давать LLM реальные цены и статья
+        # недели иногда бракуется валидатором за "придуманную" цену
+        # (см. article_generator.validate_article_text) - теперь у LLM
+        # есть реальное число, которое можно процитировать.
+        "price": signal.current_price,
         "ts": time.time(),
     })
     cutoff = time.time() - _HISTORY_MAX_AGE_SECONDS

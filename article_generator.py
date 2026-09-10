@@ -7,6 +7,22 @@
 готовый список фактов и оформляет их в текст статьи, не придумывая
 собственных цифр.
 
+Цена ("price") - реальная цена тикера НА МОМЕНТ публикации сигнала
+(signal.current_price, см. queue_manager.log_signal_history) - не
+доп. API-вызов к Binance, это число уже было в самом сигнале. Раньше
+в истории цены не было вообще, из-за чего LLM иногда упоминала цену
+"из головы" (обучающие данные, не факты) - например, "$140,000" для
+BTC - и validate_article_text ниже правильно бракoвала такую статью,
+но статья из-за этого иногда не выходила целую неделю. Теперь у LLM
+есть реальное число, которое можно процитировать - обучающая догадка
+больше не нужна.
+
+Записи истории, залогированные ДО этого изменения, поля "price" не
+содержат (см. h.get("price") ниже везде, где читаем это поле) - старые
+записи просто не дают статье процитировать цену для этого конкретного
+факта, это не ошибка, а естественное затухание старых данных за
+_HISTORY_MAX_AGE_SECONDS (9 дней).
+
 Обложка статьи - график BTC за неделю, тот же chart_generator,
 который используется для постов про конкретные валюты.
 """
@@ -30,13 +46,18 @@ _SYSTEM_PROMPT = """Ты пишешь еженедельную статью-св
 Статья подводит итог по сигналам за неделю: что сработало, что не
 оправдало ожиданий, общая картина.
 
-Тебе дан список фактов (тикер, % изменения, score, результат) - вставляй
-эти числа ТОЧНО как даны, без округления и без придумывания новых чисел
-сверх того, что в списке.
+Тебе дан список фактов (тикер, цена на момент сигнала, % изменения,
+score, результат) - вставляй эти числа ТОЧНО как даны, без округления
+и без придумывания новых чисел сверх того, что в списке. Цены пиши БЕЗ
+разделителей тысяч (без запятых внутри числа) - ровно так, как в
+списке. Если у факта нет цены (написано "цена н/д") - НЕ придумывай
+цену для него сама, просто не упоминай цену для этого тикера, только
+% и score.
 
 Структура статьи:
 1. Короткое вступление (1-2 предложения, можно с эмодзи)
 2. Краткий разбор 3-5 самых заметных сигналов недели с их % и score
+   (и ценой, если она дана)
 3. Итоговый вывод/мысль
 
 НЕ добавляй сам дисклеймер - он будет добавлен отдельно после текста.
@@ -136,12 +157,30 @@ def _analyze_week_composition(history: list[dict]) -> str:
     return "mixed"
 
 
+def _parse_price(raw) -> Optional[float]:
+    """Число цены как оно приходит из RsiSignal.current_price (см.
+    signal_parser.py) - может быть с запятой как десятичным разделителем
+    (исходный сигнал иногда в русской локали), тот же паттерн
+    запятая->точка, что и в main.py._publish_signal. Возвращает None,
+    если цены нет (старая запись истории до этого изменения) или её не
+    удалось разобрать - вызывающий код должен пропустить факт без цены,
+    а не падать."""
+    if raw is None:
+        return None
+    try:
+        return float(str(raw).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
 def _format_facts(history: list[dict]) -> str:
     lines = []
     for h in history:
+        price = _parse_price(h.get("price"))
+        price_part = f"цена {price:g}" if price is not None else "цена н/д"
         lines.append(
             f"- ${h['ticker']} | {h['timeframe']} | {h.get('direction', '')} | "
-            f"{h.get('strategy', '')} | {h['change_pct']} | score {h['score']}"
+            f"{h.get('strategy', '')} | {price_part} | {h['change_pct']} | score {h['score']}"
         )
     return "\n".join(lines)
 
@@ -212,7 +251,7 @@ def validate_article_text(title: str, body: str, history: list[dict]) -> tuple[b
     if DISCLAIMER.lower() not in body.lower():
         return False, "В статье отсутствует дисклеймер"
 
-    # Все числа, которые разрешены - score и % из истории
+    # Все числа, которые разрешены - цена (если есть), score и % из истории
     allowed_numbers = set()
     for h in history:
         allowed_numbers.add(float(h["score"]))
@@ -220,6 +259,9 @@ def validate_article_text(title: str, body: str, history: list[dict]) -> tuple[b
             allowed_numbers.add(float(h["change_pct"].rstrip("%")))
         except ValueError:
             pass
+        price = _parse_price(h.get("price"))
+        if price is not None:
+            allowed_numbers.add(price)
 
     found_numbers = {float(n) for n in re.findall(r"[+-]?\d+\.?\d*", body)}
     unknown = [n for n in found_numbers if not any(abs(n - a) < 1e-6 for a in allowed_numbers)]
