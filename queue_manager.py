@@ -238,6 +238,17 @@ def set_last_binance_promo_theme(theme: str) -> None:
     _set("last_binance_promo_theme", theme)
 
 
+def get_last_hypothetical_ticker() -> Optional[str]:
+    """Ротация тикера формата 'а что если?' (hypothetical_generator.py) -
+    своя, отдельная от opinion/hot_take/promo, чтобы темы этих форматов
+    не были всегда синхронны."""
+    return _get("last_hypothetical_ticker", None)
+
+
+def set_last_hypothetical_ticker(ticker: str) -> None:
+    _set("last_hypothetical_ticker", ticker)
+
+
 def get_last_mini_lesson_topic() -> Optional[str]:
     """Ротация темы мини-урока - своя, отдельная от opinion/hot_take."""
     return _get("last_mini_lesson_topic", None)

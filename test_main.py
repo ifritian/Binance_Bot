@@ -778,6 +778,94 @@ def test_try_publish_binance_promo_appends_general_hashtag(monkeypatch):
     assert voice_calls == ["промо-текст."]
 
 
+# ============================================================
+# Формат "А что если?" (см. hypothetical_generator.py,
+# main.try_publish_hypothetical_post)
+# ============================================================
+
+def _patch_hypothetical_gates_open(monkeypatch):
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+
+
+def test_try_publish_hypothetical_post_gated_by_min_days(monkeypatch):
+    # Прошло меньше, чем MIN_DAYS_BETWEEN_HYPOTHETICAL_POSTS - публикация
+    # не должна даже пытаться сгенерировать текст.
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 3600)
+
+    calls = []
+    monkeypatch.setattr(main.hypothetical_generator, "generate_hypothetical_post", lambda *a, **k: calls.append(1))
+
+    main.try_publish_hypothetical_post()
+
+    assert calls == []
+
+
+def test_try_publish_hypothetical_post_publishes_with_chart_and_hashtag(monkeypatch):
+    _patch_hypothetical_gates_open(monkeypatch)
+    monkeypatch.setattr(main.hypothetical_generator, "pick_ticker", lambda last: "BTC")
+    monkeypatch.setattr(main.hypothetical_generator, "generate_hypothetical_post",
+                         lambda ticker, hook_mode=None: "Что если инопланетяне начали майнить BTC? Инфо-пост.")
+    monkeypatch.setattr(main.hypothetical_generator, "validate_hypothetical_post", lambda text: (True, ""))
+    monkeypatch.setattr(main.chart_generator, "generate_chart_image", lambda ticker, days=2: "/tmp/fake_chart.png")
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post",
+                         lambda text, **k: calls.append((text, k.get("image_paths"))))
+    voice_calls = []
+    monkeypatch.setattr(main.voice_memory, "record_post", lambda text, **k: voice_calls.append(text))
+
+    main.try_publish_hypothetical_post()
+
+    assert len(calls) == 1
+    text, image_paths = calls[0]
+    assert text.startswith("Что если инопланетяне")
+    assert "#BTC" in text
+    assert image_paths == ["/tmp/fake_chart.png"]
+    # voice_memory получает текст БЕЗ хэштега, как и у остальных форматов.
+    assert voice_calls == ["Что если инопланетяне начали майнить BTC? Инфо-пост."]
+
+
+def test_try_publish_hypothetical_post_survives_chart_generation_failure(monkeypatch):
+    _patch_hypothetical_gates_open(monkeypatch)
+    monkeypatch.setattr(main.hypothetical_generator, "pick_ticker", lambda last: "ETH")
+    monkeypatch.setattr(main.hypothetical_generator, "generate_hypothetical_post",
+                         lambda ticker, hook_mode=None: "Что если ETH стал официальной валютой острова?")
+    monkeypatch.setattr(main.hypothetical_generator, "validate_hypothetical_post", lambda text: (True, ""))
+
+    def _boom(ticker, days=2):
+        raise ValueError("network down")
+
+    monkeypatch.setattr(main.chart_generator, "generate_chart_image", _boom)
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post",
+                         lambda text, **k: calls.append((text, k.get("image_paths"))))
+    monkeypatch.setattr(main.voice_memory, "record_post", lambda text, **k: None)
+
+    main.try_publish_hypothetical_post()
+
+    # Пост всё равно публикуется, просто без картинки.
+    assert len(calls) == 1
+    assert calls[0][1] is None
+
+
+def test_try_publish_hypothetical_post_skips_on_failed_validation(monkeypatch):
+    _patch_hypothetical_gates_open(monkeypatch)
+    monkeypatch.setattr(main.hypothetical_generator, "pick_ticker", lambda last: "SOL")
+    monkeypatch.setattr(main.hypothetical_generator, "generate_hypothetical_post",
+                         lambda ticker, hook_mode=None: "текст с числом 42")
+    monkeypatch.setattr(main.hypothetical_generator, "validate_hypothetical_post",
+                         lambda text: (False, "есть число"))
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
+
+    main.try_publish_hypothetical_post()
+
+    assert calls == []
+
+
 def test_try_publish_opinion_post_btc_theme_uses_cashtag_hashtag(monkeypatch):
     monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
     monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)

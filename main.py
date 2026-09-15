@@ -39,6 +39,7 @@ import config
 import image_analyzer
 import groq_client
 import hot_take_generator
+import hypothetical_generator
 import index_signal_generator
 import index_signal_scanner
 import loss_review_generator
@@ -984,6 +985,82 @@ def try_publish_binance_promo() -> None:
     queue_manager.roll_new_jitter("binance_promo", config.BINANCE_PROMO_JITTER_HOURS * 3600)
 
 
+# ============================================================
+# Формат "А что если?" - ТОЛЬКО Binance Square
+# (см. hypothetical_generator.py)
+# ============================================================
+
+def try_publish_hypothetical_post() -> None:
+    """Шуточный/развлекательный формат по запросу пользователя (см.
+    hypothetical_generator.py) - как и binance_promo, публикует ТОЛЬКО
+    на Binance Square, без кросспоста. Гейтинг - как у новостного
+    формата (редко, раз в несколько дней), а не как у promo/opinion
+    (часто, по интервалу+джиттеру) - см. hypothetical_generator.
+    MIN_DAYS_BETWEEN_HYPOTHETICAL_POSTS."""
+    seconds_elapsed = queue_manager.seconds_since_last_post("hypothetical")
+    min_seconds = hypothetical_generator.MIN_DAYS_BETWEEN_HYPOTHETICAL_POSTS * 86400
+
+    if seconds_elapsed < min_seconds:
+        return
+    if not queue_manager.should_retry_now("hypothetical"):
+        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+
+    logger.info("Окно публикации ('а что если?', Binance Square) открыто - генерирую пост")
+
+    ticker = hypothetical_generator.pick_ticker(queue_manager.get_last_hypothetical_ticker())
+    hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
+
+    try:
+        text = hypothetical_generator.generate_hypothetical_post(ticker, hook_mode=hook_mode)
+    except groq_client.GroqRateLimited as e:
+        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
+        logger.warning("Groq rate limit на посте 'а что если?' - жду %.1fч перед следующей попыткой", backoff_hours)
+        queue_manager.set_retry_backoff("hypothetical", backoff_hours)
+        return
+    except Exception as e:
+        logger.error("Ошибка генерации поста 'а что если?': %s", e)
+        queue_manager.set_retry_backoff("hypothetical", 1)
+        return
+
+    if text is None:
+        logger.warning("Не удалось сгенерировать пост 'а что если?' (тикер %s) - пропускаю до следующего окна", ticker)
+        queue_manager.set_retry_backoff("hypothetical", 1)
+        return
+
+    ok, reason = hypothetical_generator.validate_hypothetical_post(text)
+    if not ok:
+        logger.error("Пост 'а что если?' не прошёл проверку, публикация отменена: %s", reason)
+        queue_manager.set_retry_backoff("hypothetical", 1)
+        return
+
+    # Картинка - обычный график тикера, БЕЗ annotation (это не про
+    # конкретную сделку) - тот же паттерн устойчивости, что и везде:
+    # неудача генерации графика не блокирует сам пост, просто уходит
+    # без картинки.
+    try:
+        chart_path = chart_generator.generate_chart_image(ticker, days=2)
+    except Exception as e:
+        logger.warning("Не удалось сгенерировать график для поста 'а что если?' (%s): %s", ticker, e)
+        chart_path = None
+    image_paths = [chart_path] if chart_path else None
+
+    hashtags = post_format.square_hashtags_line(ticker)
+    binance_text = f"{text}\n\n{hashtags}" if hashtags else text
+
+    try:
+        binance_publisher.publish_post(binance_text, image_paths=image_paths)
+    except binance_publisher.PublishError as e:
+        logger.warning("Публикация поста 'а что если?' на Binance Square не удалась: %s", e)
+        queue_manager.set_retry_backoff("hypothetical", 1)
+        return
+
+    logger.info("Опубликован пост 'а что если?' (тикер %s) на Binance Square", ticker)
+    voice_memory.record_post(text)
+    queue_manager.set_last_hypothetical_ticker(ticker)
+    queue_manager.set_last_hook_mode(hook_mode)
+    queue_manager.set_last_post_time("hypothetical")
+
+
 def try_publish_hot_take() -> None:
     """В отличие от остальных try_publish_* - публикует ТОЛЬКО в
     Bluesky, минуя Binance Square/Telegram целиком (это формат,
@@ -1715,6 +1792,7 @@ def tick() -> None:
         try_publish_emergency_post()
         try_publish_currency_post()
         try_publish_binance_promo()
+        try_publish_hypothetical_post()
         try_publish_opinion_post()
         try_publish_news_take()
         try_publish_hot_take()
