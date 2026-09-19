@@ -624,6 +624,19 @@ def _publish_win_celebrations(closed_records: list) -> None:
     for record in closed_records:
         if record.get("result") != "win":
             continue
+        if not _square_slot_available():
+            # Что-то в Square уже вышло совсем недавно (другой формат
+            # или предыдущая победа из ЭТОГО ЖЕ цикла, если побед
+            # несколько сразу) - останавливаемся, а не копим отставание:
+            # лучше отпраздновать меньше побед за тик, чем выпустить их
+            # подряд без паузы и отъесть охват у самих себя. Оставшиеся
+            # в этом тике просто не отпразднуются - см. docstring выше
+            # про error-tolerance этого формата, тот же принцип.
+            logger.info(
+                "Пропускаю 'Забрали профит!' для %s - другой пост в Square вышел слишком недавно (антидребезг)",
+                record["ticker"],
+            )
+            break
         try:
             angle = win_celebration_generator.pick_angle(queue_manager.get_last_win_celebration_angle())
             hook = win_celebration_generator.generate_win_celebration_hook(angle)
@@ -663,11 +676,30 @@ def _publish_win_celebrations(closed_records: list) -> None:
 
             binance_publisher.publish_post(binance_text, image_paths=image_paths)
             queue_manager.set_last_win_celebration_angle(angle)
+            queue_manager.set_last_post_time("square_global")
             logger.info("Опубликован пост 'Забрали профит!' для %s (%+.2f%%)", record["ticker"], record["pnl_pct"])
         except binance_publisher.PublishError as e:
             logger.warning("Пост 'Забрали профит!' для %s не удался: %s", record["ticker"], e)
         except Exception:
             logger.exception("Неожиданная ошибка при публикации 'Забрали профит!' для %s", record.get("ticker"))
+
+
+def _square_slot_available() -> bool:
+    """Общий "антидребезг" между ЛЮБЫМИ двумя постами в Binance Square -
+    см. config.MIN_SQUARE_POST_SPACING_MINUTES. Вызывать в начале КАЖДОЙ
+    try_publish_*, которая может опубликовать что-то в Square, сразу
+    после проверки собственного (индивидуального для формата) окна, но
+    ДО генерации текста/картинки - чтобы не тратить Groq-вызовы на
+    контент, который всё равно не опубликуется в этом тике.
+
+    НЕ считается сбоем (не двигает retry-backoff) - это ожидаемая,
+    штатная причина подождать: просто что-то ДРУГОЕ было опубликовано
+    в Square совсем недавно, а не то, что публикация именно ЭТОГО
+    формата не удалась. Собственный таймер формата (last_post_time)
+    тоже НЕ трогаем - иначе полноценное окно этого формата "сгорело" бы
+    впустую только из-за неудачного совпадения по времени с другим
+    форматом; на следующем тике try_publish_* просто попробует снова."""
+    return queue_manager.seconds_since_last_post("square_global") >= config.MIN_SQUARE_POST_SPACING_MINUTES * 60
 
 
 def try_publish_currency_post() -> None:
@@ -676,6 +708,8 @@ def try_publish_currency_post() -> None:
 
     if seconds_elapsed < min_seconds:
         return  # окно публикации ещё не открылось
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     pending = queue_manager.get_pending_post(min_score=config.MIN_SIGNAL_SCORE_TO_PUBLISH)
     if pending is None:
@@ -702,6 +736,7 @@ def try_publish_currency_post() -> None:
             queue_manager.log_signal_history(payload)  # для еженедельной статьи - только реально опубликованное
         queue_manager.log_posted_ticker(ticker)
         queue_manager.set_last_post_time("currency")
+        queue_manager.set_last_post_time("square_global")
         queue_manager.roll_new_jitter("currency", config.CURRENCY_JITTER_MINUTES * 60)
         queue_manager.clear_pending_post(queue_index)
     else:
@@ -793,6 +828,8 @@ def try_publish_opinion_post() -> None:
         return
     if not queue_manager.should_retry_now("opinion"):
         return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     logger.info("Окно публикации (мнение) открыто - генерирую пост")
 
@@ -845,6 +882,7 @@ def try_publish_opinion_post() -> None:
     _crosspost_to_telegram(post_text)
     _crosspost_to_bluesky(post_text)
     queue_manager.set_last_post_time("opinion")
+    queue_manager.set_last_post_time("square_global")
     queue_manager.roll_new_jitter("opinion", config.OPINION_JITTER_HOURS * 3600)
 
 
@@ -867,6 +905,8 @@ def try_publish_news_take() -> None:
         return  # недавно был сбой - ждём отступ, не долбим сеть на каждом тике
     if not news_opinion_generator.is_news_window_open():
         return
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     logger.info("Окно новостного поста открыто - проверяю канал %s", config.NEWS_SOURCE_CHANNEL)
 
@@ -914,6 +954,7 @@ def try_publish_news_take() -> None:
     _crosspost_to_telegram(post_text)
     _crosspost_to_bluesky(post_text)
     queue_manager.set_last_post_time("news_take")
+    queue_manager.set_last_post_time("square_global")
 
 
 # ============================================================
@@ -936,6 +977,8 @@ def try_publish_binance_promo() -> None:
         return
     if not queue_manager.should_retry_now("binance_promo"):
         return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     logger.info("Окно публикации (промо, Binance Square) открыто - генерирую пост")
 
@@ -982,6 +1025,7 @@ def try_publish_binance_promo() -> None:
     queue_manager.set_last_binance_promo_theme(theme)
     queue_manager.set_last_hook_mode(hook_mode)
     queue_manager.set_last_post_time("binance_promo")
+    queue_manager.set_last_post_time("square_global")
     queue_manager.roll_new_jitter("binance_promo", config.BINANCE_PROMO_JITTER_HOURS * 3600)
 
 
@@ -1004,6 +1048,8 @@ def try_publish_hypothetical_post() -> None:
         return
     if not queue_manager.should_retry_now("hypothetical"):
         return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     logger.info("Окно публикации ('а что если?', Binance Square) открыто - генерирую пост")
 
@@ -1059,6 +1105,7 @@ def try_publish_hypothetical_post() -> None:
     queue_manager.set_last_hypothetical_ticker(ticker)
     queue_manager.set_last_hook_mode(hook_mode)
     queue_manager.set_last_post_time("hypothetical")
+    queue_manager.set_last_post_time("square_global")
 
 
 def try_publish_hot_take() -> None:
@@ -1419,6 +1466,8 @@ def try_publish_treasury_post() -> None:
         return
     if not queue_manager.should_retry_now("treasury"):
         return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     logger.info("Окно публикации (Treasury Index) открыто - считаю индекс")
 
@@ -1467,6 +1516,7 @@ def try_publish_treasury_post() -> None:
     _crosspost_to_telegram(telegram_text, single_image_path)
     _crosspost_to_bluesky(telegram_text, single_image_path)
     queue_manager.set_last_post_time("treasury")
+    queue_manager.set_last_post_time("square_global")
     queue_manager.roll_new_jitter("treasury", config.TREASURY_JITTER_HOURS * 3600)
 
 
@@ -1483,6 +1533,8 @@ def try_publish_index_signal_post() -> None:
         return
     if not queue_manager.should_retry_now("index_signal"):
         return
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     picked = queue_manager.get_pending_index_signal(config.MIN_INDEX_SIGNAL_SCORE_TO_PUBLISH)
     if picked is None:
@@ -1521,6 +1573,7 @@ def try_publish_index_signal_post() -> None:
     _crosspost_to_bluesky(binance_text, ticker=signal.ticker)
     queue_manager.clear_pending_index_signal(idx)
     queue_manager.set_last_post_time("index_signal")
+    queue_manager.set_last_post_time("square_global")
     queue_manager.roll_new_jitter("index_signal", config.INDEX_SIGNAL_JITTER_HOURS * 3600)
 
 
@@ -1536,6 +1589,8 @@ def try_publish_article_post() -> None:
         return
     if not queue_manager.should_retry_now("article"):
         return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     logger.info("Окно публикации (статья) открыто - собираю историю за неделю")
 
@@ -1594,6 +1649,7 @@ def try_publish_article_post() -> None:
     # не URL - см. bluesky_publisher).
     _crosspost_to_bluesky(f"{title}\n\n{body}", cover_path)
     queue_manager.set_last_post_time("article")
+    queue_manager.set_last_post_time("square_global")
     queue_manager.roll_new_jitter("article", config.ARTICLE_JITTER_HOURS * 3600)
 
 
@@ -1608,6 +1664,8 @@ def try_publish_accuracy_report() -> None:
         return
     if not queue_manager.should_retry_now("accuracy_report"):
         return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     logger.info("Окно публикации (отчёт точности) открыто - считаю статистику")
 
@@ -1647,6 +1705,7 @@ def try_publish_accuracy_report() -> None:
     _crosspost_to_telegram(telegram_text, image_path=chart_path)
     _crosspost_to_bluesky(telegram_text, image_path=chart_path)
     queue_manager.set_last_post_time("accuracy_report")
+    queue_manager.set_last_post_time("square_global")
     queue_manager.roll_new_jitter("accuracy_report", config.ACCURACY_REPORT_JITTER_HOURS * 3600)
 
 
@@ -1660,6 +1719,8 @@ def try_publish_loss_review() -> None:
         return
     if not queue_manager.should_retry_now("loss_review"):
         return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
+    if not _square_slot_available():
+        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
     logger.info("Окно публикации (разбор промахов) открыто - собираю закрытые убыточные сигналы")
 
@@ -1696,6 +1757,7 @@ def try_publish_loss_review() -> None:
     _crosspost_to_telegram(telegram_text)
     _crosspost_to_bluesky(telegram_text)
     queue_manager.set_last_post_time("loss_review")
+    queue_manager.set_last_post_time("square_global")
     queue_manager.roll_new_jitter("loss_review", config.LOSS_REVIEW_JITTER_HOURS * 3600)
 
 

@@ -7,8 +7,23 @@ win). Всё, что реально ходит в сеть (bluesky_publisher.pu
 """
 import types
 
+import pytest
+
 import config
 import main
+
+
+@pytest.fixture(autouse=True)
+def _isolated_db(tmp_path, monkeypatch):
+    """Каждый тест пишет в свой временный sqlite-файл, а не в реальный
+    bot_state.db рядом с кодом (тот же паттерн, что и в
+    test_news_opinion_generator.py/test_queue_manager_digest_history.py).
+    Раньше этого файла не хватало именно здесь - все тесты в модуле
+    делили один и тот же bot_state.db в рамках прогона, что было
+    незаметно, пока не появился square_global (см.
+    main._square_slot_available) - первый ключ состояния, общий сразу
+    для нескольких форматов, а не изолированный по имени формата."""
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "test_bot_state.db")
 
 
 class _FakeResponse:
@@ -182,6 +197,32 @@ def test_win_celebrations_one_bad_record_does_not_block_the_rest(monkeypatch):
 
     assert len(calls) == 1
     assert "$GOOD" in calls[0]
+
+
+def test_win_celebrations_multiple_wins_in_one_tick_only_first_is_published(monkeypatch):
+    """Регрессия на реальную находку: раньше _publish_win_celebrations не
+    имела ВООБЩЕ никакого лимита частоты - если несколько сделок
+    закрывались в плюс в одном тике, бот публиковал по посту на КАЖДУЮ
+    подряд, без паузы, что напрямую отъедает охват у самих же этих
+    постов (self-cannibalization). Теперь после первого успешного поста
+    square_global-антидребезг (см. main._square_slot_available,
+    config.MIN_SQUARE_POST_SPACING_MINUTES) должен остановить обработку
+    остальных записей в ЭТОМ ЖЕ тике - лучше отпраздновать меньше побед
+    за раз, чем выпустить их все подряд."""
+    monkeypatch.setattr(main.win_celebration_generator, "generate_win_celebration_hook", lambda angle: "Невероятно!")
+
+    calls = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
+
+    records = [
+        _closed_record(ticker="FIRST", result="win", hours_to_close=1.0),
+        _closed_record(ticker="SECOND", result="win", hours_to_close=2.0),
+        _closed_record(ticker="THIRD", result="win", hours_to_close=3.0),
+    ]
+    main._publish_win_celebrations(records)
+
+    assert len(calls) == 1
+    assert "$FIRST" in calls[0]
 
 
 def test_win_celebrations_includes_hashtags_and_chart_image(monkeypatch):
@@ -863,6 +904,46 @@ def test_try_publish_hypothetical_post_skips_on_failed_validation(monkeypatch):
 
     main.try_publish_hypothetical_post()
 
+    assert calls == []
+
+
+def test_square_slot_available_true_when_never_posted(monkeypatch):
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: float("inf"))
+    assert main._square_slot_available() is True
+
+
+def test_square_slot_available_false_right_after_a_square_post(monkeypatch):
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post",
+                         lambda post_type: 60.0 if post_type == "square_global" else float("inf"))
+    assert main._square_slot_available() is False
+
+
+def test_square_slot_available_true_after_enough_spacing(monkeypatch):
+    just_enough = config.MIN_SQUARE_POST_SPACING_MINUTES * 60
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post",
+                         lambda post_type: just_enough if post_type == "square_global" else float("inf"))
+    assert main._square_slot_available() is True
+
+
+def test_try_publish_opinion_post_blocked_by_global_square_cooldown_even_when_its_own_window_is_open(monkeypatch):
+    """Регрессия на сам смысл антидребезга: свой (opinion) таймер уже
+    открыт, но что-то ДРУГОЕ вышло в Square совсем недавно -
+    публикация должна подождать, а не пробивать общий слот."""
+    def _seconds_since(post_type):
+        # opinion "готово" публиковаться давно, но square_global - только что.
+        return 60.0 if post_type == "square_global" else 10 ** 9
+
+    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", _seconds_since)
+    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
+    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
+
+    calls = []
+    monkeypatch.setattr(main.opinion_generator, "generate_opinion_post", lambda *a, **k: calls.append(1))
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
+
+    main.try_publish_opinion_post()
+
+    # Не должно было дойти даже до генерации текста (экономим Groq-вызовы).
     assert calls == []
 
 

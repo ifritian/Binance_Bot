@@ -103,6 +103,16 @@ def main() -> None:
               "бот опубликует именно его на следующем тике (если пройдёт генерацию "
               "текста, проверку чисел и получится сделать график/скачать картинку).")
 
+    square_global_elapsed = queue_manager.seconds_since_last_post("square_global")
+    square_global_min = config.MIN_SQUARE_POST_SPACING_MINUTES * 60
+    print(f"\n[square_global] общий антидребезг между ЛЮБЫМИ постами в Binance Square (min {config.MIN_SQUARE_POST_SPACING_MINUTES:.0f} мин)")
+    if square_global_elapsed == float("inf"):
+        print("  ещё не публиковал(ось) ни разу в Square - слот свободен")
+    elif square_global_elapsed >= square_global_min:
+        print(f"  с последнего поста в Square: {fmt_seconds(square_global_elapsed)} - слот свободен")
+    else:
+        print(f"  с последнего поста в Square: {fmt_seconds(square_global_elapsed)} - слот ЗАНЯТ ещё ~{(square_global_min - square_global_elapsed)/60:.0f} мин")
+
     report_window("currency", config.MIN_POST_INTERVAL_HOURS)
     report_window("opinion", config.OPINION_INTERVAL_HOURS)
     report_window("treasury", config.TREASURY_INTERVAL_HOURS)
