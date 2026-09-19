@@ -26,6 +26,21 @@ def test_pick_theme_handles_unknown_last():
     assert chosen in opinion_generator.THEMES
 
 
+def test_themes_have_no_delisted_or_renamed_tickers():
+    # Регрессия: MATIC делистнут Binance в 2024 (заменён на POL), FTM
+    # переименован в Sonic/S в начале 2025 - если кто-то по памяти
+    # добавит один из них обратно в THEMES, calc_theme_stats будет
+    # молча возвращать None для этой темы на каждом окне публикации.
+    all_tickers = {t for theme in opinion_generator.THEMES.values() for t in theme["tickers"]}
+    assert "MATIC" not in all_tickers
+    assert "FTM" not in all_tickers
+
+
+def test_themes_tickers_have_no_duplicates_within_market_basket():
+    market_tickers = opinion_generator.THEMES["market"]["tickers"]
+    assert len(market_tickers) == len(set(market_tickers))
+
+
 def test_generate_opinion_post_returns_none_when_no_data(monkeypatch):
     monkeypatch.setattr(opinion_generator, "calc_theme_stats", lambda theme: None)
     assert opinion_generator.generate_opinion_post("BTC") is None

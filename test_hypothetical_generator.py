@@ -23,6 +23,15 @@ def test_pick_ticker_handles_unknown_last():
     assert chosen in hypothetical_generator._TICKERS
 
 
+def test_tickers_have_no_delisted_or_renamed_or_duplicate_entries():
+    # Та же регрессия, что и в opinion_generator - MATIC (делистнут,
+    # заменён на POL) и FTM (переименован в Sonic/S) не должны
+    # оказаться в пуле снова.
+    assert "MATIC" not in hypothetical_generator._TICKERS
+    assert "FTM" not in hypothetical_generator._TICKERS
+    assert len(hypothetical_generator._TICKERS) == len(set(hypothetical_generator._TICKERS))
+
+
 def test_generate_hypothetical_post_returns_assembled_text(monkeypatch):
     monkeypatch.setattr(
         hypothetical_generator, "call_groq",
