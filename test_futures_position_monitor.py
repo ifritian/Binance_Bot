@@ -158,6 +158,33 @@ def test_partial_profit_triggers_at_threshold(monkeypatch):
     assert stop_call[3] == 100.0
 
 
+def test_partial_profit_rounds_breakeven_and_activation_to_tick_size(monkeypatch):
+    # Регрессия на реальный найденный баг: entry_price - это настоящая
+    # средняя цена ИСПОЛНЕНИЯ (avgPrice), у неё нет причин совпасть с
+    # сеткой tick_size биржи. Раньше breakeven-стоп и activation_price
+    # трейлинга ставились БЕЗ округления - биржа отклонила бы такой
+    # ордер с ошибкой точности при первой же реальной сделке.
+    monkeypatch.setattr(config, "BINANCE_FUTURES_PARTIAL_TP_ENABLED", True)
+    monkeypatch.setattr(config, "BINANCE_FUTURES_PARTIAL_TP_TRIGGER_FRACTION", 0.5)
+    monkeypatch.setattr(config, "BINANCE_FUTURES_PARTIAL_TP_CLOSE_FRACTION", 0.5)
+    monkeypatch.setattr(config, "BINANCE_FUTURES_TRAILING_CALLBACK_PCT", 1.0)
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda *a, **k: None)
+
+    client = _FakeClient()  # tick_size=0.01 (см. get_symbol_filters фикстуры)
+    # "Грязная" цена входа - никак не выровнена по сетке 0.01.
+    record = _record(entry_price=100.00345678, target=120.0)
+    # mark_price тоже "грязный" - активация трейлинга должна округлиться так же.
+    updated = fpm._manage_partial_profit(client, record, mark_price=110.00987654)
+
+    stop_call = [c for c in client.call_log if c[0] == "place_stop_market"][0]
+    trailing_call = [c for c in client.call_log if c[0] == "place_trailing_stop_market"][0]
+
+    # round_to_step(100.00345678, 0.01) = 100.0, round_to_step(110.00987654, 0.01) = 110.0
+    assert stop_call[3] == 100.0
+    assert trailing_call[4] == 110.0
+    assert updated["partial_tp_done"] is True
+
+
 def test_partial_profit_short_side_uses_buy_to_close(monkeypatch):
     monkeypatch.setattr(config, "BINANCE_FUTURES_PARTIAL_TP_ENABLED", True)
     monkeypatch.setattr(config, "BINANCE_FUTURES_PARTIAL_TP_TRIGGER_FRACTION", 0.5)

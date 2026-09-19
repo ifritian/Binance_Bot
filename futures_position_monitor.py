@@ -201,10 +201,23 @@ def _manage_partial_profit(client, record: dict, mark_price: float) -> dict:
                     order_id_key, order_id, symbol, e,
                 )
 
-        breakeven_stop = client.place_stop_market(symbol, close_side, entry, close_position=True)
+        # tick_size округление ОБЯЗАТЕЛЬНО и для breakeven-цены, и для
+        # activation_price трейлинга - Binance отклонит ордер с ценой,
+        # не кратной tick_size (см. тот же паттерн в
+        # futures_executor.open_protected_position). entry - реальная
+        # средняя цена ИСПОЛНЕНИЯ (avgPrice), у неё нет причин случайно
+        # совпасть с сеткой tick_size биржи; mark_price (activation_price
+        # трейлинга) - живая рыночная цена, та же история. Без этого
+        # округления запрос почти гарантированно отклонялся бы с ошибкой
+        # точности на каждой попытке - до сих пор нигде не проверялось.
+        tick_size = filters.get("tick_size")
+        breakeven_price = futures_executor.round_to_step(entry, tick_size) if tick_size else entry
+        trailing_activation_price = futures_executor.round_to_step(mark_price, tick_size) if tick_size else mark_price
+
+        breakeven_stop = client.place_stop_market(symbol, close_side, breakeven_price, close_position=True)
         trailing_stop = client.place_trailing_stop_market(
             symbol, close_side, config.BINANCE_FUTURES_TRAILING_CALLBACK_PCT,
-            close_position=True, activation_price=mark_price,
+            close_position=True, activation_price=trailing_activation_price,
         )
     except FuturesApiError as e:
         logger.warning(

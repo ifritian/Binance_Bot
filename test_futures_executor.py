@@ -257,6 +257,72 @@ def test_take_profit_failure_triggers_emergency_close():
         assert "тейк-профит" in str(e)
 
 
+def test_take_profit_failure_cancels_orphaned_stop_before_emergency_close():
+    # Регрессия на реальный найденный баг: SL успел встать ДО отказа TP -
+    # аварийное закрытие ДОЛЖНО отменить уже выставленный стоп, иначе он
+    # остаётся висеть на бирже (closePosition=true) и может неожиданно
+    # сработать на совсем другой, будущей позиции по этому же символу.
+    client = _FakeClient(balance=10_000, mark_price=100.0, fail_on={"take_profit"})
+    client.position = {"positionAmt": "20.0"}
+
+    try:
+        fe.open_protected_position(client, "BTCUSDT", "BUY", 95.0, 110.0, risk_pct=1.0, leverage=3)
+        assert False, "должно было бросить ExecutionError"
+    except fe.ExecutionError:
+        pass
+
+    assert ("cancel_all_open_orders", "BTCUSDT") in client.call_log
+    assert ("cancel_all_algo_orders", "BTCUSDT") in client.call_log
+    # Отмена должна произойти ДО рыночного закрытия позиции - на всякий
+    # случай проверяем и порядок, не только сам факт вызова.
+    cancel_idx = client.call_log.index(("cancel_all_algo_orders", "BTCUSDT"))
+    close_idx = next(i for i, c in enumerate(client.call_log) if c[0] == "place_market_order" and c[2] == "SELL")
+    assert cancel_idx < close_idx
+
+
+def test_stop_failure_does_not_need_order_cancellation():
+    # Если упал сам SL - никакой algo-ордер ещё не был выставлен, но
+    # cancel-вызовы всё равно безопасны (best-effort, no-op на пустом
+    # символе) - не должны ничего ломать и не должны мешать закрытию.
+    client = _FakeClient(balance=10_000, mark_price=100.0, fail_on={"stop"})
+    client.position = {"positionAmt": "20.0"}
+
+    try:
+        fe.open_protected_position(client, "BTCUSDT", "BUY", 95.0, 110.0, risk_pct=1.0, leverage=3)
+        assert False, "должно было бросить ExecutionError"
+    except fe.ExecutionError:
+        pass
+
+    close_calls = [c for c in client.call_log if c[0] == "place_market_order"]
+    assert len(close_calls) == 2
+    assert close_calls[1][2] == "SELL"
+
+
+def test_emergency_close_survives_order_cancellation_failure():
+    # Если сама отмена ордеров тоже упала (биржа недоступна) - аварийное
+    # закрытие позиции должно всё равно продолжиться, а не пропасть
+    # молча. Более срочный риск (голая позиция) важнее осиротевшего
+    # ордера, который просто попадёт в лог для ручной проверки.
+    client = _FakeClient(balance=10_000, mark_price=100.0, fail_on={"take_profit"})
+    client.position = {"positionAmt": "20.0"}
+
+    def failing_cancel(symbol):
+        raise FuturesApiError("биржа недоступна для отмены ордеров")
+
+    client.cancel_all_open_orders = failing_cancel
+    client.cancel_all_algo_orders = failing_cancel
+
+    try:
+        fe.open_protected_position(client, "BTCUSDT", "BUY", 95.0, 110.0, risk_pct=1.0, leverage=3)
+        assert False, "должно было бросить ExecutionError"
+    except fe.ExecutionError as e:
+        assert "тейк-профит" in str(e)
+
+    close_calls = [c for c in client.call_log if c[0] == "place_market_order"]
+    assert len(close_calls) == 2
+    assert close_calls[1][2] == "SELL"
+
+
 def test_emergency_close_failure_raises_critical_error():
     # И SL не встал, И аварийное закрытие тоже не удалось - самый
     # опасный сценарий, ошибка должна кричать об этом явно.
