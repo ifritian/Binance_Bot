@@ -56,6 +56,45 @@ def test_does_not_penalize_healthy_strategy(monkeypatch):
     assert result == {}
 
 
+def test_penalty_formula_is_linear_not_halved(monkeypatch):
+    # Регрессия на R1 (см. ROADMAP.md) - формула раньше делила deficit
+    # на 2, из-за чего штраф на реальном (не катастрофическом) win-rate
+    # слабой стратегии получался слишком мягким, чтобы перевесить
+    # HTF-подтверждение (до +24 к score). При win_rate=20% deficit=20,
+    # линейная формула должна дать penalty=20 (округление не нужно,
+    # число целое) - НЕ 10, как было бы при старой /2.
+    stats = _fake_stats({"RSI": {"count": 30, "win_rate": 20.0, "avg_pnl_pct": -1.0}})
+    monkeypatch.setattr(st.outcome_tracker, "get_accuracy_stats", lambda days=30: stats)
+    monkeypatch.setattr(st.queue_manager, "get_strategy_adjustments", lambda: {})
+    monkeypatch.setattr(st.queue_manager, "set_strategy_adjustments", lambda a: None)
+
+    result = st.recompute_adjustments()
+    assert result["RSI"] == 20
+
+
+def test_max_penalty_exceeds_typical_htf_confluence_boost():
+    # Смысловая проверка R1, а не просто число: потолок штрафа должен
+    # быть БОЛЬШЕ максимального буста от HTF-подтверждения
+    # (multi_timeframe.CONFLUENCE_BONUS_PER_TF * 3 таймфрейма) - иначе
+    # автокоррекция структурно не может перевесить подтверждение
+    # старшими ТФ даже в потолке, ровно та проблема, из-за которой Donchian
+    # Breakout продолжал доминировать в объёме публикаций несмотря на
+    # штраф (см. историю чата/ROADMAP.md, R1).
+    import multi_timeframe
+    max_htf_boost = multi_timeframe.CONFLUENCE_BONUS_PER_TF * 3
+    assert st.MAX_PENALTY > max_htf_boost
+
+
+def test_max_penalty_still_leaves_a_gap_below_100():
+    # Обратная сторона той же проверки - потолок штрафа НЕ должен
+    # делать публикацию стратегии буквально невозможной (см. docstring
+    # модуля: "не даём автоматике полностью заблокировать стратегию").
+    # base_min_score + MAX_PENALTY должен оставаться < 100 (макс. score),
+    # иначе даже идеальный сигнал не смог бы пройти порог.
+    import config
+    assert config.MIN_SIGNAL_SCORE_TO_PUBLISH + st.MAX_PENALTY < 100
+
+
 def test_get_effective_min_score_applies_penalty(monkeypatch):
     monkeypatch.setattr(st.queue_manager, "get_strategy_adjustments", lambda: {"RSI": 8})
     assert st.get_effective_min_score("RSI", 70) == 78
