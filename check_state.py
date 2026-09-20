@@ -14,6 +14,7 @@ import index_health_monitor
 import news_opinion_generator
 import outcome_tracker
 import queue_manager
+import shadow_filters
 import strategy_tuner
 import alerting
 
@@ -153,6 +154,20 @@ def main() -> None:
             return f"    {name}: нет данных"
         wr = f"{s['win_rate']}%" if s["win_rate"] is not None else "н/д"
         return f"    {name}: n={s['count']}, win-rate={wr}, средний результат={s['avg_pnl_pct']:+.2f}%"
+
+    print("\n=== Теневые фильтры (shadow_filters.py) - A/B-сравнение, ничего пока не блокируют ===")
+    for filter_name, _fn in shadow_filters.SHADOW_FILTERS:
+        stats = shadow_filters.get_shadow_stats(filter_name)
+        print(f"  [{filter_name}] залогировано вердиктов: {stats['verdicts_total']}, "
+              f"сопоставлено с реальным исходом: {stats['verdicts_matched']}")
+        print(_fmt_bucket("заблокировал бы (blocked)", stats["blocked"]))
+        print(_fmt_bucket("пропустил бы (allowed)", stats["allowed"]))
+        if stats["blocked"]["count"] and stats["allowed"]["count"]:
+            b_wr, a_wr = stats["blocked"]["win_rate"], stats["allowed"]["win_rate"]
+            if b_wr is not None and a_wr is not None and b_wr < a_wr - 10:
+                print(f"    -> заблокированные сигналы заметно хуже allowed (win-rate {b_wr}% vs {a_wr}%) - "
+                      f"похоже, фильтр стоит рассмотреть на перевод в боевой режим")
+
 
     for label, days in (("за всё время", None), ("за 30 дней", 30), ("за 7 дней", 7)):
         stats = outcome_tracker.get_accuracy_stats(days=days)
