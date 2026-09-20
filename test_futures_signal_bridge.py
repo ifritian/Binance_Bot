@@ -226,7 +226,7 @@ def test_execute_signal_continues_if_funding_fetch_fails(monkeypatch):
         return SimpleNamespace(
             symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
             stop_price=stop_price, take_profit_price=take_profit_price,
-            stop_order={"orderId": 1}, take_profit_order={"orderId": 2},
+            stop_order={"algoId": 1}, take_profit_order={"algoId": 2},
             reference_price=101.0, slippage_pct=0.0,
         )
 
@@ -235,6 +235,44 @@ def test_execute_signal_continues_if_funding_fetch_fails(monkeypatch):
     result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
                                     risk_limits=_limits(), min_score=0)
     assert result is not None
+
+
+def test_execute_signal_stores_algoId_as_order_ids_not_orderId(monkeypatch):
+    # Регрессия на реальный найденный баг: Algo Order API возвращает
+    # идентификатор ордера под ключом "algoId", не "orderId" (тот
+    # принадлежит обычным ордерам - другая система у Binance). Раньше
+    # здесь читалось .get("orderId") - stop_order_id/take_profit_order_id
+    # в сохранённой записи были ВСЕГДА None, из-за чего
+    # futures_position_monitor не мог определить причину закрытия
+    # позиции НИ РАЗУ (см. историю чата - обнаружено по реальным
+    # алертам в Telegram с "Причина: неизвестно" на каждой сделке).
+    # В ответе ниже намеренно есть ОБА ключа - "orderId" (мусорный,
+    # не должен использоваться) и "algoId" (правильный) - чтобы
+    # убедиться, что мы читаем именно algoId, а не просто "что нашлось".
+    client = _FakeClient(mark_price=101.0, position=None)
+    monkeypatch.setattr(risk_guard, "_consecutive_losses", lambda client, lookback=50, since_ts=None: 0)
+
+    captured = {}
+    monkeypatch.setattr(bridge.queue_manager, "add_open_futures_position", lambda record: captured.update(record))
+
+    def fake_open_protected_position(client, symbol, side, stop_price, take_profit_price,
+                                      risk_pct, leverage, risk_limits=None, margin_type="ISOLATED"):
+        return SimpleNamespace(
+            symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
+            stop_price=stop_price, take_profit_price=take_profit_price,
+            stop_order={"orderId": None, "algoId": 555},
+            take_profit_order={"orderId": None, "algoId": 777},
+            reference_price=101.0, slippage_pct=0.0,
+        )
+
+    monkeypatch.setattr(bridge, "open_protected_position", fake_open_protected_position)
+
+    result = bridge.execute_signal(client, _signal(), risk_pct=1.0, leverage=3,
+                                    risk_limits=_limits(), min_score=0)
+
+    assert result is not None
+    assert captured["stop_order_id"] == 555
+    assert captured["take_profit_order_id"] == 777
 
 
 # --- мягкое снижение риска (см. risk_guard.get_risk_multiplier) ---
@@ -253,7 +291,7 @@ def test_execute_signal_applies_soft_derisk_multiplier(monkeypatch):
         return SimpleNamespace(
             symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
             stop_price=stop_price, take_profit_price=take_profit_price,
-            stop_order={"orderId": 1}, take_profit_order={"orderId": 2},
+            stop_order={"algoId": 1}, take_profit_order={"algoId": 2},
             reference_price=101.0, slippage_pct=0.0,
         )
 
@@ -277,7 +315,7 @@ def test_execute_signal_keeps_full_risk_without_loss_streak(monkeypatch):
         return SimpleNamespace(
             symbol=symbol, side=side, quantity=1.0, entry_price=101.0,
             stop_price=stop_price, take_profit_price=take_profit_price,
-            stop_order={"orderId": 1}, take_profit_order={"orderId": 2},
+            stop_order={"algoId": 1}, take_profit_order={"algoId": 2},
             reference_price=101.0, slippage_pct=0.0,
         )
 

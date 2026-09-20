@@ -70,13 +70,13 @@ class _FakeClient:
     def place_stop_market(self, symbol, side, stop_price, close_position=True, quantity=None):
         self._maybe_fail("stop")
         self.call_log.append(("place_stop_market", symbol, side, stop_price))
-        return {"orderId": 201}
+        return {"algoId": 201}
 
     def place_trailing_stop_market(self, symbol, side, callback_rate, close_position=True,
                                     quantity=None, activation_price=None):
         self._maybe_fail("trailing")
         self.call_log.append(("place_trailing_stop_market", symbol, side, callback_rate, activation_price))
-        return {"orderId": 202}
+        return {"algoId": 202}
 
 
 def _record(**overrides):
@@ -245,7 +245,7 @@ def test_partial_profit_zero_remaining_is_skipped(monkeypatch):
 
 def test_close_reason_take_profit_before_partial():
     # stop (11) всё ещё висит, tp (12) - нет -> сработал тейк.
-    client = _FakeClient(open_orders=[{"orderId": 11}])
+    client = _FakeClient(open_orders=[{"algoId": 11}])
     reason = fpm._determine_close_reason_and_cleanup(client, _record(), "BTCUSDT")
     assert reason == "тейк-профит (TP)"
     assert ("cancel_all_open_orders", "BTCUSDT") in client.call_log
@@ -253,7 +253,7 @@ def test_close_reason_take_profit_before_partial():
 
 
 def test_close_reason_stop_loss_before_partial():
-    client = _FakeClient(open_orders=[{"orderId": 12}])
+    client = _FakeClient(open_orders=[{"algoId": 12}])
     reason = fpm._determine_close_reason_and_cleanup(client, _record(), "BTCUSDT")
     assert reason == "стоп-лосс (SL)"
 
@@ -261,12 +261,12 @@ def test_close_reason_stop_loss_before_partial():
 def test_close_reason_relabels_after_partial_tp():
     record = _record(partial_tp_done=True, stop_order_id=201, take_profit_order_id=202)
     # tp (202, теперь трейлинг) не висит -> трейлинг сработал.
-    client = _FakeClient(open_orders=[{"orderId": 201}])
+    client = _FakeClient(open_orders=[{"algoId": 201}])
     reason = fpm._determine_close_reason_and_cleanup(client, record, "BTCUSDT")
     assert "трейлинг-стоп" in reason
 
     # stop (201, теперь безубыток) не висит -> безубыток сработал.
-    client2 = _FakeClient(open_orders=[{"orderId": 202}])
+    client2 = _FakeClient(open_orders=[{"algoId": 202}])
     reason2 = fpm._determine_close_reason_and_cleanup(client2, record, "BTCUSDT")
     assert "безубытке" in reason2
 
@@ -276,6 +276,108 @@ def test_close_reason_unknown_when_neither_open():
     reason = fpm._determine_close_reason_and_cleanup(client, _record(), "BTCUSDT")
     assert "неизвестно" in reason
     assert not any(c[0] == "cancel_all_open_orders" for c in client.call_log)
+
+
+def test_close_reason_uses_algoId_not_orderId_from_mixed_order_list():
+    # Регрессия на реальный найденный баг: стоп/тейк ставятся через Algo
+    # Order API и в ответе биржи идут под ключом "algoId", а не
+    # "orderId" (тот принадлежит ОБЫЧНЫМ ордерам - см.
+    # FuturesClient.get_open_orders, который объединяет оба списка в
+    # один). Раньше здесь читался только "orderId" - для algo-ордеров
+    # это всегда None, и причина закрытия выходила "неизвестно"
+    # АБСОЛЮТНО ВСЕГДА, а не в редких случаях (баг обнаружен по
+    # реальным алертам в Telegram - см. историю чата). Тут список
+    # открытых ордеров - реалистичная смесь: один обычный ордер (с
+    # orderId, без algoId) и один algo-ордер (со stop, algoId=12) -
+    # сопоставление не должно путаться между двумя системами ID.
+    client = _FakeClient(open_orders=[{"orderId": 999}, {"algoId": 12}])
+    reason = fpm._determine_close_reason_and_cleanup(client, _record(), "BTCUSDT")
+    assert reason == "стоп-лосс (SL)"
+
+
+def test_close_reason_order_missing_both_id_fields_does_not_falsely_match_none():
+    # Защитный случай: если у записи вообще нет сохранённого ID (None -
+    # например, старая запись до фикса) и в ответе биржи тоже
+    # оказался ордер без algoId/orderId - два None не должны считаться
+    # совпадением (иначе ложно решили бы, что ордер всё ещё висит).
+    record = _record(stop_order_id=None, take_profit_order_id=None)
+    client = _FakeClient(open_orders=[{}])
+    reason = fpm._determine_close_reason_and_cleanup(client, record, "BTCUSDT")
+    assert "неизвестно" in reason
+
+
+# --- _finalize_closed_position: содержание алерта о закрытии ---
+
+def test_finalize_closed_position_message_includes_exit_price_leverage_and_duration(monkeypatch):
+    """Регрессия на реальный запрос пользователя - раньше в алерте не
+    было ни цены выхода, ни плеча, ни времени в сделке, только вход и
+    голый PnL. Проверяем, что все эти поля реально попадают в текст."""
+    captured = {}
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda key, message, **k: captured.update(text=message))
+
+    record = _record(
+        side="BUY", original_quantity=2536, entry_price=0.498447,
+        ticker="JTO", direction="Лонг", leverage=5,
+        opened_at=time.time() - 3600 * 7.5,
+    )
+
+    fpm._finalize_closed_position(record, "JTOUSDT", "тейк-профит (TP)", pnl=-24.8528)
+
+    text = captured["text"]
+    assert "Выход: ~" in text
+    assert "Движение цены:" in text
+    assert "PnL к марже (плечо 5x" in text
+    assert "В сделке: 7.5ч" in text
+    # Двойного пробела из старого формата ("Вход: X  Кол-во") быть не должно.
+    assert "  " not in text
+
+
+def test_finalize_closed_position_exit_price_direction_aware(monkeypatch):
+    # LONG: PnL отрицательный -> цена выхода должна быть НИЖЕ входа.
+    captured = {}
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda key, message, **k: captured.update(text=message))
+    record_long = _record(side="BUY", original_quantity=1000, entry_price=100.0)
+    fpm._finalize_closed_position(record_long, "BTCUSDT", "стоп-лосс (SL)", pnl=-500.0)
+    assert "Вход: 100 -> Выход: ~99.5" in captured["text"]
+
+    # SHORT: тот же отрицательный PnL -> цена выхода должна быть ВЫШЕ
+    # входа (цена пошла против шорта).
+    captured2 = {}
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda key, message, **k: captured2.update(text=message))
+    record_short = _record(side="SELL", original_quantity=1000, entry_price=100.0)
+    fpm._finalize_closed_position(record_short, "BTCUSDT", "стоп-лосс (SL)", pnl=-500.0)
+    assert "Вход: 100 -> Выход: ~100.5" in captured2["text"]
+
+
+def test_finalize_closed_position_omits_margin_pnl_when_leverage_missing(monkeypatch):
+    # Старые записи (до этого фикса) не содержат "leverage" вообще -
+    # не должно падать, просто эта строка не добавляется.
+    captured = {}
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda key, message, **k: captured.update(text=message))
+
+    record = _record()
+    record.pop("leverage", None)
+    fpm._finalize_closed_position(record, "BTCUSDT", "тейк-профит (TP)", pnl=10.0)
+
+    assert "PnL к марже" not in captured["text"]
+
+
+def test_manage_partial_profit_stores_algoId_for_new_breakeven_and_trailing_orders(monkeypatch):
+    # Та же регрессия, что и выше, но для ID, записываемых ПОСЛЕ
+    # частичного профита (см. _manage_partial_profit) - отдельное место
+    # в коде с тем же классом бага.
+    monkeypatch.setattr(config, "BINANCE_FUTURES_PARTIAL_TP_ENABLED", True)
+    monkeypatch.setattr(config, "BINANCE_FUTURES_PARTIAL_TP_TRIGGER_FRACTION", 0.5)
+    monkeypatch.setattr(config, "BINANCE_FUTURES_PARTIAL_TP_CLOSE_FRACTION", 0.5)
+    monkeypatch.setattr(config, "BINANCE_FUTURES_TRAILING_CALLBACK_PCT", 1.0)
+    monkeypatch.setattr(fpm.alerting, "send_owner_alert", lambda *a, **k: None)
+
+    client = _FakeClient()
+    record = _record(quantity=1.0)
+    updated = fpm._manage_partial_profit(client, record, mark_price=110.0)
+
+    assert updated["stop_order_id"] == 201
+    assert updated["take_profit_order_id"] == 202
 
 
 # --- check_open_positions: интеграция ---
@@ -336,7 +438,7 @@ def test_check_open_positions_marks_cooldown_on_real_stop_loss(monkeypatch):
     monkeypatch.setattr(fpm.queue_manager, "mark_stopped_out", lambda symbol: marked.append(symbol))
 
     # stop_order_id (11) не висит (сработал), take_profit_order_id (12) всё ещё висит -> сработал стоп.
-    client = _FakeClient(position=None, open_orders=[{"orderId": 12}], income_rows=[])
+    client = _FakeClient(position=None, open_orders=[{"algoId": 12}], income_rows=[])
     summary = fpm.check_open_positions(client)
 
     assert summary == {"still_open": 0, "closed": 1}
@@ -353,7 +455,7 @@ def test_check_open_positions_does_not_mark_cooldown_on_take_profit(monkeypatch)
     monkeypatch.setattr(fpm.queue_manager, "mark_stopped_out", lambda symbol: marked.append(symbol))
 
     # take_profit_order_id (12) не висит (сработал), stop_order_id (11) всё ещё висит -> сработал тейк.
-    client = _FakeClient(position=None, open_orders=[{"orderId": 11}], income_rows=[])
+    client = _FakeClient(position=None, open_orders=[{"algoId": 11}], income_rows=[])
     summary = fpm.check_open_positions(client)
 
     assert summary == {"still_open": 0, "closed": 1}
@@ -376,7 +478,7 @@ def test_check_open_positions_does_not_mark_cooldown_on_breakeven_stop_after_par
 
     # stop_order_id (201, теперь безубыток) не висит, take_profit_order_id
     # (202, теперь трейлинг) всё ещё висит -> сработал именно безубыток.
-    client = _FakeClient(position=None, open_orders=[{"orderId": 202}], income_rows=[])
+    client = _FakeClient(position=None, open_orders=[{"algoId": 202}], income_rows=[])
     summary = fpm.check_open_positions(client)
 
     assert summary == {"still_open": 0, "closed": 1}

@@ -97,9 +97,25 @@ def _determine_close_reason_and_cleanup(client, record: dict, symbol: str) -> st
         )
         return "неизвестно (ошибка API при проверке ордеров)"
 
-    open_order_ids = {o.get("orderId") for o in open_orders}
-    stop_still_open = record.get("stop_order_id") in open_order_ids
-    tp_still_open = record.get("take_profit_order_id") in open_order_ids
+    open_order_ids = {
+        oid for o in open_orders
+        if (oid := o.get("algoId", o.get("orderId"))) is not None
+    }  # algoId - для условных (наших stop/TP), orderId - для обычных
+    # ордеров в этом же объединённом списке (см. FuturesClient.
+    # get_open_orders). None отфильтрован намеренно: если у записи нет
+    # сохранённого ID (старая запись до этого фикса) и у какого-то
+    # ордера в ответе биржи тоже почему-то нет ни algoId, ни orderId -
+    # два None не должны считаться "совпадением" (иначе ложно решили бы,
+    # что ордер всё ещё висит). Раньше здесь читался только "orderId" -
+    # для algo-ордеров это всегда None, и сопоставление с
+    # record["stop_order_id"]/["take_profit_order_id"] (тоже когда-то
+    # неверно сохранённых под "orderId" - см. futures_signal_bridge.py)
+    # либо ложно совпадало по двум None, либо никогда не совпадало -
+    # в обоих случаях причина закрытия выходила "неизвестно" ВСЕГДА,
+    # а не в редких случаях (см. историю чата - баг обнаружен по
+    # реальным алертам в Telegram, где ни одна причина не определялась).
+    stop_still_open = record.get("stop_order_id") is not None and record.get("stop_order_id") in open_order_ids
+    tp_still_open = record.get("take_profit_order_id") is not None and record.get("take_profit_order_id") in open_order_ids
     after_partial = bool(record.get("partial_tp_done"))
 
     if stop_still_open and not tp_still_open:
@@ -249,8 +265,10 @@ def _manage_partial_profit(client, record: dict, mark_price: float) -> dict:
 
     updated = dict(record)
     updated["quantity"] = remaining_qty
-    updated["stop_order_id"] = breakeven_stop.get("orderId")
-    updated["take_profit_order_id"] = trailing_stop.get("orderId")
+    # "algoId", не "orderId" - см. ту же причину в futures_signal_bridge.py
+    # (Algo Order API возвращает идентификатор именно под этим ключом).
+    updated["stop_order_id"] = breakeven_stop.get("algoId")
+    updated["take_profit_order_id"] = trailing_stop.get("algoId")
     updated["partial_tp_done"] = True
     updated["partial_tp_realized_pnl"] = partial_pnl
     return updated
@@ -287,11 +305,43 @@ def _finalize_closed_position(record: dict, symbol: str, reason: str, pnl: float
             "зафиксированные ранее частичным профитом)"
         )
 
+    # Приблизительная эффективная цена выхода - обратный расчёт из
+    # реального PnL, а не отдельный запрос к бирже (нет эндпоинта
+    # "цена закрытия" как такового - REALIZED_PNL из get_income_history
+    # не включает цену, только сумму). Если позиция закрывалась в два
+    # приёма (частичный профит + финальное закрытие остатка), это
+    # СМЕШАННАЯ эффективная цена по обеим ногам, а не цена только
+    # последнего исполнения - поэтому помечена "прибл." везде, где
+    # показывается. Направление знака - long: цена растёт вместе с
+    # прибылью, short: наоборот.
+    price_move_pct = pnl_pct
+    if original_quantity:
+        price_delta = pnl / original_quantity
+        exit_price = entry + price_delta if record.get("side") == "BUY" else entry - price_delta
+        exit_price_part = f"~{exit_price:.6g}"
+    else:
+        exit_price_part = "н/д"
+
+    leverage = record.get("leverage")
+    margin_pnl_part = ""
+    if leverage:
+        margin_pnl_part = f"\nPnL к марже (плечо {leverage}x, прибл.): {pnl_pct * leverage:+.2f}%"
+
+    opened_at = record.get("opened_at")
+    duration_part = ""
+    if opened_at:
+        hours_held = (time.time() - opened_at) / 3600
+        duration_part = f"\nВ сделке: {hours_held:.1f}ч"
+
     message = (
         f"{emoji} Позиция закрыта: {record.get('ticker', symbol)} {record.get('direction', '')}\n"
         f"Причина: {reason}\n"
-        f"Вход: {entry:.6g}  Кол-во (исходное): {original_quantity:.8g}\n"
-        f"Реализованный PnL: {pnl:+.4f} USDT ({pnl_pct:+.2f}% от исходного размера позиции){partial_note}\n"
+        f"Вход: {entry:.6g} -> Выход: {exit_price_part}\n"
+        f"Движение цены: {price_move_pct:+.2f}%\n"
+        f"Объём (исходный): {original_quantity:.8g}\n"
+        f"Реализованный PnL: {pnl:+.4f} USDT ({pnl_pct:+.2f}% от номинала позиции){partial_note}"
+        f"{margin_pnl_part}"
+        f"{duration_part}\n"
         f"Стратегия: {record.get('strategy', '?')} (score {record.get('score', '?')})"
     )
     alerting.send_owner_alert(

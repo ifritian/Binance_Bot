@@ -258,13 +258,31 @@ def execute_signal(
         "slippage_pct": result.slippage_pct,
         "stop_price": result.stop_price,
         "take_profit_price": result.take_profit_price,
-        "stop_order_id": result.stop_order.get("orderId"),
-        "take_profit_order_id": result.take_profit_order.get("orderId"),
+        # "algoId", НЕ "orderId" - стоп/тейк ставятся через Algo Order
+        # API (см. futures_client.place_stop_market), которая возвращает
+        # свой идентификатор именно под ключом "algoId". Раньше здесь
+        # стояло .get("orderId") - результат всегда был None, и
+        # futures_position_monitor._determine_close_reason_and_cleanup
+        # никогда не мог сопоставить сохранённый ID с реальным открытым
+        # ордером, из-за чего КАЖДОЕ закрытие позиции определялось как
+        # "неизвестно" (см. историю чата - баг обнаружен по алертам в
+        # Telegram, где буквально ни одна причина закрытия не была
+        # понятной). Тесты этого не ловили, потому что фикстуры
+        # использовали "orderId" с обеих сторон (и в моке размещения, и
+        # в моке списка открытых ордеров) - согласованно друг с другом,
+        # но не с реальным Binance API.
+        "stop_order_id": result.stop_order.get("algoId"),
+        "take_profit_order_id": result.take_profit_order.get("algoId"),
         "ticker": signal.ticker,
         "direction": signal.direction,
         "strategy": signal.strategy,
         "score": signal.score,
         "opened_at": time.time(),
+        # Для алерта о закрытии (см. futures_position_monitor.
+        # _finalize_closed_position) - раньше плечо нигде не
+        # сохранялось, поэтому в уведомлении не было способа показать
+        # PnL к марже, только к номиналу позиции.
+        "leverage": leverage,
     })
 
     return result
