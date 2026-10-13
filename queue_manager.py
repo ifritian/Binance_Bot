@@ -361,6 +361,60 @@ def update_treasury_history(
     return history
 
 
+# --- Версия методики кумулятивного трекера "с запуска" ---
+# Версия 1 (до 2026-10-13) была ошибочной: каждый пост применял к
+# накопленному значению % изменения за TREASURY_PERIOD_HOURS (12ч), а
+# посты выходили раз в 24ч - то есть половина времени между постами
+# вообще не попадала в "с запуска". Кроме того, пять первых замеров были
+# сделаны с интервалом в 6-14 минут (тестовые запуски в день запуска), и
+# каждый из них применил то же 12-часовое движение - это завысило
+# итоговое значение примерно в 1.3 раза.
+# Версия 2: окно расчёта каждого поста = реальное время с прошлого
+# замера (см. treasury_generator.resolve_period_hours), поэтому цепочка
+# периодов покрывает время без пропусков и перекрытий (точность до часа).
+# Старые данные честно перенести нельзя - их нельзя восстановить без
+# архива цен, поэтому при переходе они архивируются и отсчёт начинается с 100.
+TREASURY_METHOD_VERSION = 2
+_TREASURY_METHOD_NOTE_DAYS = 7  # сколько дней в посте показывать пометку об обновлении методики
+
+
+def ensure_treasury_method_v2() -> bool:
+    """Гарантирует, что кумулятивная история индекса ведётся по текущей
+    методике (TREASURY_METHOD_VERSION). Возвращает True, если именно
+    сейчас был сделан сброс (первая установка или переход со старой
+    методики) - вызывающему коду в этот раз НЕ нужно применять к
+    истории % периода (он относится ко времени ДО нового старта).
+
+    Старые history/snapshots/returns не удаляются, а копируются в
+    ключ "treasury_archive_v1" (один раз - повторный вызов архив не
+    перезаписывает), чтобы при необходимости их можно было просмотреть."""
+    history = get_treasury_history()
+    if history is not None and history.get("method_version") == TREASURY_METHOD_VERSION:
+        return False
+
+    now = time.time()
+    if history is not None and _get("treasury_archive_v1", None) is None:
+        _set("treasury_archive_v1", {
+            "archived_at": now,
+            "history": history,
+            "snapshots": get_treasury_snapshots(),
+            "returns": get_treasury_returns_history(),
+        })
+
+    fresh = {
+        "launch_at": now,
+        "index_value": 100.0, "btc_value": 100.0,
+        "eth_value": 100.0, "market_value": 100.0,
+        "method_version": TREASURY_METHOD_VERSION,
+        "method_note_until": now + _TREASURY_METHOD_NOTE_DAYS * 86400,
+    }
+    _set("treasury_history", fresh)
+    _set("treasury_snapshots", [])
+    _set("treasury_returns_history", [])
+    append_treasury_snapshot(fresh)  # стартовая точка графика - все значения 100
+    return True
+
+
 # --- Снимки истории индекса (для графика динамики, см. treasury_chart.py) ---
 # update_treasury_history хранит только ТЕКУЩЕЕ кумулятивное состояние -
 # для графика "с запуска" нужен весь путь, а не только конечная точка,

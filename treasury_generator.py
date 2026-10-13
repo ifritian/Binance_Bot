@@ -10,6 +10,7 @@
 """
 import logging
 import re
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -125,7 +126,37 @@ def _format_comparison_block(
 
         lines.append(f"📈 С запуска ({launch_date}): {' | '.join(since_parts)}")
 
+        # Честная пометка о смене методики - показывается первые дни после
+        # перехода (см. queue_manager.ensure_treasury_method_v2), чтобы
+        # читатель понимал, почему "с запуска" начинается заново.
+        if history.get("method_note_until", 0) > time.time():
+            lines.append("ℹ️ Методика расчёта уточнена, отсчёт «с запуска» начат заново.")
+
     return "\n".join(lines)
+
+
+_MIN_PERIOD_HOURS = 1
+_MAX_PERIOD_HOURS = 168  # неделя - дольше 1ч-свечи запрашивать неразумно
+
+
+def resolve_period_hours(default_hours: float, now: Optional[float] = None) -> float:
+    """Окно расчёта текущего поста = число ЧАСОВЫХ СВЕЧЕЙ между прошлым
+    замером и сейчас. Именно так цепочка периодов (каждый % применяется к
+    накопленному значению - см. queue_manager.update_treasury_history)
+    покрывает время без пропусков: окно начинается с открытия той часовой
+    свечи, в которой был прошлый замер (перекрытие - меньше часа, а не
+    пропуск и не двойной учёт нескольких часов, как было при фиксированных
+    12ч раз в сутки).
+
+    Если замеров ещё нет - default_hours. Результат ограничен
+    [_MIN_PERIOD_HOURS, _MAX_PERIOD_HOURS]."""
+    snapshots = queue_manager.get_treasury_snapshots()
+    if not snapshots:
+        return default_hours
+
+    now = time.time() if now is None else now
+    hours_between = int(now // 3600) - int(snapshots[-1]["timestamp"] // 3600)
+    return float(min(max(hours_between, _MIN_PERIOD_HOURS), _MAX_PERIOD_HOURS))
 
 
 def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
@@ -156,7 +187,19 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
 
     Поднимает groq_client.GroqRateLimited при 429 от Groq - вызывающий
     код (main.py) уже умеет это ловить и выставлять backoff, как для
-    opinion/article."""
+    opinion/article.
+
+    period_hours - только ЗАПАСНОЕ значение (первый пост без истории).
+    Реальное окно расчёта - время с прошлого замера (resolve_period_hours),
+    иначе кумулятивное "с запуска" не покрывало бы время между постами."""
+    just_reset = queue_manager.ensure_treasury_method_v2()
+    if just_reset:
+        # Старт новой истории: период поста относится ко времени ДО
+        # старта, поэтому в кумулятив он не входит (см. ниже).
+        period_hours = config.TREASURY_INTERVAL_HOURS
+    else:
+        period_hours = resolve_period_hours(period_hours)
+
     result = compute_index(period_hours=period_hours)
 
     try:
@@ -209,8 +252,12 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
     history = None
     chart_path = None
     if btc_pct is not None:
-        history = queue_manager.update_treasury_history(result.total_pct, btc_pct, eth_pct, market_pct)
-        snapshots = queue_manager.append_treasury_snapshot(history)
+        if just_reset:
+            history = queue_manager.get_treasury_history()
+            snapshots = queue_manager.get_treasury_snapshots()
+        else:
+            history = queue_manager.update_treasury_history(result.total_pct, btc_pct, eth_pct, market_pct)
+            snapshots = queue_manager.append_treasury_snapshot(history)
         try:
             chart_path = treasury_chart.generate_treasury_chart(snapshots)
         except Exception:
@@ -221,7 +268,10 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
     else:
         logger.warning("Не удалось получить BTC для сравнения - публикую Treasury Index без блока сравнения")
 
-    returns_history = queue_manager.append_treasury_return(result.total_pct)
+    if just_reset:
+        returns_history = queue_manager.get_treasury_returns_history()
+    else:
+        returns_history = queue_manager.append_treasury_return(result.total_pct)
     volatility_stats = index_volatility.compute_volatility_and_drawdown(returns_history)
     volatility_block = index_volatility.format_volatility_block(volatility_stats, period_hours)
 
