@@ -49,6 +49,19 @@ BLUESKY_TEASER_PROBABILITY = float(os.environ.get("BLUESKY_TEASER_PROBABILITY", 
 # пост выглядел бы как реклама и мог бы триггернуть модерацию.
 BINANCE_CTA_PROBABILITY = float(os.environ.get("BINANCE_CTA_PROBABILITY", "0.2"))
 
+# Общие #-хэштеги для постов на Square без собственной темы (список через
+# запятую, например "#Crypto,#Trading"). Теги, забитые тысячами постов,
+# почти не дают охвата - если на Square есть актуальная трендовая тема/
+# кампания, добавь её сюда через секрет SQUARE_GENERAL_HASHTAGS в GitHub,
+# код менять не нужно. К каждому посту берётся ОДИН тег из списка.
+SQUARE_GENERAL_HASHTAGS = [
+    tag.strip() if tag.strip().startswith("#") else f"#{tag.strip()}"
+    for tag in os.environ.get(
+        "SQUARE_GENERAL_HASHTAGS", "#Crypto,#Trading,#Altcoins,#CryptoTrading"
+    ).split(",")
+    if tag.strip().lstrip("#")
+] or ["#Crypto"]
+
 # Вероятность добавить рукописные "от руки" пометки на график (круг у
 # входа + галочка у выхода, см. chart_generator.draw_win_annotations)
 # к посту "Забрали профит!" - не 100%, чтобы это читалось как живая,
