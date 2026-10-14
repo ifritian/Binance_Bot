@@ -36,6 +36,8 @@ import binance_publisher
 import bluesky_publisher
 import chart_generator
 import coin_whitelist
+import market_digest
+import square_question
 import config
 import image_analyzer
 import groq_client
@@ -723,6 +725,64 @@ def _square_slot_available() -> bool:
     впустую только из-за неудачного совпадения по времени с другим
     форматом; на следующем тике try_publish_* просто попробует снова."""
     return queue_manager.seconds_since_last_post("square_global") >= config.MIN_SQUARE_POST_SPACING_MINUTES * 60
+
+
+def try_publish_market_digest() -> None:
+    """Формат "Срез рынка" (Square): по слотам времени суток, а не по
+    таймеру "каждые N часов" - утренний/вечерний обзор читают в привычное
+    время. Слот публикуется один раз; при сбое повтор через backoff."""
+    if not config.MARKET_DIGEST_ENABLED:
+        return
+    now = market_digest.now_utc()
+    slot = market_digest.due_slot(
+        now, config.MARKET_DIGEST_HOURS_UTC, queue_manager._get("market_digest_done"),
+    )
+    if slot is None:
+        return
+    if not queue_manager.should_retry_now("market_digest"):
+        return
+    if not _square_slot_available():
+        return
+
+    data = market_digest.fetch_movers()
+    if data is None:
+        queue_manager.set_retry_backoff("market_digest", 0.5)
+        return
+    text = market_digest.build_digest_text(data, slot)
+    try:
+        result = binance_publisher.publish_post(text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации 'Срез рынка': %s", e)
+        queue_manager.set_retry_backoff("market_digest", 0.5)
+        return
+
+    logger.info("Опубликовано (Срез рынка, слот %02d UTC): %s", slot, result)
+    queue_manager._set("market_digest_done", market_digest.slot_key(now, slot))
+    queue_manager.set_last_post_time("market_digest")
+    queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_square_question() -> None:
+    """Вопрос аудитории в Square (без LLM): раз в SQUARE_QUESTION_INTERVAL_HOURS."""
+    if not config.SQUARE_QUESTION_ENABLED:
+        return
+    if queue_manager.seconds_since_last_post("square_question") < config.SQUARE_QUESTION_INTERVAL_HOURS * 3600:
+        return
+    if not queue_manager.should_retry_now("square_question"):
+        return
+    if not _square_slot_available():
+        return
+    text, _ticker = square_question.pick_question(queue_manager._get("square_question_last"))
+    try:
+        result = binance_publisher.publish_post(text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации вопроса в Square: %s", e)
+        queue_manager.set_retry_backoff("square_question", 1)
+        return
+    logger.info("Опубликован вопрос аудитории в Square: %s", result)
+    queue_manager._set("square_question_last", text.split("\n\n")[0])
+    queue_manager.set_last_post_time("square_question")
+    queue_manager.set_last_post_time("square_global")
 
 
 def try_publish_currency_post() -> None:
@@ -1889,6 +1949,8 @@ def tick() -> None:
             )
 
         try_publish_emergency_post()
+        try_publish_market_digest()
+        try_publish_square_question()
         try_publish_currency_post()
         try_publish_binance_promo()
         try_publish_hypothetical_post()

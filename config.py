@@ -225,6 +225,19 @@ HOT_TAKE_INTERVAL_HOURS = float(os.environ.get("HOT_TAKE_INTERVAL_HOURS", "60"))
 # от HOT_TAKE_INTERVAL_HOURS (60ч) и OPINION_INTERVAL_HOURS (48ч).
 MINI_LESSON_INTERVAL_HOURS = float(os.environ.get("MINI_LESSON_INTERVAL_HOURS", "84"))
 # Формат "Вопрос аудитории" - тоже только Bluesky, раз в неделю
+# Формат "Срез рынка" - ТОЛЬКО Binance Square (см. market_digest.py): пост
+# со списком лидеров роста/падения среди узнаваемых монет, в заданные часы
+# по UTC (по умолчанию 06:00 и 17:00 UTC - утро и вечер в Европе).
+MARKET_DIGEST_ENABLED = (os.environ.get("MARKET_DIGEST_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+MARKET_DIGEST_HOURS_UTC = sorted({
+    int(h) for h in (os.environ.get("MARKET_DIGEST_HOURS_UTC") or "6,17").split(",")
+    if h.strip().isdigit() and 0 <= int(h) <= 23
+}) or [6, 17]
+# Вопрос аудитории на Square (см. square_question.py), раз в N часов.
+SQUARE_QUESTION_ENABLED = (os.environ.get("SQUARE_QUESTION_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+SQUARE_QUESTION_INTERVAL_HOURS = float(os.environ.get("SQUARE_QUESTION_INTERVAL_HOURS") or "30")
+# Если бот "проспал" слот дольше этого числа часов - пропускаем его.
+MARKET_DIGEST_MAX_LATE_HOURS = float(os.environ.get("MARKET_DIGEST_MAX_LATE_HOURS") or "4")
 AUDIENCE_QUESTION_INTERVAL_HOURS = float(os.environ.get("AUDIENCE_QUESTION_INTERVAL_HOURS", "168"))
 ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
 # Формат "Промо" - ТОЛЬКО Binance Square (см. binance_promo_generator.py),
