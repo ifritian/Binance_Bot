@@ -142,3 +142,55 @@ def slot_key(now: datetime, slot: int) -> str:
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# --- "Горячая монета": событийный пост, а не по таймеру ---
+
+HOT_MOVE_PCT = 10.0
+HOT_MIN_VOLUME_USD = 100_000_000
+_HOT_TEMPLATES = [
+    "🔥 ${t} {pct} за сутки — сейчас одна из самых заметных монет рынка.\n\nЦена: {price} USDT. Это начало движения или уже поздно? Пишите, что думаете 👇",
+    "👀 ${t} резко двигается: {pct} за 24 часа.\n\nЦена: {price} USDT. Кто-то уже в позиции или только наблюдаете? 🤔",
+]
+
+
+def pick_hot_mover(rows: list[dict] | None = None, recent: dict | None = None, now_ts: float = 0.0,
+                   cooldown_s: float = 86400.0):
+    """Самая сильная монета (|изменение| >= HOT_MOVE_PCT, объём >= HOT_MIN_VOLUME_USD)
+    из белого списка, по которой не было поста за cooldown. -> (ticker, price, pct) | None"""
+    if rows is None:
+        try:
+            resp = requests.get(f"{scanner._BASE_URL}/ticker/24hr", timeout=20)
+            resp.raise_for_status()
+            rows = resp.json()
+        except (requests.RequestException, ValueError) as e:
+            logger.warning("Горячая монета: нет данных Binance: %s", e)
+            return None
+    recent = recent or {}
+    allowed = coin_whitelist.allowed_tickers()
+    best = None
+    for row in rows:
+        symbol = row.get("symbol", "")
+        if not symbol.endswith("USDT"):
+            continue
+        t = symbol.removesuffix("USDT")
+        if t not in allowed or now_ts - recent.get(t, 0) < cooldown_s:
+            continue
+        try:
+            price = float(row["lastPrice"]); pct = float(row["priceChangePercent"]); vol = float(row["quoteVolume"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if price <= 0 or vol < HOT_MIN_VOLUME_USD or abs(pct) < HOT_MOVE_PCT:
+            continue
+        if best is None or abs(pct) > abs(best[2]):
+            best = (t, price, pct)
+    return best
+
+
+def build_hot_text(ticker: str, price: float, pct: float, rng: random.Random | None = None) -> str:
+    rng = rng or random
+    tpl = rng.choice(_HOT_TEMPLATES)
+    if pct < 0:
+        tpl = tpl.replace("🔥", "🔻").replace("Это начало движения или уже поздно?", "Отскок близко или падение продолжится?")
+    body = tpl.replace("${t}", f"${ticker}").format(pct=_fmt_pct(pct), price=_fmt_price(price))
+    return f"{body}\n\n{post_format.DISCLAIMER}\n\n#{ticker} #Crypto"
