@@ -23,7 +23,10 @@ import logging
 
 from groq_client import call_groq
 from image_analyzer import ImageInsight
-from post_format import HOOK_MODES, assemble_post, assemble_signal_post
+from post_format import (
+    HOOK_MODES, assemble_post, assemble_signal_post, assemble_signal_post_explained,
+    assemble_signal_post_short,
+)
 from signal_parser import RsiSignal
 import voice_guidelines
 import voice_memory
@@ -56,14 +59,16 @@ _BASE_SIGNAL_SYSTEM_PROMPT = f"""Ты пишешь короткий ХУК дл�
 Примеры стиля автора:
 {_STYLE_EXAMPLES}
 
-Контекст: тебе дан реальный торговый сетап (вход/стоп/тейк/RSI/score) -
-ниже твоего хука код добавит точный структурированный блок с этими
-уровнями отдельно, поэтому НЕ дублируй конкретные цифры цены/уровней
-в самом хуке - просто передай идею сетапа (направление, причину сигнала)
-живым языком, как личную реакцию на сигнал.
+Контекст: тебе дан реальный торговый сетап (вход/стоп/тейк) - ниже
+твоего хука код добавит точный структурированный блок с этими уровнями
+отдельно, поэтому НЕ дублируй конкретные цифры цены/уровней в самом
+хуке - просто передай идею сетапа (направление, причину сигнала) живым
+языком, как личную реакцию на сигнал.
 
-Можно упомянуть RSI и score словами ("RSI зашкаливает", "score почти
-максимальный"), но НЕ называй сами числа - они уже будут в блоке ниже.
+Читатель - обычный человек, а не трейдер. НЕ упоминай названия
+индикаторов и стратегий (RSI, MACD, Bollinger, Дончиан, score и т.п.) и
+не называй числа - скажи простыми словами, что происходит с ценой и чем
+это интересно.
 
 НЕ добавляй сам никакой дисклеймер и никакие фразы про "не финансовая
 рекомендация" - это будет добавлено отдельно после твоего текста.
@@ -96,9 +101,10 @@ _BASE_IMAGE_SYSTEM_PROMPT = f"""Ты пишешь короткий ХУК для
 Отвечай только текстом хука, без пояснений и без кавычек вокруг текста.""" + voice_guidelines.STYLE_DIRECTIVE
 
 
-def generate_post_text(signal: RsiSignal, hook_mode: str) -> tuple[str, str]:
+def generate_post_text(signal: RsiSignal, hook_mode: str, explain: bool = False) -> tuple[str, str]:
     """Возвращает (text, hook) - text это уже собранный пост для Square/
-    Telegram (хук + блок сетапа + дисклеймер), hook - тот же хук отдельно,
+    Telegram (хук + короткий блок уровней + дисклеймер; при explain=True -
+    ещё и блок "Простыми словами", см. signal_explainer), hook - тот же хук отдельно,
     БЕЗ чисел (см. промпт выше) - нужен main.py для формата "Тред-разбор
     сильных сетапов" в Bluesky (post_format.build_bluesky_thread_signal),
     где хук идёт первым постом треда САМ ПО СЕБЕ, а не частью одного текста."""
@@ -116,8 +122,12 @@ def generate_post_text(signal: RsiSignal, hook_mode: str) -> tuple[str, str]:
 отдельно).""" + voice_memory.anti_repeat_block()
 
     hook = call_groq(system_prompt, user_prompt, max_tokens=400, temperature=0.8)
-    text = assemble_signal_post(hook, signal)
-    logger.info("Сгенерирован текст поста для %s (режим %s): %s", signal.ticker, hook_mode, text)
+    if explain:
+        text = assemble_signal_post_explained(hook, signal)
+    else:
+        text = assemble_signal_post_short(hook, signal)
+    logger.info("Сгенерирован текст поста для %s (режим %s, %s): %s",
+                signal.ticker, hook_mode, "с объяснением" if explain else "короткий", text)
     return text, hook
 
 

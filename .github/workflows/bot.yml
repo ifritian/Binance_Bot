@@ -85,6 +85,13 @@ jobs:
       PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT: ${{ secrets.PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT || '5.0' }}
       NEWS_SOURCE_CHANNEL: ${{ secrets.NEWS_SOURCE_CHANNEL || 'forklog' }}
       NEWS_TAKE_ENABLED: ${{ secrets.NEWS_TAKE_ENABLED || 'false' }}
+      # --- Публикация на Square: белый список монет, формат сигнала, теги ---
+      # Без явной строки здесь секрет GitHub в бота НЕ попадает (см. config.py).
+      SQUARE_COIN_WHITELIST_ENABLED: ${{ secrets.SQUARE_COIN_WHITELIST_ENABLED || 'true' }}
+      SQUARE_COIN_WHITELIST_EXTRA: ${{ secrets.SQUARE_COIN_WHITELIST_EXTRA }}
+      SQUARE_COIN_WHITELIST_EXCLUDE: ${{ secrets.SQUARE_COIN_WHITELIST_EXCLUDE }}
+      SIGNAL_EXPLAIN_INTERVAL_HOURS: ${{ secrets.SIGNAL_EXPLAIN_INTERVAL_HOURS || '48' }}
+      SQUARE_GENERAL_HASHTAGS: ${{ secrets.SQUARE_GENERAL_HASHTAGS || '#Crypto,#Trading,#Altcoins,#CryptoTrading' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

@@ -35,6 +35,7 @@ import binance_promo_generator
 import binance_publisher
 import bluesky_publisher
 import chart_generator
+import coin_whitelist
 import config
 import image_analyzer
 import groq_client
@@ -120,18 +121,31 @@ def check_for_new_signals() -> None:
                 queue_manager.push_pending_image(insight)
 
 
+def _should_explain_signal() -> bool:
+    """True, если пора выпустить сигнал в формате "Простыми словами" -
+    раз в config.SIGNAL_EXPLAIN_INTERVAL_HOURS (0 - никогда). Остальные
+    сигналы выходят в коротком формате: людям неинтересно читать много."""
+    interval_hours = config.SIGNAL_EXPLAIN_INTERVAL_HOURS
+    if interval_hours <= 0:
+        return False
+    return queue_manager.seconds_since_last_post("signal_explain") >= interval_hours * 3600
+
+
 def _publish_signal(signal) -> bool:
     logger.info("Публикуем сигнал %s", signal.ticker)
 
     hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
+    explain = _should_explain_signal()
 
     try:
-        post_text, hook = text_generator.generate_post_text(signal, hook_mode)
+        post_text, hook = text_generator.generate_post_text(signal, hook_mode, explain=explain)
     except Exception as e:
         logger.error("Ошибка генерации текста: %s", e)
         return False
 
-    ok, reason = validator.validate_post_text(post_text, signal)
+    # Короткий формат: RSI и score в тексте сознательно нет (читателю они
+    # непонятны), поэтому обязательны только вход/стоп/тейк.
+    ok, reason = validator.validate_post_text(post_text, signal, require_indicators=False)
     if not ok:
         logger.error("Пост не прошёл проверку чисел, публикация отменена: %s", reason)
         return False
@@ -177,6 +191,8 @@ def _publish_signal(signal) -> bool:
     published, bluesky_ref = _do_publish(post_text, [chart_path], signal.ticker, hook=hook, signal=signal)
     if published:
         queue_manager.set_last_hook_mode(hook_mode)
+        if explain:
+            queue_manager.set_last_post_time("signal_explain")
         # Валютные сигналы не привязаны к "теме" в смысле voice_memory
         # (там это BTC/ETH/market для opinion/hot_take) - record_post
         # здесь только пополняет общий анти-повтор зачинов (без theme/pct,
@@ -718,10 +734,15 @@ def try_publish_currency_post() -> None:
     if not _square_slot_available():
         return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
 
-    pending = queue_manager.get_pending_post(min_score=config.MIN_SIGNAL_SCORE_TO_PUBLISH)
+    # Только "узнаваемые" монеты (coin_whitelist) - по остальным посты
+    # остаются в очереди нетронутыми и не публикуются.
+    pending = queue_manager.get_pending_post(
+        min_score=config.MIN_SIGNAL_SCORE_TO_PUBLISH, allowed_fn=coin_whitelist.is_allowed,
+    )
     if pending is None:
         logger.info(
-            "Окно публикации (валюта) открыто, но в очереди нет сигнала со score > %d - жду следующего тика.",
+            "Окно публикации (валюта) открыто, но в очереди нет сигнала со score > %d по монетам из белого "
+            "списка - жду следующего тика.",
             config.MIN_SIGNAL_SCORE_TO_PUBLISH,
         )
         return  # нет сигнала, проходящего порог качества - публиковать нечего
