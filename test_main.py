@@ -716,8 +716,9 @@ def test_publish_signal_records_post_opener_in_voice_memory(monkeypatch):
     )
 
     monkeypatch.setattr(main.post_format, "pick_hook_mode", lambda last: "technician")
-    monkeypatch.setattr(main.text_generator, "generate_post_text", lambda s, mode: ("текст поста", "хук"))
-    monkeypatch.setattr(main.validator, "validate_post_text", lambda text, s: (True, ""))
+    monkeypatch.setattr(main.text_generator, "generate_post_text", lambda s, mode, **k: ("текст поста", "хук"))
+    monkeypatch.setattr(main.validator, "validate_post_text", lambda text, s, **k: (True, ""))
+    monkeypatch.setattr(main, "_should_explain_signal", lambda: False)  # не трогать настоящую базу
     monkeypatch.setattr(main.chart_generator, "generate_chart_image", lambda *a, **k: "fake_chart.png")
     monkeypatch.setattr(main, "_do_publish", lambda *a, **k: (True, None))
     monkeypatch.setattr(main.outcome_tracker, "record_signal_outcome", lambda *a, **k: None)
@@ -744,8 +745,9 @@ def test_publish_signal_does_not_record_when_publish_fails(monkeypatch):
     )
 
     monkeypatch.setattr(main.post_format, "pick_hook_mode", lambda last: "technician")
-    monkeypatch.setattr(main.text_generator, "generate_post_text", lambda s, mode: ("текст поста", "хук"))
-    monkeypatch.setattr(main.validator, "validate_post_text", lambda text, s: (True, ""))
+    monkeypatch.setattr(main.text_generator, "generate_post_text", lambda s, mode, **k: ("текст поста", "хук"))
+    monkeypatch.setattr(main.validator, "validate_post_text", lambda text, s, **k: (True, ""))
+    monkeypatch.setattr(main, "_should_explain_signal", lambda: False)  # не трогать настоящую базу
     monkeypatch.setattr(main.chart_generator, "generate_chart_image", lambda *a, **k: "fake_chart.png")
     monkeypatch.setattr(main, "_do_publish", lambda *a, **k: (False, None))
 

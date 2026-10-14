@@ -9,6 +9,7 @@ check_state.py - диагностика без побочных эффектов
 
 Запуск: python check_state.py
 """
+import coin_whitelist
 import config
 import index_health_monitor
 import news_opinion_generator
@@ -75,7 +76,9 @@ def main() -> None:
         print("Алертинг владельцу: ВЫКЛЮЧЕН (нужен YOUR_USER_ID в .env/secrets)")
 
     queue_len = queue_manager.pending_queue_length()
-    pending = queue_manager.get_pending_post(min_score=config.MIN_SIGNAL_SCORE_TO_PUBLISH)
+    pending = queue_manager.get_pending_post(
+        min_score=config.MIN_SIGNAL_SCORE_TO_PUBLISH, allowed_fn=coin_whitelist.is_allowed,
+    )
     if queue_len == 0:
         print("\nОчередь на публикацию (валюта): ПУСТА — даже если откроется окно, "
               "публиковать нечего, пока не придёт новый сигнал.")

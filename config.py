@@ -49,6 +49,17 @@ BLUESKY_TEASER_PROBABILITY = float(os.environ.get("BLUESKY_TEASER_PROBABILITY", 
 # пост выглядел бы как реклама и мог бы триггернуть модерацию.
 BINANCE_CTA_PROBABILITY = float(os.environ.get("BINANCE_CTA_PROBABILITY", "0.2"))
 
+# Белый список монет для сигналов на Square (см. coin_whitelist.py).
+# ENABLED=false - публиковать любые монеты, как раньше. EXTRA/EXCLUDE -
+# списки тикеров через запятую: добавить к базовому списку / убрать из него.
+SQUARE_COIN_WHITELIST_ENABLED = os.environ.get("SQUARE_COIN_WHITELIST_ENABLED", "true").strip().lower() != "false"
+SQUARE_COIN_WHITELIST_EXTRA = os.environ.get("SQUARE_COIN_WHITELIST_EXTRA", "")
+SQUARE_COIN_WHITELIST_EXCLUDE = os.environ.get("SQUARE_COIN_WHITELIST_EXCLUDE", "")
+
+# Как часто вместо короткого сигнала выходит вариант "простыми словами"
+# (см. signal_explainer.py). 0 - никогда, только короткий формат.
+SIGNAL_EXPLAIN_INTERVAL_HOURS = float(os.environ.get("SIGNAL_EXPLAIN_INTERVAL_HOURS") or "48")
+
 # Общие #-хэштеги для постов на Square без собственной темы (список через
 # запятую, например "#Crypto,#Trading"). Теги, забитые тысячами постов,
 # почти не дают охвата - если на Square есть актуальная трендовая тема/
@@ -56,8 +67,8 @@ BINANCE_CTA_PROBABILITY = float(os.environ.get("BINANCE_CTA_PROBABILITY", "0.2")
 # код менять не нужно. К каждому посту берётся ОДИН тег из списка.
 SQUARE_GENERAL_HASHTAGS = [
     tag.strip() if tag.strip().startswith("#") else f"#{tag.strip()}"
-    for tag in os.environ.get(
-        "SQUARE_GENERAL_HASHTAGS", "#Crypto,#Trading,#Altcoins,#CryptoTrading"
+    for tag in (
+        os.environ.get("SQUARE_GENERAL_HASHTAGS") or "#Crypto,#Trading,#Altcoins,#CryptoTrading"
     ).split(",")
     if tag.strip().lstrip("#")
 ] or ["#Crypto"]

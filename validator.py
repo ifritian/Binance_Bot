@@ -59,20 +59,25 @@ def find_suspicious_english_words(text: str) -> list[str]:
     return [w for w in words if not w.isupper() and w.lower() not in _ALLOWED_ENGLISH_WORDS]
 
 
-def validate_post_text(text: str, signal: RsiSignal) -> tuple[bool, str]:
+def validate_post_text(text: str, signal: RsiSignal, require_indicators: bool = True) -> tuple[bool, str]:
     """
     Возвращает (ok, причина_отказа). ok=True значит пост безопасен
     для публикации - все ключевые уровни сигнала присутствуют в тексте
     точно как в исходных данных, и дисклеймер на месте.
+
+    require_indicators=False - для короткого формата сигнала (см.
+    post_format.assemble_signal_post_short), где RSI и score в тексте
+    сознательно нет: обязательны только вход/стоп/тейк.
     """
     required_fields = {
         "вход (нижняя граница)": signal.entry_low,
         "вход (верхняя граница)": signal.entry_high,
         "стоп (инвалидация)": signal.invalidation,
         "тейк (цель)": signal.target,
-        "RSI": signal.rsi_now,
-        "score": signal.score,
     }
+    if require_indicators:
+        required_fields["RSI"] = signal.rsi_now
+        required_fields["score"] = signal.score
 
     for label, value in required_fields.items():
         if value and value not in text:

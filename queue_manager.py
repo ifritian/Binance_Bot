@@ -665,9 +665,14 @@ def pending_queue_summary() -> list[str]:
     return out
 
 
-def get_pending_post(min_score: int = 0) -> Optional[tuple[int, str, object]]:
+def get_pending_post(min_score: int = 0, allowed_fn=None) -> Optional[tuple[int, str, object]]:
     """Возвращает (индекс_в_очереди, kind, payload) ЛУЧШЕГО подходящего
     поста, или None, если ничего не подходит.
+
+    allowed_fn - необязательный фильтр по тикеру (например, белый список
+    coin_whitelist.is_allowed): посты (и сигналы, и картинки) по монетам,
+    для которых он вернул False, не рассматриваются вообще и остаются в
+    очереди нетронутыми. None - фильтра нет (как раньше).
 
     "Лучший" = сигнал (kind=signal) с максимальным score СРЕДИ ТЕХ, у
     кого score > min_score И чей тикер не входит в get_recent_tickers()
@@ -697,6 +702,8 @@ def get_pending_post(min_score: int = 0) -> Optional[tuple[int, str, object]]:
     fallback_image_idx = None
 
     for idx, item in enumerate(queue):
+        if allowed_fn is not None and not allowed_fn(item["payload"].get("ticker")):
+            continue
         if item["kind"] == "signal":
             try:
                 score = int(item["payload"].get("score", 0))

@@ -6,6 +6,7 @@
 import re
 
 import config
+import signal_explainer
 import signal_parser
 
 # Фиксированная фраза дисклеймера - меняй только здесь.
@@ -242,6 +243,39 @@ def assemble_signal_post(hook: str, signal) -> str:
     """
     setup_block = "\n".join(signal_setup_lines(signal))
     return f"{hook.strip()}\n\n{setup_block}\n\n{DISCLAIMER}"
+
+
+def _signal_levels_lines(signal) -> list:
+    """Две строки с уровнями без жаргона: направление и вход, затем стоп и
+    тейк. Без RSI, score и названия стратегии - обычному читателю они
+    ничего не говорят."""
+    is_long = signal_parser.is_long_direction(signal.direction)
+    emoji = "🟢" if is_long else "🔴"
+    word = "Лонг" if is_long else "Шорт"
+    entry = (
+        f"{signal.entry_low}" if str(signal.entry_low) == str(signal.entry_high)
+        else f"{signal.entry_low} - {signal.entry_high}"
+    )
+    return [
+        f"{emoji} {word} | Вход: {entry}",
+        f"Стоп: {signal.invalidation} | Тейк: {signal.target}",
+    ]
+
+
+def assemble_signal_post_short(hook: str, signal) -> str:
+    """Короткий формат сигнала (основной): хук + две строки уровней +
+    дисклеймер. Числа собраны КОДОМ, а не LLM."""
+    block = "\n".join(_signal_levels_lines(signal))
+    return f"{hook.strip()}\n\n{block}\n\n{DISCLAIMER}"
+
+
+def assemble_signal_post_explained(hook: str, signal, rng=None) -> str:
+    """Тот же короткий формат + блок "Простыми словами" (см.
+    signal_explainer) между уровнями и дисклеймером. Выходит редко - раз в
+    SIGNAL_EXPLAIN_INTERVAL_HOURS, чтобы лента не превращалась в лекции."""
+    block = "\n".join(_signal_levels_lines(signal))
+    explanation = signal_explainer.explain_signal(signal, rng=rng)
+    return f"{hook.strip()}\n\n{block}\n\n💡 Простыми словами: {explanation}\n\n{DISCLAIMER}"
 
 
 def assemble_index_management_post(hook: str, signal, tier_label: str, weight: float) -> str:
