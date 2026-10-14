@@ -785,6 +785,35 @@ def try_publish_square_question() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def try_publish_hot_mover() -> None:
+    """Событийный пост (Square): монета из белого списка резко двинулась.
+    Не чаще HOT_MOVER_MAX_PER_DAY в сутки и не по одной монете чаще раза в сутки."""
+    if not config.HOT_MOVER_ENABLED:
+        return
+    if not queue_manager.should_retry_now("hot_mover") or not _square_slot_available():
+        return
+    now = time.time()
+    log = {t: ts for t, ts in (queue_manager._get("hot_mover_log") or {}).items() if now - ts < 86400}
+    if len(log) >= config.HOT_MOVER_MAX_PER_DAY:
+        return
+    hot = market_digest.pick_hot_mover(recent=log, now_ts=now)
+    if hot is None:
+        queue_manager.set_retry_backoff("hot_mover", 0.25)  # не опрашивать Binance каждые 10 минут
+        return
+    ticker, price, pct = hot
+    text = market_digest.build_hot_text(ticker, price, pct)
+    try:
+        result = binance_publisher.publish_post(text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации 'Горячая монета': %s", e)
+        queue_manager.set_retry_backoff("hot_mover", 1)
+        return
+    logger.info("Опубликовано (Горячая монета %s %+.1f%%): %s", ticker, pct, result)
+    log[ticker] = now
+    queue_manager._set("hot_mover_log", log)
+    queue_manager.set_last_post_time("square_global")
+
+
 def try_publish_currency_post() -> None:
     seconds_elapsed = queue_manager.seconds_since_last_post("currency")
     min_seconds = config.MIN_POST_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("currency")
@@ -1951,6 +1980,7 @@ def tick() -> None:
         try_publish_emergency_post()
         try_publish_market_digest()
         try_publish_square_question()
+        try_publish_hot_mover()
         try_publish_currency_post()
         try_publish_binance_promo()
         try_publish_hypothetical_post()
