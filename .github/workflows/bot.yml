@@ -88,6 +88,8 @@ jobs:
       # --- Публикация на Square: белый список монет, формат сигнала, теги ---
       # Без явной строки здесь секрет GitHub в бота НЕ попадает (см. config.py).
       MIN_SQUARE_POST_SPACING_MINUTES: ${{ secrets.MIN_SQUARE_POST_SPACING_MINUTES || '150' }}
+      SQUARE_QUESTION_ENABLED: ${{ secrets.SQUARE_QUESTION_ENABLED || 'true' }}
+      SQUARE_QUESTION_INTERVAL_HOURS: ${{ secrets.SQUARE_QUESTION_INTERVAL_HOURS || '30' }}
       MARKET_DIGEST_ENABLED: ${{ secrets.MARKET_DIGEST_ENABLED || 'true' }}
       MARKET_DIGEST_HOURS_UTC: ${{ secrets.MARKET_DIGEST_HOURS_UTC || '6,17' }}
       SQUARE_COIN_WHITELIST_ENABLED: ${{ secrets.SQUARE_COIN_WHITELIST_ENABLED || 'true' }}

@@ -233,6 +233,9 @@ MARKET_DIGEST_HOURS_UTC = sorted({
     int(h) for h in (os.environ.get("MARKET_DIGEST_HOURS_UTC") or "6,17").split(",")
     if h.strip().isdigit() and 0 <= int(h) <= 23
 }) or [6, 17]
+# Вопрос аудитории на Square (см. square_question.py), раз в N часов.
+SQUARE_QUESTION_ENABLED = (os.environ.get("SQUARE_QUESTION_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+SQUARE_QUESTION_INTERVAL_HOURS = float(os.environ.get("SQUARE_QUESTION_INTERVAL_HOURS") or "30")
 # Если бот "проспал" слот дольше этого числа часов - пропускаем его.
 MARKET_DIGEST_MAX_LATE_HOURS = float(os.environ.get("MARKET_DIGEST_MAX_LATE_HOURS") or "4")
 AUDIENCE_QUESTION_INTERVAL_HOURS = float(os.environ.get("AUDIENCE_QUESTION_INTERVAL_HOURS", "168"))
