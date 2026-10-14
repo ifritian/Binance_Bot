@@ -5,9 +5,19 @@
 - post_format.strategy_topic_tag / square_hashtags_line(topic=...)
 - main: тикер для мнений по ВСЕМ темам (а не только BTC/ETH)
 """
+import pytest
+
+import config
 import main
 import opinion_generator
 import post_format
+
+
+@pytest.fixture(autouse=True)
+def _isolated_db(tmp_path, monkeypatch):
+    """Тесты main.try_publish_* доходят до voice_memory/queue_manager и
+    пишут в SQLite - без изоляции они засоряли бы настоящую bot_state.db."""
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "test_state.db")
 
 
 # --- ensure_cashtag ---
