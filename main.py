@@ -253,12 +253,16 @@ def _do_publish(
     queue_manager.attach_bluesky_ref_to_outcome (см.
     _publish_scheduled_bluesky) - формат "До/После" по-прежнему работает,
     просто привязка происходит чуть позже, а не в момент этого вызова."""
-    binance_text = post_text
+    # $TICKER гарантируется кодом, а не только просьбой к LLM в промпте -
+    # без него пост не привязан к токену и не попадает к его подписчикам.
+    # Только для текста Square: Telegram/Bluesky получают post_text как есть.
+    binance_text = post_format.ensure_cashtag(post_text, ticker)
     cta = post_format.maybe_binance_cta()
     if cta:
-        binance_text = f"{post_text}\n\n{cta}"
+        binance_text = f"{binance_text}\n\n{cta}"
 
-    hashtags = post_format.square_hashtags_line(ticker)
+    topic = post_format.strategy_topic_tag(getattr(signal, "strategy", None)) if signal is not None else None
+    hashtags = post_format.square_hashtags_line(ticker, topic=topic)
     if hashtags:
         binance_text = f"{binance_text}\n\n{hashtags}"
 
@@ -672,7 +676,10 @@ def _publish_win_celebrations(closed_records: list) -> None:
             image_paths = [chart_path] if chart_path else None
 
             hashtags = post_format.square_hashtags_line(record["ticker"])
-            binance_text = f"{post_text}\n\n{hashtags}" if hashtags else post_text
+            # Тикер уже есть в блоке с цифрами ("🟢 $X (лонг, ...)") -
+            # anywhere=True, чтобы не дублировать его в хуке без нужды.
+            win_text = post_format.ensure_cashtag(post_text, record["ticker"], anywhere=True)
+            binance_text = f"{win_text}\n\n{hashtags}" if hashtags else win_text
 
             binance_publisher.publish_post(binance_text, image_paths=image_paths)
             queue_manager.set_last_win_celebration_angle(angle)
@@ -860,12 +867,20 @@ def try_publish_opinion_post() -> None:
         queue_manager.set_retry_backoff("opinion", 1)
         return
 
-    # theme - ключ opinion_generator.THEMES: "BTC"/"ETH" - конкретный
-    # тикер, есть $CASHTAG; "market" - корзина из нескольких активов,
-    # $CASHTAG строить не от чего (см. square_hashtags_line), берём
-    # общий тег без тикера вместо того, чтобы просто ничего не добавлять.
-    hashtags = post_format.square_hashtags_line(theme) if theme in ("BTC", "ETH") else post_format.square_general_hashtag_line()
-    binance_text = f"{post_text}\n\n{hashtags}"
+    # theme - ключ opinion_generator.THEMES. Тем с ОДНИМ тикером много
+    # (BTC, ETH, SOL, BNB, XRP, ADA, DOGE, AVAX, LINK, DOT) - для них тикер
+    # берётся из THEMES (раньше проверялось только BTC/ETH, и посты про
+    # остальные монеты уходили без $CASHTAG и #тега). "market" - корзина
+    # из нескольких активов, одного тикера нет - берём общий тег.
+    theme_tickers = opinion_generator.THEMES[theme]["tickers"]
+    opinion_ticker = theme_tickers[0] if len(theme_tickers) == 1 else None
+    square_text = post_text  # post_text без изменений уходит в Telegram/Bluesky
+    if opinion_ticker:
+        square_text = post_format.ensure_cashtag(post_text, opinion_ticker)
+        hashtags = post_format.square_hashtags_line(opinion_ticker)
+    else:
+        hashtags = post_format.square_general_hashtag_line()
+    binance_text = f"{square_text}\n\n{hashtags}"
 
     try:
         published_result = binance_publisher.publish_post(binance_text)
@@ -1091,7 +1106,8 @@ def try_publish_hypothetical_post() -> None:
     image_paths = [chart_path] if chart_path else None
 
     hashtags = post_format.square_hashtags_line(ticker)
-    binance_text = f"{text}\n\n{hashtags}" if hashtags else text
+    square_text = post_format.ensure_cashtag(text, ticker)  # text для памяти зачинов остаётся как есть
+    binance_text = f"{square_text}\n\n{hashtags}" if hashtags else square_text
 
     try:
         binance_publisher.publish_post(binance_text, image_paths=image_paths)

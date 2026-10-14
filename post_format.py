@@ -3,6 +3,8 @@
 генераторами (text_generator, opinion_generator, article_generator),
 чтобы дисклеймер и структура были одинаковыми во всех форматах.
 """
+import re
+
 import config
 import signal_parser
 
@@ -62,19 +64,70 @@ def maybe_binance_cta() -> str | None:
 # Bluesky, который на Square не публикуется. Ниже - именно недостающая
 # половина: #-хэштеги для самого частого формата (сигнал, см.
 # main._do_publish) и для еженедельной статьи.
-_SQUARE_GENERAL_HASHTAGS = ["#Crypto", "#Trading", "#Altcoins", "#CryptoTrading"]
+_SQUARE_GENERAL_HASHTAGS = list(config.SQUARE_GENERAL_HASHTAGS)
+
+# Тематический тег по стратегии сигнала - он описывает, ЧТО именно
+# происходит на графике, а не "крипту вообще" (такие теги привязывают пост
+# к узкой теме вместо общей свалки). Ключ - подстрока названия стратегии
+# в нижнем регистре, первый подходящий выигрывает.
+_STRATEGY_TOPIC_TAGS = (
+    ("donchian", "#Breakout"),
+    ("breakout", "#Breakout"),
+    ("macd", "#MACD"),
+    ("bollinger", "#RSI"),
+    ("rsi", "#RSI"),
+)
 
 
-def square_hashtags_line(ticker: str | None) -> str | None:
-    """#{TICKER} + один ротирующийся общий тег (см.
-    _SQUARE_GENERAL_HASHTAGS). Ротация - чтобы не постить один и тот же
-    общий тег буквально в каждом посте (не выглядело спамом и не било в
-    один и тот же фильтр трендовой темы раз за разом). Возвращает None,
-    если тикер неизвестен - строить #-хэштег не от чего."""
+def strategy_topic_tag(strategy: str | None) -> str | None:
+    """Тематический #-тег по названию стратегии сигнала (см.
+    _STRATEGY_TOPIC_TAGS) или None, если стратегия не распознана."""
+    if not strategy:
+        return None
+    lowered = str(strategy).lower()
+    for needle, tag in _STRATEGY_TOPIC_TAGS:
+        if needle in lowered:
+            return tag
+    return None
+
+
+_TICKER_RE = re.compile(r"[A-Z0-9]{1,15}")
+
+
+def ensure_cashtag(text: str, ticker: str | None, anywhere: bool = False) -> str:
+    """Гарантирует, что в посте есть $TICKER - именно он привязывает пост
+    к токену на Square. Раньше это только ПРОСИЛИ у LLM в промпте, и если
+    модель забывала "$", пост уходил без привязки к монете.
+
+    По умолчанию проверяется первый абзац (хук) - если там нет $TICKER,
+    он добавляется в самое начало текста. anywhere=True - достаточно
+    $TICKER в любом месте текста (для постов, где тикер уже есть в
+    блоке с цифрами, например "Забрали профит!"). Регистр не важен,
+    "$SOLANA" не считается за "$SOL". Если тикер пустой или выглядит
+    странно - текст возвращается как есть."""
+    if not ticker:
+        return text
+    symbol = str(ticker).strip().lstrip("$#").upper()
+    if not _TICKER_RE.fullmatch(symbol):
+        return text
+
+    scope = text if anywhere else text.strip().split("\n\n")[0]
+    if re.search(r"\$" + re.escape(symbol) + r"(?![A-Za-z0-9])", scope, re.IGNORECASE):
+        return text
+    return f"${symbol} {text.lstrip()}"
+
+
+def square_hashtags_line(ticker: str | None, topic: str | None = None) -> str | None:
+    """#{TICKER} + один тег по теме. topic - тематический тег, подходящий
+    именно этому посту (см. strategy_topic_tag); если его нет - один
+    ротирующийся общий тег (см. _SQUARE_GENERAL_HASHTAGS). Ротация общих -
+    чтобы не постить один и тот же тег буквально в каждом посте. Возвращает
+    None, если тикер неизвестен - строить #-хэштег не от чего."""
     import random
     if not ticker:
         return None
-    return f"#{ticker.upper()} {random.choice(_SQUARE_GENERAL_HASHTAGS)}"
+    second = topic or random.choice(_SQUARE_GENERAL_HASHTAGS)
+    return f"#{ticker.upper()} {second}"
 
 
 _SQUARE_ARTICLE_HASHTAGS_LINE = "#Crypto #CryptoNews #Bitcoin #Altcoins"

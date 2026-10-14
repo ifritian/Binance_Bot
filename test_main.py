@@ -778,7 +778,8 @@ def test_do_publish_appends_ticker_hashtag(monkeypatch):
     assert published is True
     text, kwargs = calls[0]
     assert "#BEAT" in text
-    assert text.startswith("текст сигнала")
+    # $TICKER гарантируется кодом: в хуке его не было - добавлен в начало
+    assert text.startswith("$BEAT текст сигнала")
 
 
 def test_do_publish_no_ticker_skips_hashtag_line(monkeypatch):
@@ -860,7 +861,7 @@ def test_try_publish_hypothetical_post_publishes_with_chart_and_hashtag(monkeypa
 
     assert len(calls) == 1
     text, image_paths = calls[0]
-    assert text.startswith("Что если инопланетяне")
+    assert text.startswith("$BTC Что если инопланетяне")
     assert "#BTC" in text
     assert image_paths == ["/tmp/fake_chart.png"]
     # voice_memory получает текст БЕЗ хэштега, как и у остальных форматов.
