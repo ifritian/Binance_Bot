@@ -225,6 +225,11 @@ HOT_TAKE_INTERVAL_HOURS = float(os.environ.get("HOT_TAKE_INTERVAL_HOURS", "60"))
 # от HOT_TAKE_INTERVAL_HOURS (60ч) и OPINION_INTERVAL_HOURS (48ч).
 MINI_LESSON_INTERVAL_HOURS = float(os.environ.get("MINI_LESSON_INTERVAL_HOURS", "84"))
 # Формат "Вопрос аудитории" - тоже только Bluesky, раз в неделю
+# Язык ТОЛЬКО для трёх шаблонных форматов Square (срез рынка, вопрос, горячая
+# монета): "en" или "ru". Интерфейс Square у большинства читателей английский
+# (русские посты им показываются машинным переводом) - "en" это эксперимент,
+# вернуть русский можно секретом SQUARE_TEMPLATE_LANG=ru, без правок кода.
+SQUARE_TEMPLATE_LANG = "ru" if (os.environ.get("SQUARE_TEMPLATE_LANG") or "en").strip().lower() == "ru" else "en"
 # Формат "Срез рынка" - ТОЛЬКО Binance Square (см. market_digest.py): пост
 # со списком лидеров роста/падения среди узнаваемых монет, в заданные часы
 # по UTC (по умолчанию 06:00 и 17:00 UTC - утро и вечер в Европе).
