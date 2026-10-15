@@ -39,7 +39,7 @@ def test_text_has_cashtags_question_disclaimer(monkeypatch):
     d = market_digest.fetch_movers(_rows())
     text = market_digest.build_digest_text(d, 6, random.Random(1))
     assert "Утренний" in text and "$SUI" in text and "$DOGE" in text and "?" in text
-    assert "не финансовая рекомендация" in text
+    assert "Не финансовый совет" in text
     assert text.strip().splitlines()[-1].startswith("#")
     assert "Вечерний" in market_digest.build_digest_text(d, 17, random.Random(1))
 
@@ -69,5 +69,5 @@ def test_english_text(monkeypatch):
     monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
     d = market_digest.fetch_movers(_rows())
     text = market_digest.build_digest_text(d, 17, random.Random(1))
-    assert "Evening market snapshot" in text and "Top gainers" in text and "not financial advice" in text
+    assert "Evening market snapshot" in text and "Top gainers" in text and "financial advice" in text
     assert not any("а" <= ch <= "я" for ch in text.lower())

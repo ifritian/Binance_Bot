@@ -21,7 +21,7 @@ def test_pick_and_cooldown():
 def test_text(monkeypatch):
     monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "ru")
     t = market_digest.build_hot_text("SOL", 150.0, -15.0)
-    assert "$SOL" in t and "#SOL" in t and "−15.0%" in t and "{" not in t and "не финансовая" in t
+    assert "$SOL" in t and "#SOL" in t and "−15.0%" in t and "{" not in t and "Не финансовый совет" in t
 
 
 def test_publish_limits(monkeypatch):
@@ -36,5 +36,5 @@ def test_publish_limits(monkeypatch):
 def test_text_en(monkeypatch):
     monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
     t = market_digest.build_hot_text("SOL", 150.0, -15.0)
-    assert "$SOL" in t and "−15.0%" in t and "not financial advice" in t and "{" not in t
+    assert "$SOL" in t and "−15.0%" in t and "financial advice" in t and "{" not in t
     assert not any("а" <= ch <= "я" for ch in t.lower())

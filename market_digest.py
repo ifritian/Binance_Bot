@@ -34,7 +34,7 @@ _QUESTIONS_GENERIC = [
     "Рост на таких движениях обычно сдувается или продолжается? Как думаете?",
     "Кто-то из списка уже у вас в портфеле? Расскажите, как идёт 👇",
 ]
-_EN_DISCLAIMER = "Informational post, not financial advice."
+_EN_DISCLAIMER = "Not financial advice."
 _EN_QUESTIONS_GENERIC = [
     "Which coin surprised you the most today? Tell us in the comments 👇",
     "What would you put on your watchlist for today? 🤔",

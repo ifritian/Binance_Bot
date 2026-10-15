@@ -42,7 +42,7 @@ class _FakeResponse:
 
 def test_build_bluesky_post_includes_hashtag_and_links(monkeypatch):
     monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "@my_channel")
-    text = "Короткий хук.\n\nВход: 1-2\nСтоп: 0.9\nТейк: 3\n\nИнформационный пост, не финансовая рекомендация."
+    text = "Короткий хук.\n\nВход: 1-2\nСтоп: 0.9\nТейк: 3\n\nНе финансовый совет."
 
     result, facets = post_format.build_bluesky_post(text, ticker="BTC")
 
