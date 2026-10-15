@@ -25,6 +25,7 @@ import logging
 import requests
 
 import config
+import voice_guidelines
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ def call_groq(system_prompt: str, user_prompt: str, max_tokens: int = 600,
         if len(content) < _MIN_RESPONSE_CHARS:
             raise GroqEmptyResponse(f"Groq дважды вернул пустой/почти пустой ответ: {content!r}")
 
-    return content
+    return voice_guidelines.humanize(content)
 
 
 def _request_once(system_prompt: str, user_prompt: str, max_tokens: int,
