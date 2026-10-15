@@ -34,7 +34,8 @@ def test_no_data_returns_none():
     assert market_digest.fetch_movers([]) is None
 
 
-def test_text_has_cashtags_question_disclaimer():
+def test_text_has_cashtags_question_disclaimer(monkeypatch):
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "ru")
     d = market_digest.fetch_movers(_rows())
     text = market_digest.build_digest_text(d, 6, random.Random(1))
     assert "Утренний" in text and "$SUI" in text and "$DOGE" in text and "?" in text
@@ -62,3 +63,11 @@ def test_publish_once(monkeypatch):
     main.try_publish_market_digest()
     assert len(sent) == 1
     assert queue_manager._get("market_digest_done") == "2026-10-15:06"
+
+
+def test_english_text(monkeypatch):
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
+    d = market_digest.fetch_movers(_rows())
+    text = market_digest.build_digest_text(d, 17, random.Random(1))
+    assert "Evening market snapshot" in text and "Top gainers" in text and "not financial advice" in text
+    assert not any("а" <= ch <= "я" for ch in text.lower())

@@ -20,3 +20,9 @@ def test_publish_once(monkeypatch):
     main.try_publish_square_question()
     main.try_publish_square_question()
     assert len(sent) == 1
+
+
+def test_question_english(monkeypatch):
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
+    text, t = square_question.pick_question()
+    assert f"${t}" in text and not any("а" <= ch <= "я" for ch in text.lower())

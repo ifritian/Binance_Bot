@@ -34,6 +34,15 @@ _QUESTIONS_GENERIC = [
     "Рост на таких движениях обычно сдувается или продолжается? Как думаете?",
     "Кто-то из списка уже у вас в портфеле? Расскажите, как идёт 👇",
 ]
+_EN_DISCLAIMER = "Informational post, not financial advice."
+_EN_QUESTIONS_GENERIC = [
+    "Which coin surprised you the most today? Tell us in the comments 👇",
+    "What would you put on your watchlist for today? 🤔",
+    "Do moves like these usually fade or keep going? What do you think?",
+    "Are any of these in your portfolio? Share how it's going 👇",
+]
+_EN_QUESTION_GAINER = "Will $%s keep climbing or pull back from here? 🤔"
+_EN_QUESTION_LOSER = "$%s has dropped hard - a dip worth watching or nothing to catch? 👇"
 _QUESTION_GAINER = "Как думаете, $%s продолжит рост или дальше откат? 🤔"
 _QUESTION_LOSER = "$%s уже сильно просел - это возможность или ловить нечего? 👇"
 
@@ -97,23 +106,28 @@ def _fmt_pct(pct: float) -> str:
 
 def build_digest_text(data: dict, slot_hour_utc: int, rng: random.Random | None = None) -> str:
     rng = rng or random
-    head = "☀️ Утренний срез рынка" if slot_hour_utc < 12 else "🌙 Вечерний срез рынка"
-    lines = [f"{head} за 24 часа:", ""]
+    en = config.SQUARE_TEMPLATE_LANG == "en"
+    if en:
+        head = "☀️ Morning market snapshot" if slot_hour_utc < 12 else "🌙 Evening market snapshot"
+        lines = [f"{head} (24h):", ""]
+    else:
+        head = "☀️ Утренний срез рынка" if slot_hour_utc < 12 else "🌙 Вечерний срез рынка"
+        lines = [f"{head} за 24 часа:", ""]
     for t, price, pct in data["majors"]:
         lines.append(f"${t} {_fmt_price(price)} ({_fmt_pct(pct)})")
     if data["gainers"]:
-        lines += ["", "🚀 Лидеры роста:"]
+        lines += ["", "🚀 Top gainers:" if en else "🚀 Лидеры роста:"]
         lines += [f"${t} {_fmt_pct(c)}" for t, _p, c in data["gainers"]]
     if data["losers"]:
-        lines += ["", "🔻 Лидеры падения:"]
+        lines += ["", "🔻 Top losers:" if en else "🔻 Лидеры падения:"]
         lines += [f"${t} {_fmt_pct(c)}" for t, _p, c in data["losers"]]
 
-    options = list(_QUESTIONS_GENERIC)
+    options = list(_EN_QUESTIONS_GENERIC if en else _QUESTIONS_GENERIC)
     if data["gainers"]:
-        options.append(_QUESTION_GAINER % data["gainers"][0][0])
+        options.append((_EN_QUESTION_GAINER if en else _QUESTION_GAINER) % data["gainers"][0][0])
     if data["losers"]:
-        options.append(_QUESTION_LOSER % data["losers"][0][0])
-    lines += ["", rng.choice(options), "", post_format.DISCLAIMER]
+        options.append((_EN_QUESTION_LOSER if en else _QUESTION_LOSER) % data["losers"][0][0])
+    lines += ["", rng.choice(options), "", _EN_DISCLAIMER if en else post_format.DISCLAIMER]
 
     topic = rng.choice(["#Crypto", "#Market", "#Altcoins"])
     first = data["gainers"][0][0] if data["gainers"] else data["majors"][0][0]
@@ -148,6 +162,10 @@ def now_utc() -> datetime:
 
 HOT_MOVE_PCT = 10.0
 HOT_MIN_VOLUME_USD = 100_000_000
+_EN_HOT_TEMPLATES = [
+    "🔥 ${t} is moving sharply: {pct} in 24 hours.\n\nPrice: {price} USDT. The start of a move or already late? Tell us what you think 👇",
+    "👀 ${t} is on the move: {pct} in 24 hours.\n\nPrice: {price} USDT. Already in a position, or just watching? 🤔",
+]
 _HOT_TEMPLATES = [
     "🔥 ${t} {pct} за сутки — сейчас одна из самых заметных монет рынка.\n\nЦена: {price} USDT. Это начало движения или уже поздно? Пишите, что думаете 👇",
     "👀 ${t} резко двигается: {pct} за 24 часа.\n\nЦена: {price} USDT. Кто-то уже в позиции или только наблюдаете? 🤔",
@@ -189,8 +207,10 @@ def pick_hot_mover(rows: list[dict] | None = None, recent: dict | None = None, n
 
 def build_hot_text(ticker: str, price: float, pct: float, rng: random.Random | None = None) -> str:
     rng = rng or random
-    tpl = rng.choice(_HOT_TEMPLATES)
+    en = config.SQUARE_TEMPLATE_LANG == "en"
+    tpl = rng.choice(_EN_HOT_TEMPLATES if en else _HOT_TEMPLATES)
     if pct < 0:
         tpl = tpl.replace("🔥", "🔻").replace("Это начало движения или уже поздно?", "Отскок близко или падение продолжится?")
+        tpl = tpl.replace("The start of a move or already late?", "A bounce coming or more downside?")
     body = tpl.replace("${t}", f"${ticker}").format(pct=_fmt_pct(pct), price=_fmt_price(price))
-    return f"{body}\n\n{post_format.DISCLAIMER}\n\n#{ticker} #Crypto"
+    return f"{body}\n\n{_EN_DISCLAIMER if en else post_format.DISCLAIMER}\n\n#{ticker} #Crypto"
