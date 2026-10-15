@@ -126,7 +126,31 @@ def publish_post(text: str, image_paths: Optional[list[Path]] = None) -> dict:
 
     result = _send_content(body)
     result["image_urls"] = image_urls
+    _log_post(text, result, bool(image_urls))
     return result
+
+
+_POST_LOG_MAX = 300
+
+
+def _log_post(text: str, result: dict, has_image: bool) -> None:
+    """Журнал публикаций Square (время, начало текста, id ответа Binance) -
+    чтобы сопоставлять просмотры/лайки из приложения с форматом поста.
+    Сбой журнала никогда не должен ломать публикацию."""
+    try:
+        import queue_manager
+        post_id = result.get("id") if isinstance(result, dict) else None
+        log = queue_manager._get("square_post_log", [])
+        log.append({
+            "ts": int(time.time()),
+            "id": str(post_id) if post_id is not None else None,
+            "head": " ".join(text.split())[:90],
+            "len": len(text),
+            "img": has_image,
+        })
+        queue_manager._set("square_post_log", log[-_POST_LOG_MAX:])
+    except Exception:
+        logger.warning("Не удалось записать журнал публикации Square", exc_info=True)
 
 
 def publish_article(title: str, text: str, cover_path: Optional[Path] = None) -> dict:
