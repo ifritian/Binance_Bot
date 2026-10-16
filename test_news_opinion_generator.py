@@ -119,20 +119,23 @@ def test_generate_news_take_returns_none_without_unread_posts(monkeypatch):
     assert news_opinion_generator.generate_news_take() is None
 
 
-def test_generate_news_take_returns_text_id_and_image(monkeypatch):
+def test_generate_news_take_adds_cashtag_and_own_chart(monkeypatch):
     fake_post = news_channel_reader.NewsPost(
-        post_id=777, text="Компания объявила о запуске нового продукта " * 5,
+        post_id=777, text="Крупный фонд увеличил долю в биткоине " * 5,
         article_url="https://forklog.com/news/example-story",
     )
     monkeypatch.setattr(news_channel_reader, "fetch_recent_posts", lambda limit=10: [fake_post])
     monkeypatch.setattr(
         news_opinion_generator, "call_groq",
-        lambda *a, **kw: "Если это реально сработает, конкурентам придётся пересмотреть стратегию в этом сегменте."
+        lambda *a, **kw: "Фонд докупает биткоин на просадке, а розница в это время фиксирует прибыль. Кто окажется прав?"
     )
     monkeypatch.setattr(
-        news_channel_reader, "fetch_article_preview_image",
-        lambda article_url, filename_hint: Path("/tmp/fake_preview.jpg"),
+        news_opinion_generator.chart_generator, "generate_chart_image",
+        lambda ticker, days=2, **kw: Path(f"/tmp/chart_{ticker}.png"),
     )
+    fetched = []
+    monkeypatch.setattr(news_channel_reader, "fetch_article_preview_image",
+                        lambda *a, **k: fetched.append(1) or Path("/tmp/forklog.jpg"))
 
     result = news_opinion_generator.generate_news_take()
 
@@ -140,7 +143,17 @@ def test_generate_news_take_returns_text_id_and_image(monkeypatch):
     text, post_id, image_path = result
     assert post_id == 777
     assert post_format.DISCLAIMER in text
-    assert image_path == Path("/tmp/fake_preview.jpg")
+    assert "$BTC" in text
+    assert image_path == Path("/tmp/chart_BTC.png")
+    assert fetched == []  # чужую картинку из статьи больше не берём
+
+
+def test_detect_tickers():
+    d = news_opinion_generator.detect_tickers
+    assert d("Биткоина и эфириума на рынке стало меньше") == ["BTC", "ETH"]
+    assert d("Solana растёт, а $DOGE падает") == ["SOL", "DOGE"]
+    assert d("Компания запустила продукт") == []
+    assert d("прямой эфир с конференции") == []
 
 
 def test_generate_news_take_works_without_article_url(monkeypatch):

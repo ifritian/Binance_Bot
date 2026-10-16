@@ -28,7 +28,9 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import chart_generator
 import cliche_filter
+import coin_whitelist
 import config
 import news_channel_reader
 import queue_manager
@@ -58,7 +60,7 @@ _SYSTEM_PROMPT = """Ты - независимый криптотрейдер и 
 
 Разговорный тон, без канцелярита.
 
-ЗВУЧИ АКТУАЛЬНО: пиши так, будто ты прочитал это только что и делишься
+ЗВУЧИ АКТУАЛЬНО: пиши как человек, который прочитал это только что и делится
 первой реакцией - "только что вышло", "прямо сейчас", "на моменте" (где
 уместно по смыслу), а не как будто пересказываешь что-то, о чём все уже
 слышали. Не используй обороты вроде "недавно стало известно" или
@@ -84,6 +86,51 @@ _SYSTEM_PROMPT = """Ты - независимый криптотрейдер и 
 пересказ конкретного источника. Не добавляй сам никакой дисклеймер - он
 будет добавлен отдельно после твоего текста. Отвечай только текстом
 поста, без пояснений и без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
+
+
+# Названия монет (по началу слова, чтобы ловить падежи) и тикеры (ТОЛЬКО
+# заглавными или с $ - "sol" в тексте может быть чем угодно). Нужны, чтобы
+# пост про монету получил $CASHTAG (виджет цены под постом = клики =
+# комиссия) и график ЭТОЙ монеты вместо чужой картинки-заглушки.
+_COIN_NAME_STEMS: dict[str, tuple[str, ...]] = {
+    "BTC": ("биткоин", "биткойн", "bitcoin"),
+    "ETH": ("эфириум", "ethereum"),
+    "SOL": ("солана", "solana"),
+    "XRP": ("ripple", "рипл"),
+    "BNB": ("binance coin",),
+    "DOGE": ("dogecoin", "догикоин"),
+    "ADA": ("cardano", "кардано"),
+    "TON": ("toncoin", "тонкоин"),
+    "TRX": ("tron ", "трон "),
+    "LINK": ("chainlink", "чейнлинк"),
+    "AVAX": ("avalanche", "аваланч"),
+    "LTC": ("litecoin", "лайткоин"),
+    "DOT": ("polkadot", "полкадот"),
+    "SUI": ("sui ",),
+    "HYPE": ("hyperliquid", "гиперликвид"),
+}
+_MAX_NEWS_TICKERS = 2
+
+
+def detect_tickers(text: str) -> list[str]:
+    """Монеты из белого списка, о которых говорится в тексте (порядок -
+    по первому упоминанию, не больше _MAX_NEWS_TICKERS)."""
+    lowered = text.lower() + " "
+    found: list[tuple[int, str]] = []
+    for ticker, stems in _COIN_NAME_STEMS.items():
+        if not coin_whitelist.is_allowed(ticker):
+            continue
+        positions = []
+        for stem in stems:
+            for m in re.finditer(r"(?<![a-zа-яё0-9])" + re.escape(stem), lowered):
+                positions.append(m.start())
+        m = re.search(r"(?<![A-Za-z0-9])\$?" + ticker + r"(?![A-Za-z0-9])", text)
+        if m and (m.group(0).startswith("$") or ticker.isupper()):
+            positions.append(m.start())
+        if positions:
+            found.append((min(positions), ticker))
+    found.sort()
+    return [t for _, t in found[:_MAX_NEWS_TICKERS]]
 
 
 def is_news_window_open() -> bool:
@@ -181,14 +228,18 @@ def generate_news_take() -> Optional[tuple[str, int, Optional[Path]]]:
         logger.warning("Новостной пост не прошёл проверку, пропускаю окно: %s", reason)
         return None
 
+    # Картинку из чужой статьи не берём (чужое авторское право + одинаковые
+    # картинки-заглушки выглядят как автопостинг). Если в посте речь о
+    # монете - добавляем её $CASHTAG и свежий график этой монеты.
     image_path = None
-    if news_post.article_url:
+    tickers = detect_tickers(hook)
+    if tickers:
+        cashtags = " ".join(f"${t}" for t in tickers)
+        text = f"{hook.strip()}\n\n{cashtags}\n\n{DISCLAIMER}"
         try:
-            image_path = news_channel_reader.fetch_article_preview_image(
-                news_post.article_url, filename_hint=f"binance_{news_post.post_id}"
-            )
+            image_path = chart_generator.generate_chart_image(tickers[0], days=2)
         except Exception as e:
-            logger.warning("Не удалось получить превью-картинку для новости %s: %s - шлю без картинки", news_post.post_id, e)
+            logger.warning("Не удалось построить график %s для новостного поста: %s - шлю без картинки", tickers[0], e)
 
     logger.info(
         "Сгенерирован новостной пост (источник: %s/%s, картинка: %s)",

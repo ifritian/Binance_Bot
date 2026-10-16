@@ -1060,7 +1060,9 @@ def try_publish_news_take() -> None:
         return
 
     post_text, source_post_id, image_path = result
-    hashtags = post_format.square_general_hashtag_line()
+    news_tickers = news_opinion_generator.detect_tickers(post_text)
+    hashtags = (post_format.square_hashtags_line(news_tickers[0]) if news_tickers else None) \
+        or post_format.square_general_hashtag_line()
     binance_text = f"{post_text}\n\n{hashtags}"
 
     try:
