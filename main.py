@@ -36,6 +36,7 @@ import binance_publisher
 import bluesky_publisher
 import chart_generator
 import coin_whitelist
+import event_posts
 import market_digest
 import square_question
 import config
@@ -811,6 +812,61 @@ def try_publish_hot_mover() -> None:
     logger.info("Опубликовано (Горячая монета %s %+.1f%%): %s", ticker, pct, result)
     log[ticker] = now
     queue_manager._set("hot_mover_log", log)
+    queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_fng_post() -> None:
+    """"Индекс страха и жадности" - раз в сутки после FNG_HOUR_UTC."""
+    if not config.FNG_ENABLED:
+        return
+    now = event_posts.now_utc()
+    today = now.strftime("%Y-%m-%d")
+    if now.hour < config.FNG_HOUR_UTC or now.hour - config.FNG_HOUR_UTC > 6:
+        return
+    if queue_manager._get("fng_done") == today:
+        return
+    if not queue_manager.should_retry_now("fng") or not _square_slot_available():
+        return
+    data = event_posts.fetch_fng()
+    if data is None:
+        queue_manager.set_retry_backoff("fng", 0.5)
+        return
+    text = event_posts.build_fng_text(data)
+    try:
+        result = binance_publisher.publish_post(text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации 'Индекс страха и жадности': %s", e)
+        queue_manager.set_retry_backoff("fng", 1)
+        return
+    logger.info("Опубликовано (Индекс страха и жадности %s): %s", data["value"], result)
+    queue_manager._set("fng_done", today)
+    queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_listing_announcement() -> None:
+    """"Анонс Binance": свежий листинг монеты -> пост в течение нескольких часов."""
+    if not config.ANNOUNCEMENTS_ENABLED:
+        return
+    if queue_manager.seconds_since_last_post("announcement") < config.ANNOUNCEMENTS_MIN_INTERVAL_HOURS * 3600:
+        return
+    if not queue_manager.should_retry_now("announcement") or not _square_slot_available():
+        return
+    seen = set(queue_manager._get("announcements_seen") or [])
+    fresh = [a for a in event_posts.fetch_listing_announcements(time.time()) if a["code"] not in seen]
+    if not fresh:
+        queue_manager.set_retry_backoff("announcement", 0.25)  # не опрашивать каждые 10 минут
+        return
+    item = fresh[0]
+    try:
+        result = binance_publisher.publish_post(event_posts.build_announcement_text(item))
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации 'Анонс Binance': %s", e)
+        queue_manager.set_retry_backoff("announcement", 1)
+        return
+    logger.info("Опубликовано (Анонс Binance %s): %s", item["ticker"], result)
+    seen.update(a["code"] for a in fresh)  # остальные свежие считаем "прочитанными", чтобы не спамить
+    queue_manager._set("announcements_seen", sorted(seen)[-100:])
+    queue_manager.set_last_post_time("announcement")
     queue_manager.set_last_post_time("square_global")
 
 
@@ -1981,6 +2037,8 @@ def tick() -> None:
         try_publish_market_digest()
         try_publish_square_question()
         try_publish_hot_mover()
+        try_publish_listing_announcement()
+        try_publish_fng_post()
         try_publish_currency_post()
         try_publish_binance_promo()
         try_publish_hypothetical_post()
