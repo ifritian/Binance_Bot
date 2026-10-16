@@ -170,4 +170,20 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add bot_state.db
           git diff --quiet --cached || git commit -m "Обновление состояния бота [skip ci]"
-          git push
+          # Если пока бот работал, в main влили PR, обычный push отклоняется и
+          # состояние запуска терялось (а с ним - отметки "уже опубликовано",
+          # из-за чего пост мог выйти повторно). Поэтому при отказе: сохраняем
+          # свежую базу, берём актуальный main, кладём базу поверх и пушим снова.
+          for attempt in 1 2 3 4 5; do
+            if git push; then exit 0; fi
+            echo "push отклонён (попытка $attempt), синхронизируюсь с main"
+            cp bot_state.db /tmp/bot_state_latest.db
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/bot_state_latest.db bot_state.db
+            git add bot_state.db
+            git diff --quiet --cached || git commit -m "Обновление состояния бота [skip ci]"
+            sleep $((attempt * 3))
+          done
+          echo "Не удалось сохранить состояние бота после 5 попыток"
+          exit 1
