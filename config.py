@@ -241,6 +241,12 @@ MARKET_DIGEST_HOURS_UTC = sorted({
 # "Горячая монета" (market_digest.pick_hot_mover): пост при сильном движении.
 HOT_MOVER_ENABLED = (os.environ.get("HOT_MOVER_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 HOT_MOVER_MAX_PER_DAY = int(os.environ.get("HOT_MOVER_MAX_PER_DAY") or "2")
+# "Индекс страха и жадности" (event_posts.py): раз в сутки в этот час UTC.
+FNG_ENABLED = (os.environ.get("FNG_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+FNG_HOUR_UTC = int(os.environ.get("FNG_HOUR_UTC") or "11")
+# "Анонсы Binance" (новые листинги): не чаще раза в N часов.
+ANNOUNCEMENTS_ENABLED = (os.environ.get("ANNOUNCEMENTS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+ANNOUNCEMENTS_MIN_INTERVAL_HOURS = float(os.environ.get("ANNOUNCEMENTS_MIN_INTERVAL_HOURS") or "6")
 # Вопрос аудитории на Square (см. square_question.py), раз в N часов.
 SQUARE_QUESTION_ENABLED = (os.environ.get("SQUARE_QUESTION_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 SQUARE_QUESTION_INTERVAL_HOURS = float(os.environ.get("SQUARE_QUESTION_INTERVAL_HOURS") or "30")
