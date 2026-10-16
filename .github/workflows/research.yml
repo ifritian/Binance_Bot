@@ -1,0 +1,41 @@
+name: Research sweep
+
+# Только вручную. Проверяет на истории Binance, есть ли у стратегий реальное
+# преимущество после комиссий (см. research_sweep.py). Результат: вкладка
+# "Summary" запуска и файл research_report.md в ветке research-results.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Глубина истории в днях"
+        required: false
+        default: "240"
+
+permissions:
+  contents: write
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install requests
+      - name: Run sweep
+        run: python research_sweep.py --days "${{ inputs.days }}" --out research_report.md
+      - name: Show in summary
+        run: cat research_report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish report to research-results branch
+        run: |
+          git config user.name "research-bot"
+          git config user.email "research-bot@users.noreply.github.com"
+          cp research_report.md /tmp/research_report.md
+          git checkout --orphan research-results
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/research_report.md research_report.md
+          git add research_report.md
+          git commit -m "Research report $(date -u +%F)"
+          git push -f origin research-results
