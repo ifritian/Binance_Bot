@@ -56,6 +56,24 @@ BANNED_PHRASES: list[str] = [
     "не упусти",
     "это не просто",
     "игра на нервах",
+    # Английские приметы нейросетевого текста
+    "it's worth noting",
+    "it is worth noting",
+    "in conclusion",
+    "delve",
+    "game-changer",
+    "game changer",
+    "buckle up",
+    "rollercoaster",
+    "roller coaster",
+    "in the ever-evolving",
+    "navigate the",
+    "only time will tell",
+    "not just a",
+    "stay tuned",
+    "keep an eye on",
+    "at the end of the day",
+    "to the moon",
 ]
 
 STYLE_DIRECTIVE = """
@@ -103,6 +121,50 @@ STYLE_DIRECTIVE = """
   "не упустите", "игра на нервах";
 - хеджирование несколькими словами подряд ("возможно, вероятно, в какой-то
   степени") - если не уверен, скажи это одним словом и иди дальше."""
+
+
+STYLE_DIRECTIVE_EN = """
+Write like a real person who follows the market, not like a reference
+article and not like an AI.
+
+THE FIRST LINE decides everything: most people only see it. Open with one
+concrete fact, tension or position:
+- something that does not add up ("everyone watches X, but Y is moving");
+- one clear stance a reader can accept or dispute;
+- a specific either/or question.
+Do not open with filler ("the market today...", "an interesting moment...").
+Do not start every post with a ticker.
+
+STANCE AND SPECIFICS:
+- One idea per post. Say one thing precisely rather than three vaguely.
+- Plain words, as if explaining to a friend who is not a trader.
+- Lean on the numbers you are given, never invent beyond them.
+- First person is fine as an observation ("I would watch", "to me it
+  looks like"), but never "buy" or "sell" advice.
+
+ENDING: if you end with a question it must be specific and answerable in
+one word ("bounce or breakdown?", "holding or trimming?"). Empty "what do
+you think?" and "thoughts?" are banned. Not every post needs a question;
+otherwise stop where the thought ends.
+
+WHAT GIVES AN AI AWAY, AVOID:
+- the long dash: use a period, comma or colon;
+- "like a", "as if" similes and stretched metaphors (rollercoaster,
+  seesaw, elevator). If the image is not plain and everyday, skip it;
+- "it's not just X, it's Y" and any "not X but Y" for effect;
+- lists of three for rhythm;
+- sentences of the same length: mix short and longer;
+- an emoji at the end of every post: at most one, and not always;
+- warm-up intros and filler before the point;
+- cliches: "it's worth noting", "in conclusion", "delve", "game-changer",
+  "buckle up", "only time will tell", "stay tuned", "keep an eye on".
+"""
+
+
+def style_directive() -> str:
+    """Стиль под язык Square (config.SQUARE_TEMPLATE_LANG)."""
+    import config
+    return STYLE_DIRECTIVE if config.SQUARE_TEMPLATE_LANG == "ru" else STYLE_DIRECTIVE_EN
 
 
 def humanize(text: str) -> str:

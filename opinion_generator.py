@@ -23,6 +23,7 @@ import voice_memory
 
 from chart_generator import fetch_klines
 from groq_client import call_groq
+import post_format
 from post_format import DISCLAIMER, HOOK_MODES, assemble_post
 import voice_guidelines
 
@@ -39,8 +40,41 @@ THEMES: dict[str, dict] = {
     "AVAX": {"label": "$AVAX", "tickers": ["AVAX"]},
     "LINK": {"label": "$LINK", "tickers": ["LINK"]},
     "DOT": {"label": "$DOT", "tickers": ["DOT"]},
-    "market": {"label": "крипторынок в целом (по корзине BTC/ETH/SOL/BNB)", "tickers": ["BTC", "ETH", "SOL", "BNB"]},
+    "market": {"label": "крипторынок в целом (по корзине BTC/ETH/SOL/BNB)", "label_en": "the crypto market as a whole (BTC/ETH/SOL/BNB basket)", "tickers": ["BTC", "ETH", "SOL", "BNB"]},
 }
+
+
+def _en() -> bool:
+    return config.SQUARE_TEMPLATE_LANG != "ru"
+
+
+def _label(theme: str) -> str:
+    t = THEMES[theme]
+    return t.get("label_en", t["label"]) if _en() else t["label"]
+
+
+def _disclaimer() -> str:
+    return post_format.DISCLAIMER_EN if _en() else DISCLAIMER
+
+
+_SYSTEM_PROMPT_EN = """You write a personal market take for Binance Square in the voice of
+someone who actually follows the market: a live reaction, not dry analysis.
+3-5 sentences, at most one emoji, no filler, but give more context and
+personal reflection than a bare statement of fact.
+
+You are given a SET of real numbers (see the task). Use them EXACTLY as
+given, never round or invent others. You may skip some, but you must NOT
+mention numbers that are not in the set.
+
+Structure (loose, not a template):
+- a hook with one concrete number
+- what it might mean / what it happened against (no invented news, only
+  market reflection: "looks like", "not the first time")
+- a personal take or one specific either/or question to the reader
+
+Do NOT add any disclaimer, it is added separately after your text.
+
+Reply with the post text only, no explanations, no quotes.""" + voice_guidelines.STYLE_DIRECTIVE_EN
 
 _SYSTEM_PROMPT = """Ты пишешь личный пост-мнение для Binance Square, в
 разговорном фирменном стиле автора - живая реакция человека, который
@@ -148,15 +182,24 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
     if stats is None:
         return None
 
-    label = THEMES[theme]["label"]
-    system_prompt = _SYSTEM_PROMPT
+    label = _label(theme)
+    en = _en()
+    system_prompt = _SYSTEM_PROMPT_EN if en else _SYSTEM_PROMPT
     if hook_mode is not None:
-        system_prompt = f"{_SYSTEM_PROMPT}\n\n{HOOK_MODES[hook_mode]}"
+        system_prompt = f"{system_prompt}\n\n{post_format.hook_mode_text(hook_mode)}"
 
     if "single" in stats:
         s = stats["single"]
         sign = "+" if s["pct"] >= 0 else ""
         user_prompt = (
+            f"Topic: {label}\n"
+            f"Price change over the last 48 hours (2 days): {sign}{s['pct']}%.\n"
+            f"Swing over that time (high-low as % of the starting price): {s['amplitude_pct']}%.\n"
+            f"Current price: ${s['current_price']:.2f} (write it without thousands separators, as given).\n\n"
+            f"If you mention the period, use EXACTLY '48 hours' or '2 days', do not convert it "
+            f"(not '24 hours', not 'a day').\n\n"
+            f"Write a personal take on this move."
+        ) if en else (
             f"Тема: {label}\n"
             f"Изменение цены за последние 48 часов (2 дня): {sign}{s['pct']}%.\n"
             f"Амплитуда колебаний за это время (high-low в % от начальной цены): {s['amplitude_pct']}%.\n"
@@ -178,6 +221,13 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
         )
         avg = stats["avg_pct"]
         user_prompt = (
+            f"Topic: {label}\n"
+            f"Change per asset over the last 48 hours (2 days):\n{breakdown_lines}\n"
+            f"Average across the basket: {'+' if avg >= 0 else ''}{avg}%.\n\n"
+            f"If you mention the period, use EXACTLY '48 hours' or '2 days', do not convert it "
+            f"(not '24 hours', not 'a day').\n\n"
+            f"Write a personal take on this move: you can mention single assets or the overall picture."
+        ) if en else (
             f"Тема: {label}\n"
             f"Изменение по каждому активу за последние 48 часов (2 дня):\n{breakdown_lines}\n"
             f"Средний % по корзине: {'+' if avg >= 0 else ''}{avg}%.\n\n"
@@ -205,9 +255,10 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
         logger.warning("Хук поста-мнения пустой или слишком короткий (%r) - публикую с нейтральным хуком", hook)
         # Запасной хук с реальным числом и конкретным вопросом (раньше тут был
         # пустой "как вам последнее движение?" - ровно то, что мы запретили).
-        hook = f"{label}: {headline_pct:+.2f}% за 2 дня. Продолжение или откат?"
+        hook = (f"{label}: {headline_pct:+.2f}% in 2 days. Continuation or pullback?" if en
+                else f"{label}: {headline_pct:+.2f}% за 2 дня. Продолжение или откат?")
 
-    text = assemble_post(hook)
+    text = f"{hook.strip()}\n\n{_disclaimer()}"
     logger.info("Сгенерирован пост-мнение (тема %s, числа: %s): %s", theme, allowed_numbers, text)
     return text, allowed_numbers, headline_pct
 
@@ -224,7 +275,7 @@ def validate_opinion_post_text(text: str, allowed_numbers: set[float]) -> tuple[
     if unknown:
         return False, f"В тексте есть числа, не из посчитанных данных: {unknown}"
 
-    if DISCLAIMER.lower() not in text.lower():
+    if _disclaimer().lower() not in text.lower():
         return False, "В тексте отсутствует дисклеймер"
 
     cliche_ok, found = cliche_filter.check_cliches(text)

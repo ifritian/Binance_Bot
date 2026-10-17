@@ -238,9 +238,6 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
         except Exception:
             logger.exception("Не удалось построить диаграмму состава Treasury Index - публикую без неё")
 
-    index_block = format_index_block(result)
-    allowed_numbers = _extract_numbers(index_block) | {period_hours}
-
     # Сравнение с BTC/ETH/рынком за тот же период + кумулятивный трекер
     # с запуска. Каждый бенчмарк опционален - если какой-то недоступен
     # (сетевой сбой), публикуем пост без него, не блокируем публикацию
@@ -272,66 +269,84 @@ def generate_treasury_post(period_hours: float = 12.0) -> Optional[tuple]:
         returns_history = queue_manager.get_treasury_returns_history()
     else:
         returns_history = queue_manager.append_treasury_return(result.total_pct)
-    volatility_stats = index_volatility.compute_volatility_and_drawdown(returns_history)
-    volatility_block = index_volatility.format_volatility_block(volatility_stats, period_hours)
-
     breadth = compute_breadth(result)
-    breadth_line = format_breadth_line(breadth)
 
-    comparison_block = _format_comparison_block(result, period_hours, btc_pct, eth_pct, market_pct, history)
-    if comparison_block:
-        allowed_numbers |= _extract_numbers(comparison_block)
-    if volatility_block:
-        allowed_numbers |= _extract_numbers(volatility_block)
-        comparison_block = f"{comparison_block}\n{volatility_block}" if comparison_block else volatility_block
-    if breadth_line:
-        allowed_numbers |= _extract_numbers(breadth_line)
-        comparison_block = f"{comparison_block}\n{breadth_line}" if comparison_block else breadth_line
-
-    lt = leading_tier(result)
-    lead_line = ""
-    if lt is not None:
-        sign = "+" if lt.pct >= 0 else ""
-        lead_line = f"Лидирует тир: {lt.label} ({sign}{lt.pct}%).\n"
-
-    total_sign = "+" if result.total_pct >= 0 else ""
-    comparison_line = f"\n{comparison_block}" if comparison_block else ""
-    user_prompt = (
-        f"Итоговое изменение индекса за {period_hours:g}ч: {total_sign}{result.total_pct}%.\n"
-        f"{lead_line}"
-        f"{comparison_line}\n"
-        f"Числовой блок целиком (для контекста, НЕ копируй его в ответ):\n{index_block}\n\n"
-        f"Напиши короткий хук, который встанет перед этим блоком. Если расхождение "
-        f"с BTC или результат с запуска заметные - можно на это указать (см. цифры выше)."
+    binance_text = build_basket_post(
+        result, period_hours, btc_pct, eth_pct, history, breadth,
     )
-
-    # GroqRateLimited намеренно НЕ ловится здесь - пробрасывается в main.py,
-    # чтобы использовать общий backoff по Retry-After (как в article/opinion).
-    hook = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=350, temperature=0.9)
-
-    ok, reason = validate_treasury_hook(hook, allowed_numbers)
-    if not ok:
-        logger.warning("Хук Treasury Index не прошёл проверку (%s) - публикую с нейтральным хуком", reason)
-        hook = "📊 Свежий срез Treasury Index:"
-
-    text_parts = [hook.strip(), index_block]
-    if comparison_block:
-        text_parts.append(comparison_block)
-    text_parts.append(post_format.DISCLAIMER)
-    binance_text = "\n\n".join(text_parts)
 
     # Ссылку на Telegram-канал в пост для Binance Square НЕ добавляем -
     # площадка блокирует такие посты модерацией с причиной "promotes
-    # third-party channels" (проверено на практике - пост так и не
-    # опубликовался, завис в черновиках). post_format.telegram_channel_line()
-    # оставлена в кодовой базе на случай, если понадобится для других
-    # целей (например, для будущих постов ИСКЛЮЧИТЕЛЬНО в самом Telegram),
-    # но сюда, в текст для Binance, сознательно не подключается.
+    # third-party channels" (проверено на практике).
     telegram_text = binance_text
 
-    logger.info("Сгенерирован пост Treasury Index (%s%%, лидер %s): %s",
-                total_sign + str(result.total_pct), lt.key if lt else "нет", binance_text[:150].replace("\n", " "))
+    logger.info("Сгенерирован пост 'Altcoin basket' (%s%%): %s", result.total_pct, binance_text[:150].replace("\n", " "))
     return binance_text, telegram_text, result, chart_path, heatmap_path, composition_path
+
+
+
+def _plain_period(hours: float) -> str:
+    if hours >= 36:
+        return f"{hours / 24:.0f} days" if abs(hours / 24 - round(hours / 24)) < 0.2 else f"{hours / 24:.1f} days"
+    return f"{hours:g}h"
+
+
+_BASKET_QUESTIONS = [
+    "Where is your money leaning right now: BTC or alts? 👇",
+    "Alts or BTC for the next week? Pick one 👇",
+    "Which side wins the next 3 days: alts or BTC?",
+]
+
+
+def build_basket_post(result, period_hours: float, btc_pct, eth_pct, history, breadth, rng=None) -> str:
+    """Пост "Altcoin basket vs BTC": простой английский, без жаргона и без LLM
+    (все числа и фразы собирает код). Первая строка - итог сравнения."""
+    import random as _random
+    rng = rng or _random
+    total = result.total_pct
+    period = _plain_period(period_hours)
+    lines = []
+
+    if btc_pct is not None:
+        diff = round(total - btc_pct, 1)
+        if diff >= 0.3:
+            lines.append(f"Alts beat BTC by {diff} pts over {period}")
+        elif diff <= -0.3:
+            lines.append(f"BTC beat alts by {abs(diff)} pts over {period}")
+        else:
+            lines.append(f"Alts and BTC moved together over {period}")
+    else:
+        lines.append(f"Altcoin basket over {period}: {total:+.1f}%")
+
+    lines += ["", f"Our 15-coin altcoin basket (L1, L2, DeFi; no BTC, ETH or BNB): {total:+.1f}%"]
+    ref = []
+    best_worst = []
+    coins = [c for t in result.tiers for c in t.coins if c.pct is not None and not c.suspicious]
+    coins.sort(key=lambda c: c.pct, reverse=True)
+    if btc_pct is not None:
+        ref.append(f"$BTC {btc_pct:+.1f}%")
+    if eth_pct is not None:
+        ref.append(f"ETH {eth_pct:+.1f}%")
+    if ref:
+        lines.append(" | ".join(ref))
+    if coins:
+        best_worst.append(f"Best: ${coins[0].ticker} {coins[0].pct:+.1f}%")
+        if len(coins) > 1:
+            best_worst.append(f"Worst: ${coins[-1].ticker} {coins[-1].pct:+.1f}%")
+    if best_worst:
+        lines += [""] + best_worst
+    if breadth and breadth.get("total"):
+        lines.append(f"{breadth['green']} of {breadth['total']} coins are up")
+
+    if history is not None:
+        since = datetime.fromtimestamp(history["launch_at"]).strftime("%d.%m")
+        bits = [f"basket {history['index_value'] - 100:+.1f}%", f"BTC {history['btc_value'] - 100:+.1f}%"]
+        if "eth_value" in history:
+            bits.append(f"ETH {history['eth_value'] - 100:+.1f}%")
+        lines += ["", f"Since we started tracking ({since}): " + ", ".join(bits)]
+
+    lines += ["", rng.choice(_BASKET_QUESTIONS), "", "Not financial advice.", "#Altcoins #Crypto"]
+    return "\n".join(lines)
 
 
 _MIN_HOOK_CHARS = 10

@@ -6,8 +6,17 @@
 голосом, теперь может использовать тот же словарь HOOK_MODES, что и
 валютные сигналы (см. post_format.HOOK_MODES).
 """
+import pytest
+
+import config
 import opinion_generator
 import post_format
+
+
+@pytest.fixture(autouse=True)
+def _ru_lang(monkeypatch):
+    """Эти тесты проверяют русскую ветку; английская - в конце файла."""
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "ru")
 
 
 def _fake_single_stats(pct=5.5):
@@ -190,3 +199,41 @@ if __name__ == "__main__":
 
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
+
+# ---------------- английская ветка (язык Square по умолчанию) ----------------
+
+def test_english_post_uses_english_prompt_voice_and_disclaimer(monkeypatch):
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
+    captured = {}
+
+    def fake_groq(system_prompt, user_prompt, **kw):
+        captured["system"], captured["user"] = system_prompt, user_prompt
+        return "BTC barely moved in 2 days, up 5.5%. Bounce or breakdown?"
+
+    monkeypatch.setattr(opinion_generator, "call_groq", fake_groq)
+    monkeypatch.setattr(opinion_generator, "calc_theme_stats", lambda theme: _fake_single_stats())
+    text, numbers, pct = opinion_generator.generate_opinion_post("BTC", hook_mode="skeptic")
+    assert text.endswith("Not financial advice.")
+    assert "Voice: the skeptic" in captured["system"] and "Topic:" in captured["user"]
+    assert "Ты пишешь" not in captured["system"]
+    ok, reason = opinion_generator.validate_opinion_post_text(text, numbers)
+    assert ok, reason
+
+
+def test_english_validator_rejects_english_cliches_and_unknown_numbers(monkeypatch):
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
+    ok, _ = opinion_generator.validate_opinion_post_text("It's worth noting BTC is up 5.5%.\n\nNot financial advice.", {5.5})
+    assert not ok
+    ok, _ = opinion_generator.validate_opinion_post_text("BTC is up 9.9%.\n\nNot financial advice.", {5.5})
+    assert not ok
+    ok, _ = opinion_generator.validate_opinion_post_text("BTC is up 5.5%.", {5.5})
+    assert not ok  # нет дисклеймера
+
+
+def test_english_fallback_hook(monkeypatch):
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
+    monkeypatch.setattr(opinion_generator, "call_groq", lambda *a, **k: "")
+    monkeypatch.setattr(opinion_generator, "calc_theme_stats", lambda theme: _fake_single_stats(-2.11))
+    text, _, _ = opinion_generator.generate_opinion_post("BTC")
+    assert "-2.11% in 2 days. Continuation or pullback?" in text

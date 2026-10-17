@@ -39,10 +39,10 @@ _AXIS_TEXT_COLOR = "#848E9C"
 # Порядок в этом словаре = порядок отрисовки (фоновые линии первыми,
 # индекс - последним, поверх остальных, чтобы визуально доминировать).
 _LINE_STYLE = {
-    "market_value": {"color": "#848E9C", "label": "Рынок (топ-4)", "width": 1.4, "alpha": 0.7},
+    "market_value": {"color": "#848E9C", "label": "Top-4 market", "width": 1.4, "alpha": 0.7},
     "eth_value": {"color": "#7B61FF", "label": "ETH", "width": 1.4, "alpha": 0.8},
     "btc_value": {"color": "#F0B90B", "label": "BTC", "width": 1.6, "alpha": 0.9},
-    "index_value": {"color": "#29ABE2", "label": "Treasury Index", "width": 2.8, "alpha": 1.0},
+    "index_value": {"color": "#29ABE2", "label": "Altcoin basket", "width": 2.8, "alpha": 1.0},
 }
 
 # Меньше точек - график ещё не несёт пользы (пара точек выглядит как
@@ -82,7 +82,7 @@ def generate_treasury_chart(snapshots: list) -> Optional[Path]:
 
         ax.axhline(100.0, color=_GRID_COLOR, linewidth=1.0, linestyle="--")
 
-        ax.set_title("Treasury Index vs BTC/ETH/Рынок - с момента запуска", color="#FFFFFF", fontsize=13, pad=14)
+        ax.set_title("Altcoin basket vs BTC / ETH / market since tracking began", color="#FFFFFF", fontsize=13, pad=14)
         ax.grid(True, color=_GRID_COLOR, linewidth=0.6)
         ax.tick_params(colors=_AXIS_TEXT_COLOR)
         for spine in ax.spines.values():

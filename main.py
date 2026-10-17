@@ -31,7 +31,6 @@ import article_generator
 import accuracy_report_generator
 import alerting
 import audience_question_generator
-import binance_promo_generator
 import binance_publisher
 import bluesky_publisher
 import chart_generator
@@ -1200,76 +1199,6 @@ def try_publish_news_take() -> None:
 # ============================================================
 
 # ============================================================
-# Формат "Промо" - ТОЛЬКО Binance Square (см. binance_promo_generator.py)
-# ============================================================
-
-def try_publish_binance_promo() -> None:
-    """Как try_publish_hot_take, но зеркально: публикует ТОЛЬКО на
-    Binance Square, минуя Telegram/Bluesky целиком - это
-    площадочно-специфичный формат про выгоду/удобство самой площадки
-    (комиссии, Square как соцсеть), а не про рыночный сигнал."""
-    if not config.BINANCE_PROMO_ENABLED:
-        return
-    seconds_elapsed = queue_manager.seconds_since_last_post("binance_promo")
-    min_seconds = config.BINANCE_PROMO_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("binance_promo")
-
-    if seconds_elapsed < min_seconds:
-        return
-    if not queue_manager.should_retry_now("binance_promo"):
-        return  # недавно был сбой - ждём отступ, не долбим API на каждом тике
-    if not _square_slot_available():
-        return  # что-то другое недавно вышло в Square - подождём, окно не сгорает
-
-    logger.info("Окно публикации (промо, Binance Square) открыто - генерирую пост")
-
-    theme = binance_promo_generator.pick_theme(queue_manager.get_last_binance_promo_theme())
-    hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
-
-    try:
-        text = binance_promo_generator.generate_binance_promo(theme, hook_mode=hook_mode)
-    except groq_client.GroqRateLimited as e:
-        backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
-        logger.warning("Groq rate limit на промо-посте - жду %.1fч перед следующей попыткой", backoff_hours)
-        queue_manager.set_retry_backoff("binance_promo", backoff_hours)
-        return
-    except Exception as e:
-        logger.error("Ошибка генерации промо-поста: %s", e)
-        queue_manager.set_retry_backoff("binance_promo", 1)
-        return
-
-    if text is None:
-        logger.warning("Не удалось сгенерировать промо-пост (тема %s) - пропускаю до следующего окна", theme)
-        queue_manager.set_retry_backoff("binance_promo", 1)
-        return
-
-    ok, reason = binance_promo_generator.validate_binance_promo(text)
-    if not ok:
-        logger.error("Промо-пост не прошёл проверку, публикация отменена: %s", reason)
-        queue_manager.set_retry_backoff("binance_promo", 1)
-        return
-
-    post_text = binance_promo_generator.assemble_binance_promo(text)
-
-    hashtags = post_format.square_general_hashtag_line()
-    binance_text = f"{post_text}\n\n{hashtags}"
-
-    try:
-        binance_publisher.publish_post(binance_text)
-    except binance_publisher.PublishError as e:
-        logger.warning("Публикация промо-поста на Binance Square не удалась: %s", e)
-        queue_manager.set_retry_backoff("binance_promo", 1)
-        return
-
-    logger.info("Опубликован промо-пост (фокус %s) на Binance Square", theme)
-    voice_memory.record_post(post_text)
-    queue_manager.set_last_binance_promo_theme(theme)
-    queue_manager.set_last_hook_mode(hook_mode)
-    queue_manager.set_last_post_time("binance_promo")
-    queue_manager.set_last_post_time("square_global")
-    queue_manager.roll_new_jitter("binance_promo", config.BINANCE_PROMO_JITTER_HOURS * 3600)
-
-
-# ============================================================
 # Формат "А что если?" - ТОЛЬКО Binance Square
 # (см. hypothetical_generator.py)
 # ============================================================
@@ -1281,6 +1210,8 @@ def try_publish_hypothetical_post() -> None:
     формата (редко, раз в несколько дней), а не как у promo/opinion
     (часто, по интервалу+джиттеру) - см. hypothetical_generator.
     MIN_DAYS_BETWEEN_HYPOTHETICAL_POSTS."""
+    if not config.HYPOTHETICAL_ENABLED:
+        return
     seconds_elapsed = queue_manager.seconds_since_last_post("hypothetical")
     min_seconds = hypothetical_generator.MIN_DAYS_BETWEEN_HYPOTHETICAL_POSTS * 86400
 
@@ -1746,7 +1677,6 @@ def try_publish_treasury_post() -> None:
     # картинка при живом текстовом "с запуска" блоке в самом посте.
     single_image_path = composition_path or heatmap_path
 
-    binance_text = post_format.cashtag_top_movers(binance_text, 3)
     try:
         published_result = binance_publisher.publish_post(binance_text, image_paths=image_paths)
     except binance_publisher.PublishError as e:
@@ -2039,7 +1969,8 @@ def tick() -> None:
                     outcome_summary["closed"], outcome_summary["still_open"],
                 )
                 _post_outcome_updates_to_bluesky(outcome_summary["closed_records"])
-                _publish_win_celebrations(outcome_summary["closed_records"])
+                if config.WIN_CELEBRATIONS_ENABLED:
+                    _publish_win_celebrations(outcome_summary["closed_records"])
         except Exception:
             logger.exception("Ошибка проверки открытых результатов - пропускаю до следующего тика")
 
@@ -2066,7 +1997,8 @@ def tick() -> None:
             # сканируем каждый тик независимо от окна публикации (дёшево),
             # публикация всё равно ограничена своим отдельным интервалом
             # в try_publish_index_signal_post().
-            index_signal_scanner.run_index_scan()
+            if config.INDEX_SIGNALS_ENABLED:
+                index_signal_scanner.run_index_scan()
         except Exception:
             logger.exception("Ошибка в сканере индекс-сигналов - пропускаю до следующего тика")
 
@@ -2102,7 +2034,6 @@ def tick() -> None:
         try_publish_listing_announcement()
         try_publish_fng_post()
         try_publish_currency_post()
-        try_publish_binance_promo()
         try_publish_hypothetical_post()
         try_publish_opinion_post()
         try_publish_news_take()
@@ -2117,7 +2048,8 @@ def tick() -> None:
         try_publish_article_post()
         try_publish_accuracy_report()
         try_publish_loss_review()
-        try_publish_index_signal_post()
+        if config.INDEX_SIGNALS_ENABLED:
+            try_publish_index_signal_post()
     except Exception as e:
         logger.exception("Неожиданная ошибка в основном цикле")
         alerting.send_owner_alert(

@@ -47,7 +47,7 @@ BLUESKY_TEASER_PROBABILITY = float(os.environ.get("BLUESKY_TEASER_PROBABILITY", 
 # Вероятность добавить CTA-строку про выгоду/фичи Binance Square к посту
 # на Square (см. post_format.maybe_binance_cta) - не 100%, иначе каждый
 # пост выглядел бы как реклама и мог бы триггернуть модерацию.
-BINANCE_CTA_PROBABILITY = float(os.environ.get("BINANCE_CTA_PROBABILITY", "0.2"))
+BINANCE_CTA_PROBABILITY = float(os.environ.get("BINANCE_CTA_PROBABILITY", "0"))  # рекламы площадки в постах нет
 
 # Белый список монет для сигналов на Square (см. coin_whitelist.py).
 # ENABLED=false - публиковать любые монеты, как раньше. EXTRA/EXCLUDE -
@@ -241,6 +241,13 @@ MARKET_DIGEST_HOURS_UTC = sorted({
 # "Горячая монета" (market_digest.pick_hot_mover): пост при сильном движении.
 HOT_MOVER_ENABLED = (os.environ.get("HOT_MOVER_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 HOT_MOVER_MAX_PER_DAY = int(os.environ.get("HOT_MOVER_MAX_PER_DAY") or "2")
+# Сигналы по корзине индекса (index_signal_scanner) и "Забрали профит!" строятся на тех
+# же стратегиях, что и старый сканер (отрицательное ожидание) - по умолчанию выключены.
+INDEX_SIGNALS_ENABLED = (os.environ.get("INDEX_SIGNALS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
+WIN_CELEBRATIONS_ENABLED = (os.environ.get("WIN_CELEBRATIONS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
+# Шуточный формат "А что если?" (русский, генерируется LLM) - выключен: профиль Square
+# ведётся на одном языке (SQUARE_TEMPLATE_LANG, по умолчанию английский).
+HYPOTHETICAL_ENABLED = (os.environ.get("HYPOTHETICAL_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 # Старый сканер сигналов (15м: RSI/Bollinger, MACD, Donchian). Research sweep
 # (3 периода, комиссия 0.2%) показал отрицательное ожидание у всех его
 # стратегий, живая статистика бота то же самое - по умолчанию выключен.
@@ -263,14 +270,6 @@ SQUARE_QUESTION_INTERVAL_HOURS = float(os.environ.get("SQUARE_QUESTION_INTERVAL_
 MARKET_DIGEST_MAX_LATE_HOURS = float(os.environ.get("MARKET_DIGEST_MAX_LATE_HOURS") or "4")
 AUDIENCE_QUESTION_INTERVAL_HOURS = float(os.environ.get("AUDIENCE_QUESTION_INTERVAL_HOURS", "168"))
 ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
-# Формат "Промо" - ТОЛЬКО Binance Square (см. binance_promo_generator.py),
-# своё расписание, смещённое от остальных Square-форматов (opinion/
-# article), чтобы не выходить в одно и то же окно каждый раз.
-# Промо-пост про саму площадку: без данных и без $-тикера (нет виджета/комиссии),
-# звучит как реклама, поэтому по умолчанию выключен (BINANCE_PROMO_ENABLED=true вернёт).
-BINANCE_PROMO_ENABLED = (os.environ.get("BINANCE_PROMO_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
-BINANCE_PROMO_INTERVAL_HOURS = float(os.environ.get("BINANCE_PROMO_INTERVAL_HOURS", "72"))
-
 # --- Новостной формат "мнение по новости" (см. news_opinion_generator.py) ---
 # Публичный Telegram-канал, чей t.me/s/<канал> превью-страница читается
 # без какого-либо аккаунта. @forklog - независимое крипто-медиа.
@@ -286,10 +285,10 @@ POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))
 # прошлого замера (см. treasury_generator.resolve_period_hours): иначе
 # кумулятивное "с запуска" не покрывало бы время между постами (раньше
 # окно было 12ч при постах раз в 24ч - половина времени терялась).
-TREASURY_PERIOD_HOURS = float(os.environ.get("TREASURY_PERIOD_HOURS", "12"))
+TREASURY_PERIOD_HOURS = float(os.environ.get("TREASURY_PERIOD_HOURS", "72"))
 # Было 12 (дважды в день) - слишком часто для "среза" индекса, снижает
 # ценность каждого отдельного поста. Раз в сутки.
-TREASURY_INTERVAL_HOURS = float(os.environ.get("TREASURY_INTERVAL_HOURS", "24"))
+TREASURY_INTERVAL_HOURS = float(os.environ.get("TREASURY_INTERVAL_HOURS", "72"))
 TREASURY_JITTER_HOURS = float(os.environ.get("TREASURY_JITTER_HOURS", "1"))
 
 # Сколько часов сигнал/картинка может пролежать в очереди публикации,
@@ -364,7 +363,6 @@ OPINION_JITTER_HOURS = float(os.environ.get("OPINION_JITTER_HOURS", "4"))
 HOT_TAKE_JITTER_HOURS = float(os.environ.get("HOT_TAKE_JITTER_HOURS", "6"))
 MINI_LESSON_JITTER_HOURS = float(os.environ.get("MINI_LESSON_JITTER_HOURS", "8"))
 AUDIENCE_QUESTION_JITTER_HOURS = float(os.environ.get("AUDIENCE_QUESTION_JITTER_HOURS", "12"))
-BINANCE_PROMO_JITTER_HOURS = float(os.environ.get("BINANCE_PROMO_JITTER_HOURS", "8"))
 
 # --- Формат "Экстренный" (Bluesky) - см. volatility_alert.py ---
 # Порог движения $BTC за окно ниже, при превышении которого считаем это
