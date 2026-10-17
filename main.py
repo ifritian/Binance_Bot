@@ -51,6 +51,7 @@ import mini_lesson_generator
 import news_opinion_generator
 import opinion_generator
 import outcome_tracker
+import trend_breakout
 import post_format
 import queue_manager
 import rebalance_advisor
@@ -805,6 +806,33 @@ def try_publish_square_question() -> None:
     logger.info("Опубликован вопрос аудитории в Square: %s", result)
     queue_manager._set("square_question_last", text.split("\n\n")[0])
     queue_manager.set_last_post_time("square_question")
+    queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_trend_breakout() -> None:
+    """"Пробой 20 дней" (trend_breakout.py): обновляет позиции раз в 4 часа и
+    публикует по одному событию (вход или итог сделки) за тик."""
+    if not config.TREND_BREAKOUT_ENABLED:
+        return
+    try:
+        trend_breakout.run_cycle()
+    except Exception:
+        logger.exception("Ошибка цикла 'Пробой 20 дней' - пропускаю до следующего тика")
+        return
+    ev = trend_breakout.pending_event()
+    if ev is None:
+        return
+    if not queue_manager.should_retry_now("trend_breakout") or not _square_slot_available():
+        return
+    try:
+        result = binance_publisher.publish_post(trend_breakout.build_text(ev))
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации 'Пробой 20 дней': %s", e)
+        _record_publish_error("trend_breakout", e)
+        queue_manager.set_retry_backoff("trend_breakout", 1)
+        return
+    logger.info("Опубликовано (Пробой 20 дней, %s %s): %s", ev["kind"], ev["ticker"], result)
+    trend_breakout.mark_posted(ev)
     queue_manager.set_last_post_time("square_global")
 
 
@@ -2054,7 +2082,8 @@ def tick() -> None:
         if window_active:
             check_for_new_signals()
             try:
-                scanner.run_scan()
+                if config.LEGACY_SCANNER_ENABLED:
+                    scanner.run_scan()
             except Exception:
                 logger.exception("Ошибка в собственном сканере сигналов - пропускаю до следующего тика")
         else:
@@ -2065,6 +2094,7 @@ def tick() -> None:
             )
 
         try_publish_emergency_post()
+        try_publish_trend_breakout()
         try_publish_market_digest()
         try_publish_square_question()
         try_publish_hot_mover()

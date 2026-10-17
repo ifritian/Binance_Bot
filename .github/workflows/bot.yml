@@ -92,6 +92,9 @@ jobs:
       SQUARE_QUESTION_INTERVAL_HOURS: ${{ secrets.SQUARE_QUESTION_INTERVAL_HOURS || '30' }}
       HOT_MOVER_ENABLED: ${{ secrets.HOT_MOVER_ENABLED || 'true' }}
       HOT_MOVER_MAX_PER_DAY: ${{ secrets.HOT_MOVER_MAX_PER_DAY || '2' }}
+      LEGACY_SCANNER_ENABLED: ${{ secrets.LEGACY_SCANNER_ENABLED || 'false' }}
+      TREND_BREAKOUT_ENABLED: ${{ secrets.TREND_BREAKOUT_ENABLED || 'true' }}
+      TREND_BREAKOUT_MAX_OPEN: ${{ secrets.TREND_BREAKOUT_MAX_OPEN || '8' }}
       SQUARE_TEMPLATE_LANG: ${{ secrets.SQUARE_TEMPLATE_LANG || 'en' }}
       FNG_ENABLED: ${{ secrets.FNG_ENABLED || 'true' }}
       FNG_HOUR_UTC: ${{ secrets.FNG_HOUR_UTC || '11' }}
