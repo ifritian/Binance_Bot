@@ -50,6 +50,7 @@ import mini_lesson_generator
 import news_opinion_generator
 import opinion_generator
 import outcome_tracker
+import post_cards
 import trend_breakout
 import post_format
 import queue_manager
@@ -743,6 +744,16 @@ def _record_publish_error(fmt: str, error) -> None:
         logger.warning("Не удалось записать ошибку публикации", exc_info=True)
 
 
+def _coin_chart(ticker: str, days: int, expected_price: float | None = None):
+    """График монеты для поста (Square любит картинки). None при любой
+    проблеме: пост тогда уходит без картинки."""
+    try:
+        return chart_generator.generate_chart_image(ticker, days=days, expected_price=expected_price)
+    except Exception:
+        logger.exception("Не удалось построить график %s для поста", ticker)
+        return None
+
+
 def try_publish_market_digest() -> None:
     """Формат "Срез рынка" (Square): по слотам времени суток, а не по
     таймеру "каждые N часов" - утренний/вечерний обзор читают в привычное
@@ -766,10 +777,11 @@ def try_publish_market_digest() -> None:
         queue_manager.set_retry_backoff("market_digest", 0.5)
         return
     result = None
+    card = post_cards.digest_card(data, slot)
     for compact in (False, True):
         text = market_digest.build_digest_text(data, slot, compact=compact)
         try:
-            result = binance_publisher.publish_post(text)
+            result = binance_publisher.publish_post(text, image_paths=[card] if card else None)
             break
         except binance_publisher.PublishError as e:
             logger.error("Ошибка публикации 'Срез рынка' (%s): %s", "короткий" if compact else "полный", e)
@@ -794,9 +806,10 @@ def try_publish_square_question() -> None:
         return
     if not _square_slot_available():
         return
-    text, _ticker = square_question.pick_question(queue_manager._get("square_question_last"))
+    text, ticker = square_question.pick_question(queue_manager._get("square_question_last"))
+    chart = _coin_chart(ticker, 7)
     try:
-        result = binance_publisher.publish_post(text)
+        result = binance_publisher.publish_post(text, image_paths=[chart] if chart else None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации вопроса в Square: %s", e)
         _record_publish_error("square_question", e)
@@ -853,8 +866,9 @@ def try_publish_hot_mover() -> None:
         return
     ticker, price, pct = hot
     text = market_digest.build_hot_text(ticker, price, pct)
+    chart = _coin_chart(ticker, 2, expected_price=price)
     try:
-        result = binance_publisher.publish_post(text)
+        result = binance_publisher.publish_post(text, image_paths=[chart] if chart else None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Горячая монета': %s", e)
         _record_publish_error("hot_mover", e)
@@ -883,8 +897,9 @@ def try_publish_fng_post() -> None:
         queue_manager.set_retry_backoff("fng", 0.5)
         return
     text = event_posts.build_fng_text(data)
+    card = post_cards.fng_card(data)
     try:
-        result = binance_publisher.publish_post(text)
+        result = binance_publisher.publish_post(text, image_paths=[card] if card else None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Индекс страха и жадности': %s", e)
         _record_publish_error("fng", e)
