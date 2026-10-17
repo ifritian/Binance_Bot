@@ -203,7 +203,9 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
     # уже перезапрашивает пустые ответы сам, это - подстраховка.
     if len(hook.strip()) < 10:
         logger.warning("Хук поста-мнения пустой или слишком короткий (%r) - публикую с нейтральным хуком", hook)
-        hook = f"{label}: как вам последнее движение? 🤔"
+        # Запасной хук с реальным числом и конкретным вопросом (раньше тут был
+        # пустой "как вам последнее движение?" - ровно то, что мы запретили).
+        hook = f"{label}: {headline_pct:+.2f}% за 2 дня. Продолжение или откат?"
 
     text = assemble_post(hook)
     logger.info("Сгенерирован пост-мнение (тема %s, числа: %s): %s", theme, allowed_numbers, text)

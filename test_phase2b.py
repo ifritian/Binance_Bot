@@ -40,3 +40,21 @@ def test_promo_disabled_by_default(monkeypatch):
     monkeypatch.setattr(main.binance_promo_generator, "generate_binance_promo", lambda *a, **k: called.append(1))
     main.try_publish_binance_promo()
     assert called == []
+
+
+def test_cta_lines_have_no_unverifiable_claims():
+    for line in post_format._BINANCE_CTA_LINES:
+        low = line.lower()
+        assert "комисси" not in low and "самых" not in low and "—" not in line
+
+
+def test_win_context_line_is_honest_and_included():
+    import post_format
+    stats = {"overall": {"count": 25, "win_rate": 28.0, "avg_pnl_pct": -0.31}}
+    line = post_format.win_context_line(stats)
+    assert "25" in line and "28" in line and "-0.31" in line
+    rec = {"direction": "long", "ticker": "BTC", "strategy": "x", "entry": 1, "exit_price": 2,
+           "pnl_pct": 5.0, "hours_to_close": 3}
+    text = post_format.assemble_win_celebration_post("Есть!", rec, line)
+    assert line in text
+    assert post_format.win_context_line({}) == ""

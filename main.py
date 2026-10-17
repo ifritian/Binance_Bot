@@ -671,7 +671,11 @@ def _publish_win_celebrations(closed_records: list) -> None:
                 logger.warning("Хук 'Забрали профит!' для %s не прошёл проверку (%s) - пропускаю", record["ticker"], reason)
                 continue
 
-            post_text = post_format.assemble_win_celebration_post(hook, record)
+            try:
+                ctx = post_format.win_context_line(outcome_tracker.get_accuracy_stats(days=7))
+            except Exception:
+                ctx = ""
+            post_text = post_format.assemble_win_celebration_post(hook, record, ctx)
 
             # Картинка (график с отметкой цены выхода) - тот же паттерн,
             # что и в _publish_signal: неудача генерации графика НЕ

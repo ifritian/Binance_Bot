@@ -28,12 +28,14 @@ REFERRAL_LINE = f"Открыть аккаунт на Binance: {REFERRAL_LINK}"
 # спамом. В отличие от REFERRAL_LINE (та даёт конкретную реферальную
 # ссылку) - это качественные фразы БЕЗ конкретных цифр по комиссиям (у
 # бота нет доступа к актуальной официальной тарифной сетке Binance,
-# см. также binance_promo_generator.py) - фиксированный список, не LLM,
-# чтобы не рисковать выдуманными процентами.
+# см. также binance_promo_generator.py) - фиксированный список, не LLM.
+# Раньше здесь были рекламные утверждения ("одни из самых низких комиссий
+# на рынке") - их нечем подтвердить, и они звучали как реклама, поэтому
+# оставлены только честные призывы к действию.
 _BINANCE_CTA_LINES = [
-    "Торгуй прямо здесь, на Square - без лишних переключений между приложениями, и с одними из самых низких комиссий на рынке.",
-    "Напоминание: Binance - одна из самых выгодных по комиссиям площадок для активной торговли, а Square прямо внутри приложения.",
-    "Если ещё не подписан(а) - жми подписку на Square, чтобы не пропускать сетапы прямо в ленте Binance.",
+    "Нажми на тикер, чтобы открыть график и цену прямо в ленте.",
+    "Подпишись, чтобы утром не пропускать срез рынка.",
+    "Не согласен? Напиши в комментариях, разберём вместе.",
 ]
 
 
@@ -580,12 +582,28 @@ def win_celebration_lines(record: dict) -> list:
     ]
 
 
-def assemble_win_celebration_post(hook: str, record: dict) -> str:
+def win_context_line(stats: dict | None, days: int = 7) -> str:
+    """Честный контекст к посту о выигрыше: общий результат за период
+    (win-rate и средний pnl по ВСЕМ закрытым сделкам, не только победам).
+    Пустая строка, если данных нет."""
+    overall = (stats or {}).get("overall") or {}
+    count = overall.get("count") or 0
+    if not count or overall.get("win_rate") is None or overall.get("avg_pnl_pct") is None:
+        return ""
+    return (
+        f"Честно, за {days} дн.: закрыто {count}, в плюс {overall['win_rate']:g}%, "
+        f"средний итог {overall['avg_pnl_pct']:+.2f}% на сделку."
+    )
+
+
+def assemble_win_celebration_post(hook: str, record: dict, context_line: str = "") -> str:
     """Хук (эмоция, от LLM, БЕЗ единой цифры) + блок результата (собран
     кодом из closed-record, см. win_celebration_lines) + дисклеймер.
     record - один элемент closed_records из outcome_tracker.check_open_outcomes
     (result == "win")."""
     block = "\n".join(win_celebration_lines(record))
+    if context_line:
+        block = f"{block}\n\n{context_line}"
     return f"{hook.strip()}\n\n{block}\n\n{DISCLAIMER}"
 
 
