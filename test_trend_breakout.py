@@ -129,3 +129,22 @@ def test_publish_flow_marks_event_posted(monkeypatch):
     monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, image_paths=None: sent.append(text) or {})
     main.try_publish_trend_breakout()
     assert len(sent) == 1 and tb._state()["outbox"] == []
+
+
+def test_charts_render_for_entry_and_exit(tmp_path, monkeypatch):
+    import chart_generator
+    monkeypatch.setattr(chart_generator, "_CHARTS_DIR", tmp_path)
+    bars = _walk(400, 3, drift=0.0006)
+    entry = {"kind": "entry", "ticker": "SOL", "entry": bars[-1].c, "stop": bars[-1].c * 0.93,
+             "level": bars[-1].c * 0.97, "entry_t": bars[-1].t, "risk_pct": 7.0, "ts": 1}
+    path = tb.build_chart(entry, fetch=lambda s: bars)
+    assert path and path.exists() and path.stat().st_size > 5000
+    i = 370
+    ex = {"kind": "exit", "ticker": "SOL", "entry": bars[i].c, "exit": bars[i + 8].c, "pnl": 3.2, "held": 9,
+          "entry_t": bars[i].t, "stop0": bars[i].c * 0.93, "reason": "stop", "ts": 1}
+    path2 = tb.build_chart(ex, fetch=lambda s: bars)
+    assert path2 and path2.exists() and path2 != path
+
+
+def test_chart_failure_returns_none_not_raises():
+    assert tb.build_chart({"kind": "entry", "ticker": "SOL", "entry": 1.0, "stop": 0.9, "ts": 1}, fetch=lambda s: []) is None

@@ -668,3 +668,100 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
 
     logger.info("График сохранён: %s", out_path)
     return out_path
+
+def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: float | None = None,
+                         level: float | None = None, exit_price: float | None = None,
+                         title: str = "", entry_t: int | None = None, exit_t: int | None = None,
+                         suffix: str = "_tb") -> Path | None:
+    """График идеи на 4ч свечах (trend_breakout.py): линия входа, стартовый
+    стоп, уровень пробоя; для закрытой сделки - ещё цена выхода и метки
+    входа/выхода. candles - как из fetch_klines. Подписи только английские
+    (картинка одна для RU и EN постов). None при любой проблеме."""
+    if len(candles) < 5 or entry <= 0:
+        return None
+    try:
+        _CHARTS_DIR.mkdir(exist_ok=True)
+        out_path = _CHARTS_DIR / f"{ticker}{suffix}_chart.png"
+        last_close = candles[-1]["close"]
+        closed_trade = exit_price is not None
+        result_color = _UP_COLOR if (not closed_trade or exit_price >= entry) else _DOWN_COLOR
+
+        fig = plt.figure(figsize=(8, 5), dpi=150)
+        fig.patch.set_facecolor(_BG_COLOR)
+        gs = fig.add_gridspec(2, 1, height_ratios=(3.2, 1), hspace=0.05, left=0.04, right=0.86, top=0.83, bottom=0.08)
+        ax = fig.add_subplot(gs[0])
+        ax_vol = fig.add_subplot(gs[1], sharex=ax)
+
+        _draw_watermark(ax, "BINANCE")
+        _draw_candles(ax, candles)
+        _style_axis(ax, show_xticks=False)
+        ax.set_xlim(-1, len(candles) + 1)
+
+        tags = []
+
+        def tag(price, text, color):
+            ax.axhline(price, color=color, linewidth=1.0, linestyle="--", alpha=0.85, zorder=4)
+            tags.append([price, text, color])
+
+        if level:
+            ax.axhline(level, color=_AXIS_TEXT_COLOR, linewidth=0.9, linestyle=":", zorder=3)
+            ax.annotate("20d high", xy=(0.01, level), xycoords=("axes fraction", "data"), xytext=(0, 4),
+                        textcoords="offset points", fontsize=7.5, color=_AXIS_TEXT_COLOR, zorder=5)
+        tag(entry, f"Entry {_format_price(entry)}", "#E8E8E8")
+        if stop:
+            tag(stop, f"Stop {_format_price(stop)}", _DOWN_COLOR)
+        if closed_trade:
+            tag(exit_price, f"Exit {_format_price(exit_price)}", result_color)
+
+        def idx_of(t):
+            if t is None:
+                return None
+            return next((i for i, c in enumerate(candles) if c["open_time"] >= t), None)
+
+        i_in, i_out = idx_of(entry_t), idx_of(exit_t)
+        if i_in is not None:
+            ax.plot([i_in], [entry], marker="^", markersize=9, color="#E8E8E8", zorder=6, clip_on=False)
+        if closed_trade and i_out is not None:
+            ax.plot([i_out], [exit_price], marker="o", markersize=8, color=result_color, zorder=6, clip_on=False)
+
+        ys = [c["low"] for c in candles] + [c["high"] for c in candles] + [entry]
+        ys += [v for v in (stop, level, exit_price) if v]
+        pad = (max(ys) - min(ys)) * 0.06
+        ax.set_ylim(min(ys) - pad, max(ys) + pad)
+
+        # Подписи у правого края: если цены рядом, раздвигаем подписи по
+        # вертикали (линии остаются на своих уровнях), иначе они налезают.
+        y0, y1 = ax.get_ylim()
+        min_gap = (y1 - y0) * 0.075
+        tags.sort(key=lambda t: t[0])
+        placed = None
+        for t_ in tags:
+            label_y = t_[0] if placed is None else max(t_[0], placed + min_gap)
+            placed = label_y
+            ax.annotate(
+                t_[1], xy=(1.0, label_y), xycoords=("axes fraction", "data"), xytext=(6, 0),
+                textcoords="offset points", ha="left", va="center", fontsize=7.5, color="#0B0E11",
+                fontweight="bold", bbox=dict(boxstyle="round,pad=0.25", facecolor=t_[2], edgecolor="none"),
+                annotation_clip=False, zorder=5,
+            )
+
+        _draw_volume(ax_vol, candles)
+        _style_axis(ax_vol, show_xticks=True)
+        ax_vol.set_xlim(-1, len(candles) + 1)
+        ax_vol.set_yticks([])
+        pos = [int(i * (len(candles) - 1) / 4) for i in range(5)]
+        ax_vol.set_xticks(pos)
+        ax_vol.set_xticklabels([
+            datetime.fromtimestamp(candles[i]["open_time"] / 1000, tz=timezone.utc).strftime("%d.%m")
+            for i in pos
+        ])
+
+        fig.text(0.04, 0.96, f"{ticker}/USDT  4h", color="white", fontsize=15, fontweight="bold", va="top")
+        fig.text(0.04, 0.915, title, color=result_color, fontsize=11, fontweight="bold", va="top")
+        fig.savefig(out_path, facecolor=fig.get_facecolor())
+        plt.close(fig)
+        return out_path
+    except Exception:
+        logger.exception("Не удалось построить график идеи %s", ticker)
+        plt.close("all")
+        return None

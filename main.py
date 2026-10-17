@@ -824,8 +824,9 @@ def try_publish_trend_breakout() -> None:
         return
     if not queue_manager.should_retry_now("trend_breakout") or not _square_slot_available():
         return
+    chart = trend_breakout.build_chart(ev)
     try:
-        result = binance_publisher.publish_post(trend_breakout.build_text(ev))
+        result = binance_publisher.publish_post(trend_breakout.build_text(ev), image_paths=[chart] if chart else None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Пробой 20 дней': %s", e)
         _record_publish_error("trend_breakout", e)
