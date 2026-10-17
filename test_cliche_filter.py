@@ -45,7 +45,9 @@ def test_check_cliches_all_banned_phrases_are_detectable():
         assert phrase in found
 
 
-def test_all_validate_functions_reject_cliches():
+def test_all_validate_functions_reject_cliches(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "ru")  # тексты теста русские
     """Интеграционная проверка: каждая из 12 validate-функций проекта
     реально подключена к cliche_filter (а не просто импортирует модуль,
     забыв вызвать check_cliches - или, как в реальном баге, вызывает его,

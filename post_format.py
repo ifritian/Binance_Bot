@@ -650,6 +650,41 @@ HOOK_MODES: dict[str, str] = {
 }
 
 
+HOOK_MODES_EN: dict[str, str] = {
+    "technician": (
+        "Voice: the chart watcher. You look at the chart closely and say what it "
+        "actually shows, in plain words, no indicator names. Your quirk: you notice "
+        "when a picture is too clean to be random, or when it is falling apart in "
+        "front of you. Short and to the point. End with a question only if it is "
+        "specific (bounce or breakdown?)."
+    ),
+    "skeptic": (
+        "Voice: the skeptic. First admit the obvious, then add the caveat most people "
+        "miss. You neither panic nor get carried away, slightly ironic. You can end "
+        "with an honest doubt or a specific either/or question."
+    ),
+    "storyteller": (
+        "Voice: the crowd watcher. You talk about what most people are doing and what "
+        "price is actually doing ('everyone waits for X, price does Y'). No similes "
+        "or metaphors, only direct observation. You can end with a question that "
+        "hits close to home."
+    ),
+    "pragmatist": (
+        "Voice: the risk pragmatist. You care less where price goes than what happens "
+        "if you are wrong. You think through the worst case before the optimistic one. "
+        "Dry tone, no decoration. Stop where the thought ends, or end with one "
+        "practical question ('where is your stop?')."
+    ),
+}
+
+DISCLAIMER_EN = "Not financial advice."
+
+
+def hook_mode_text(mode: str) -> str:
+    """Описание голоса на языке Square (config.SQUARE_TEMPLATE_LANG)."""
+    return (HOOK_MODES if config.SQUARE_TEMPLATE_LANG == "ru" else HOOK_MODES_EN)[mode]
+
+
 def pick_hook_mode(last_mode: str | None) -> str:
     """Выбирает голос, отличный от последнего использованного, чтобы
     посты не звучали одним и тем же человеком раз за разом."""

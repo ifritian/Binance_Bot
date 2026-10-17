@@ -47,6 +47,10 @@ TIER_LABELS = {
     "tier3": "🔴 Риск",
 }
 
+# Простые английские названия групп для постов и картинок (внутренние
+# ключи и TIER_LABELS остаются прежними: на них завязаны тесты и другие модули).
+PLAIN_TIER_NAMES = {"tier1": "Large caps", "tier2": "Mid caps", "tier3": "High risk"}
+
 TIER_WEIGHTS = {"tier1": 60.0, "tier2": 30.0, "tier3": 10.0}
 
 BASKET: dict[str, list[dict]] = {

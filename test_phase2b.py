@@ -32,14 +32,16 @@ def test_cashtag_top_movers_no_tiers():
     assert post_format.cashtag_top_movers("просто текст BTC +1%") == "просто текст BTC +1%"
 
 
-def test_promo_disabled_by_default(monkeypatch):
-    assert config.BINANCE_PROMO_ENABLED is False
-    called = []
-    import queue_manager
-    queue_manager.set_last_post_time("binance_promo", 0)
-    monkeypatch.setattr(main.binance_promo_generator, "generate_binance_promo", lambda *a, **k: called.append(1))
-    main.try_publish_binance_promo()
-    assert called == []
+def test_no_promo_format_left():
+    assert not hasattr(main, "try_publish_binance_promo")
+    assert not hasattr(config, "BINANCE_PROMO_ENABLED")
+
+
+def test_dead_weight_formats_off_by_default():
+    assert config.INDEX_SIGNALS_ENABLED is False
+    assert config.WIN_CELEBRATIONS_ENABLED is False
+    assert config.LEGACY_SCANNER_ENABLED is False
+    assert config.BINANCE_CTA_PROBABILITY == 0
 
 
 def test_cta_lines_have_no_unverifiable_claims():

@@ -38,6 +38,7 @@ from matplotlib.patches import FancyBboxPatch, Circle
 from matplotlib.transforms import Bbox
 
 import config
+from treasury_index import PLAIN_TIER_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -328,16 +329,16 @@ def generate_treasury_heatmap(result) -> Optional[Path]:
         ax.invert_yaxis()  # самые крупные монеты - сверху, как в примере, а не снизу
         ax.axis("off")
 
-        total_str = f"{result.total_pct:+.2f}%" if result.total_pct is not None else "н/д"
+        total_str = f"{result.total_pct:+.2f}%" if result.total_pct is not None else "n/a"
         ax.set_title(
-            f"Treasury Index за {result.period_hours:g}ч: {total_str}",
+            f"Altcoin basket, {result.period_hours:g}h: {total_str}",
             color=_TEXT_COLOR, fontsize=14, fontweight="bold", pad=12, loc="left",
         )
 
         tier_bits = []
         for tier in result.tiers:
-            label = tier.label.split(" ", 1)[-1] if " " in tier.label else tier.label
-            tier_pct_str = f"{tier.pct:+.2f}%" if tier.pct is not None else "н/д"
+            label = PLAIN_TIER_NAMES.get(tier.key) or (tier.label.split(" ", 1)[-1] if " " in tier.label else tier.label)
+            tier_pct_str = f"{tier.pct:+.2f}%" if tier.pct is not None else "n/a"
             tier_bits.append(f"{label} {tier_pct_str}")
         if tier_bits:
             fig.text(
@@ -386,7 +387,7 @@ def generate_treasury_heatmap(result) -> Optional[Path]:
             # больше не вылезают за её границы.
             short_side = min(rw, rh)
             cx, cy = rx + rw / 2, ry + rh / 2
-            pct_str = f"{coin['pct']:+.1f}%" if coin["pct"] is not None else "н/д"
+            pct_str = f"{coin['pct']:+.1f}%" if coin["pct"] is not None else "n/a"
 
             pad_w, pad_h = rw * _TEXT_PADDING_FACTOR, rh * _TEXT_PADDING_FACTOR
 

@@ -797,38 +797,8 @@ def test_do_publish_no_ticker_skips_hashtag_line(monkeypatch):
     assert text == "текст без тикера"
 
 
-def test_try_publish_binance_promo_appends_general_hashtag(monkeypatch):
-    monkeypatch.setattr(main.config, "BINANCE_PROMO_ENABLED", True)
-    monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
-    monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
-    monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
-    monkeypatch.setattr(main.binance_promo_generator, "generate_binance_promo", lambda theme, hook_mode=None: "промо-текст.")
-    monkeypatch.setattr(main.binance_promo_generator, "validate_binance_promo", lambda text: (True, ""))
-    monkeypatch.setattr(main.binance_promo_generator, "assemble_binance_promo", lambda text: text)
-    monkeypatch.setattr(main.post_format, "maybe_binance_cta", lambda: None)
-
-    calls = []
-    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, **k: calls.append(text))
-    # voice_memory.record_post ДОЛЖЕН получить текст БЕЗ хэштега (см.
-    # try_publish_binance_promo - post_text используется для памяти, а
-    # хэштег добавляется только в binance_text для самой публикации).
-    voice_calls = []
-    monkeypatch.setattr(main.voice_memory, "record_post", lambda text, **k: voice_calls.append(text))
-
-    main.try_publish_binance_promo()
-
-    assert len(calls) == 1
-    assert calls[0].startswith("промо-текст.")
-    assert calls[0] != "промо-текст."  # хэштег дописан
-    assert voice_calls == ["промо-текст."]
-
-
-# ============================================================
-# Формат "А что если?" (см. hypothetical_generator.py,
-# main.try_publish_hypothetical_post)
-# ============================================================
-
 def _patch_hypothetical_gates_open(monkeypatch):
+    monkeypatch.setattr(main.config, "HYPOTHETICAL_ENABLED", True)
     monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
     monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
 
