@@ -71,3 +71,31 @@ def test_english_text(monkeypatch):
     text = market_digest.build_digest_text(d, 17, random.Random(1))
     assert "Evening market snapshot" in text and "Top gainers" in text and "financial advice" in text
     assert not any("а" <= ch <= "я" for ch in text.lower())
+
+
+def test_compact_text_has_fewer_cashtags(monkeypatch):
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
+    d = market_digest.fetch_movers(_rows())
+    full = market_digest.build_digest_text(d, 6, random.Random(1))
+    small = market_digest.build_digest_text(d, 6, random.Random(1), compact=True)
+    assert small.count("$") < full.count("$")
+    assert small.count("$") <= 4  # BTC + лидер роста + лидер падения (+ возможный тикер в вопросе)
+
+
+def test_digest_falls_back_to_compact_and_records_error(monkeypatch):
+    sent = []
+    monkeypatch.setattr(market_digest, "now_utc", lambda: datetime(2026, 10, 15, 6, 10, tzinfo=timezone.utc))
+    monkeypatch.setattr(market_digest, "fetch_movers", lambda rows=None: {
+        "majors": [("BTC", 67000.0, 1.0), ("ETH", 3500.0, 0.5)],
+        "gainers": [("SUI", 2.5, 12.0), ("SOL", 150.0, 8.0)], "losers": [("DOGE", 0.15, -9.0), ("ADA", 0.5, -6.0)]})
+
+    def fake_publish(text, image_paths=None):
+        if text.count("$") > 4:
+            raise main.binance_publisher.PublishError("too many tags")
+        sent.append(text)
+        return {}
+    monkeypatch.setattr(main.binance_publisher, "publish_post", fake_publish)
+    main.try_publish_market_digest()
+    assert len(sent) == 1
+    errs = queue_manager._get("publish_errors")
+    assert errs and errs[0]["fmt"] == "market_digest" and "too many tags" in errs[0]["error"]

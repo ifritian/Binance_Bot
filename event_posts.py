@@ -30,6 +30,7 @@ ANNOUNCEMENTS_URL = (
 )
 _HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; SquareBot/1.0)"}
 ANNOUNCEMENT_MAX_AGE_HOURS = 6.0
+LAST_STATUS = "не запускалось"  # итог последней проверки анонсов - main пишет его в базу для диагностики
 
 _FNG_RU = {
     "Extreme Fear": "крайний страх", "Fear": "страх", "Neutral": "нейтрально",
@@ -109,6 +110,7 @@ def fetch_listing_announcements(now_ts: float, max_age_hours: float = ANNOUNCEME
                                 payload: dict | None = None) -> list[dict]:
     """Свежие анонсы листингов: [{"code", "name", "ticker", "ts"}] (новые первыми).
     payload - для тестов (готовый JSON ответа)."""
+    global LAST_STATUS
     if payload is None:
         try:
             resp = requests.get(ANNOUNCEMENTS_URL, timeout=15, headers=_HTTP_HEADERS)
@@ -116,11 +118,13 @@ def fetch_listing_announcements(now_ts: float, max_age_hours: float = ANNOUNCEME
             payload = resp.json()
         except (requests.RequestException, ValueError) as e:
             logger.warning("Анонсы Binance: не удалось получить данные: %s", e)
+            LAST_STATUS = f"ошибка запроса: {str(e)[:150]}"
             return []
     try:
         articles = payload["data"]["catalogs"][0]["articles"]
     except (KeyError, IndexError, TypeError):
         logger.warning("Анонсы Binance: неожиданный формат ответа")
+        LAST_STATUS = "неожиданный формат ответа"
         return []
     out = []
     for a in articles:
@@ -136,6 +140,7 @@ def fetch_listing_announcements(now_ts: float, max_age_hours: float = ANNOUNCEME
         out.append({"code": str(a.get("code") or a.get("id") or a.get("title")), "name": parsed[0],
                     "ticker": parsed[1], "ts": ts})
     out.sort(key=lambda x: x["ts"], reverse=True)
+    LAST_STATUS = f"ок: статей {len(articles)}, свежих листингов {len(out)}"
     return out
 
 

@@ -728,6 +728,17 @@ def _square_slot_available() -> bool:
     return queue_manager.seconds_since_last_post("square_global") >= config.MIN_SQUARE_POST_SPACING_MINUTES * 60
 
 
+def _record_publish_error(fmt: str, error) -> None:
+    """Последние ошибки публикации в Square - в базу (до 30 штук), чтобы причину
+    можно было прочитать из bot_state.db, не открывая логи GitHub Actions."""
+    try:
+        log = queue_manager._get("publish_errors", [])
+        log.append({"ts": int(time.time()), "fmt": fmt, "error": str(error)[:300]})
+        queue_manager._set("publish_errors", log[-30:])
+    except Exception:
+        logger.warning("Не удалось записать ошибку публикации", exc_info=True)
+
+
 def try_publish_market_digest() -> None:
     """Формат "Срез рынка" (Square): по слотам времени суток, а не по
     таймеру "каждые N часов" - утренний/вечерний обзор читают в привычное
@@ -747,13 +758,19 @@ def try_publish_market_digest() -> None:
 
     data = market_digest.fetch_movers()
     if data is None:
+        _record_publish_error("market_digest", "нет данных для среза (fetch_movers вернул None)")
         queue_manager.set_retry_backoff("market_digest", 0.5)
         return
-    text = market_digest.build_digest_text(data, slot)
-    try:
-        result = binance_publisher.publish_post(text)
-    except binance_publisher.PublishError as e:
-        logger.error("Ошибка публикации 'Срез рынка': %s", e)
+    result = None
+    for compact in (False, True):
+        text = market_digest.build_digest_text(data, slot, compact=compact)
+        try:
+            result = binance_publisher.publish_post(text)
+            break
+        except binance_publisher.PublishError as e:
+            logger.error("Ошибка публикации 'Срез рынка' (%s): %s", "короткий" if compact else "полный", e)
+            _record_publish_error("market_digest_compact" if compact else "market_digest", e)
+    if result is None:
         queue_manager.set_retry_backoff("market_digest", 0.5)
         return
 
@@ -778,6 +795,7 @@ def try_publish_square_question() -> None:
         result = binance_publisher.publish_post(text)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации вопроса в Square: %s", e)
+        _record_publish_error("square_question", e)
         queue_manager.set_retry_backoff("square_question", 1)
         return
     logger.info("Опубликован вопрос аудитории в Square: %s", result)
@@ -807,6 +825,7 @@ def try_publish_hot_mover() -> None:
         result = binance_publisher.publish_post(text)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Горячая монета': %s", e)
+        _record_publish_error("hot_mover", e)
         queue_manager.set_retry_backoff("hot_mover", 1)
         return
     logger.info("Опубликовано (Горячая монета %s %+.1f%%): %s", ticker, pct, result)
@@ -836,6 +855,7 @@ def try_publish_fng_post() -> None:
         result = binance_publisher.publish_post(text)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Индекс страха и жадности': %s", e)
+        _record_publish_error("fng", e)
         queue_manager.set_retry_backoff("fng", 1)
         return
     logger.info("Опубликовано (Индекс страха и жадности %s): %s", data["value"], result)
@@ -853,6 +873,7 @@ def try_publish_listing_announcement() -> None:
         return
     seen = set(queue_manager._get("announcements_seen") or [])
     fresh = [a for a in event_posts.fetch_listing_announcements(time.time()) if a["code"] not in seen]
+    queue_manager._set("announcements_status", {"ts": int(time.time()), "status": event_posts.LAST_STATUS})
     if not fresh:
         queue_manager.set_retry_backoff("announcement", 0.25)  # не опрашивать каждые 10 минут
         return
@@ -861,6 +882,7 @@ def try_publish_listing_announcement() -> None:
         result = binance_publisher.publish_post(event_posts.build_announcement_text(item))
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Анонс Binance': %s", e)
+        _record_publish_error("announcement", e)
         queue_manager.set_retry_backoff("announcement", 1)
         return
     logger.info("Опубликовано (Анонс Binance %s): %s", item["ticker"], result)

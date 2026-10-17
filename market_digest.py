@@ -104,8 +104,14 @@ def _fmt_pct(pct: float) -> str:
     return f"{pct:+.1f}%".replace("-", "−")
 
 
-def build_digest_text(data: dict, slot_hour_utc: int, rng: random.Random | None = None) -> str:
+def build_digest_text(data: dict, slot_hour_utc: int, rng: random.Random | None = None,
+                      compact: bool = False) -> str:
+    """compact=True - запасной короткий вариант (BTC + по одному лидеру
+    роста/падения): если Square отклонил полный пост (например, из-за числа
+    $-тикеров), публикуем его вместо полного."""
     rng = rng or random
+    if compact:
+        data = {"majors": data["majors"][:1], "gainers": data["gainers"][:1], "losers": data["losers"][:1]}
     en = config.SQUARE_TEMPLATE_LANG == "en"
     if en:
         head = "☀️ Morning market snapshot" if slot_hour_utc < 12 else "🌙 Evening market snapshot"
