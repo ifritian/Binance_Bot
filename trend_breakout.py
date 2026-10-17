@@ -99,7 +99,7 @@ def btc_uptrend(btc_closed: list) -> bool:
 # ---------------- сигнал и сопровождение ----------------
 
 def breakout_signal(closed: list, btc_up: bool):
-    """Сигнал на последней закрытой свече -> {"atr", "close"} или None."""
+    """Сигнал на последней закрытой свече -> {"atr", "close", "level"} или None."""
     if not btc_up or len(closed) < MIN_BARS:
         return None
     closes = [b.c for b in closed]
@@ -110,7 +110,7 @@ def breakout_signal(closed: list, btc_up: bool):
     a = rs.atr(closed, 14)[-1]
     if a <= 0:
         return None
-    return {"atr": a, "close": c}
+    return {"atr": a, "close": c, "level": prev_high}
 
 
 def new_position(entry: float, atr: float, bar_t: int) -> dict:
@@ -171,7 +171,8 @@ def run_cycle(now_ms: int | None = None, fetch=None) -> None:
             continue
         pnl = net_pnl_pct(pos["entry"], ex["exit"])
         rec = {"ticker": sym, "entry": pos["entry"], "exit": ex["exit"], "pnl": pnl,
-               "held": ex["held"], "reason": ex["reason"], "ts": ts}
+               "held": ex["held"], "reason": ex["reason"], "ts": ts,
+               "entry_t": pos["entry_t"] + BAR_MS, "stop0": pos["stop0"]}
         st["closed"].append(rec)
         st["outbox"].append({"kind": "exit", **rec})
         del st["positions"][sym]
@@ -192,6 +193,7 @@ def run_cycle(now_ms: int | None = None, fetch=None) -> None:
             st["outbox"].append({
                 "kind": "entry", "ticker": sym, "entry": pos["entry"], "stop": pos["stop0"],
                 "risk_pct": (pos["entry"] - pos["stop0"]) / pos["entry"] * 100, "ts": ts,
+                "level": sig["level"], "entry_t": bar_t + BAR_MS,
             })
     else:
         logger.info("Пробой 20 дней: свеча закрылась %.0f мин назад - новые входы пропущены", late / 60000)
@@ -233,6 +235,41 @@ def live_stats() -> dict:
     if n == 0:
         return {"n": 0, "wins": 0, "avg": 0.0}
     return {"n": n, "wins": sum(1 for c in closed if c["pnl"] > 0), "avg": sum(c["pnl"] for c in closed) / n}
+
+
+# ---------------- график ----------------
+
+def _to_candles(bars: list) -> list:
+    return [{"open_time": b.t, "open": b.o, "high": b.h, "low": b.l, "close": b.c, "volume": b.v} for b in bars]
+
+
+def build_chart(ev: dict, fetch=None):
+    """Картинка к посту: вход (линия входа, стартовый стоп, уровень пробоя) или
+    итог (вход/выход). Путь к PNG или None - пост тогда уйдёт без картинки."""
+    try:
+        import chart_generator
+        bars = (fetch or fetch_bars)(ev["ticker"])
+        if len(bars) < 40:
+            return None
+        candles = _to_candles(bars)
+        if ev["kind"] == "entry":
+            return chart_generator.generate_trade_chart(
+                ev["ticker"], candles[-70:], entry=ev["entry"], stop=ev["stop"], level=ev.get("level"),
+                title="Breakout idea", entry_t=ev.get("entry_t"),
+            )
+        entry_t = ev.get("entry_t") or candles[-1]["open_time"]
+        exit_t = entry_t + (ev["held"] - 1) * BAR_MS
+        i_entry = next((i for i, c in enumerate(candles) if c["open_time"] >= entry_t), len(candles) - 1)
+        i_exit = next((i for i, c in enumerate(candles) if c["open_time"] >= exit_t), len(candles) - 1)
+        start = max(0, i_entry - 25)
+        window = candles[start:min(len(candles), i_exit + 8)]
+        return chart_generator.generate_trade_chart(
+            ev["ticker"], window[-110:], entry=ev["entry"], stop=ev.get("stop0"), exit_price=ev["exit"],
+            title=f"Closed {ev['pnl']:+.1f}% after fees", entry_t=entry_t, exit_t=exit_t, suffix="_tb_exit",
+        )
+    except Exception:
+        logger.exception("Пробой 20 дней: не удалось построить график для %s", ev.get("ticker"))
+        return None
 
 
 # ---------------- тексты ----------------

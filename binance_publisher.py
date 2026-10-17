@@ -20,6 +20,7 @@ Flow загрузки картинки:
   публикации - это не обязательно ошибка
 """
 import logging
+import re
 import mimetypes
 import time
 from pathlib import Path
@@ -124,10 +125,37 @@ def publish_post(text: str, image_paths: Optional[list[Path]] = None) -> dict:
         image_urls = [upload_image(p) for p in image_paths]
         body["imageList"] = image_urls
 
-    result = _send_content(body)
+    try:
+        result = _send_content(body)
+    except PublishError as e:
+        # Square ограничивает число $-тикеров в посте (ошибка 220095). Вместо
+        # потерянного поста повторяем с первыми MAX_CASHTAGS_RETRY тикерами,
+        # остальные становятся обычным текстом.
+        if "220095" not in str(e) or limit_cashtags(text, MAX_CASHTAGS_RETRY) == text:
+            raise
+        logger.warning("Square: слишком много $-тикеров (220095) - повторяю с %d", MAX_CASHTAGS_RETRY)
+        text = limit_cashtags(text, MAX_CASHTAGS_RETRY)
+        body["bodyTextOnly"] = text
+        result = _send_content(body)
     result["image_urls"] = image_urls
     _log_post(text, result, bool(image_urls))
     return result
+
+
+MAX_CASHTAGS_RETRY = 3
+_CASHTAG_RE = re.compile(r"\$([A-Za-z][A-Za-z0-9]{1,14})\b")
+
+
+def limit_cashtags(text: str, keep: int) -> str:
+    """Оставляет $ только у первых `keep` тикеров, у остальных убирает знак $."""
+    count = 0
+
+    def repl(m):
+        nonlocal count
+        count += 1
+        return m.group(0) if count <= keep else m.group(1)
+
+    return _CASHTAG_RE.sub(repl, text)
 
 
 _POST_LOG_MAX = 300
