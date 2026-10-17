@@ -819,21 +819,21 @@ def try_publish_trend_breakout() -> None:
     except Exception:
         logger.exception("Ошибка цикла 'Пробой 20 дней' - пропускаю до следующего тика")
         return
-    ev = trend_breakout.pending_event()
-    if ev is None:
+    evs = trend_breakout.pending_events()
+    if not evs:
         return
     if not queue_manager.should_retry_now("trend_breakout") or not _square_slot_available():
         return
-    chart = trend_breakout.build_chart(ev)
+    charts = [c for c in (trend_breakout.build_chart(e) for e in evs) if c]
     try:
-        result = binance_publisher.publish_post(trend_breakout.build_text(ev), image_paths=[chart] if chart else None)
+        result = binance_publisher.publish_post(trend_breakout.build_group_text(evs), image_paths=charts or None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Пробой 20 дней': %s", e)
         _record_publish_error("trend_breakout", e)
         queue_manager.set_retry_backoff("trend_breakout", 1)
         return
-    logger.info("Опубликовано (Пробой 20 дней, %s %s): %s", ev["kind"], ev["ticker"], result)
-    trend_breakout.mark_posted(ev)
+    logger.info("Опубликовано (Пробой 20 дней, %s: %s): %s", evs[0]["kind"], ",".join(e["ticker"] for e in evs), result)
+    trend_breakout.mark_posted(evs)
     queue_manager.set_last_post_time("square_global")
 
 
