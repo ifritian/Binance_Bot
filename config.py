@@ -241,6 +241,15 @@ MARKET_DIGEST_HOURS_UTC = sorted({
 # "Горячая монета" (market_digest.pick_hot_mover): пост при сильном движении.
 HOT_MOVER_ENABLED = (os.environ.get("HOT_MOVER_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 HOT_MOVER_MAX_PER_DAY = int(os.environ.get("HOT_MOVER_MAX_PER_DAY") or "2")
+# Старый сканер сигналов (15м: RSI/Bollinger, MACD, Donchian). Research sweep
+# (3 периода, комиссия 0.2%) показал отрицательное ожидание у всех его
+# стратегий, живая статистика бота то же самое - по умолчанию выключен.
+# Вернуть: секрет LEGACY_SCANNER_ENABLED=true.
+LEGACY_SCANNER_ENABLED = (os.environ.get("LEGACY_SCANNER_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
+# "Пробой 20 дней" (trend_breakout.py): стратегия из research_v2, посты о входах
+# и о ВСЕХ закрытых сделках (и плюсовых, и минусовых) с живым счётом.
+TREND_BREAKOUT_ENABLED = (os.environ.get("TREND_BREAKOUT_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+TREND_BREAKOUT_MAX_OPEN = int(os.environ.get("TREND_BREAKOUT_MAX_OPEN") or "8")
 # "Индекс страха и жадности" (event_posts.py): раз в сутки в этот час UTC.
 FNG_ENABLED = (os.environ.get("FNG_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 FNG_HOUR_UTC = int(os.environ.get("FNG_HOUR_UTC") or "11")
