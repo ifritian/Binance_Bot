@@ -1,0 +1,41 @@
+name: Research v2
+
+# Только вручную. Поиск стратегии с преимуществом: 4ч свечи, ~3 года истории,
+# отдельный контрольный период (см. research_v2.py). Результат: вкладка
+# "Summary" запуска и файл research_v2_report.md в ветке research-results-v2.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Глубина истории в днях"
+        required: false
+        default: "1095"
+
+permissions:
+  contents: write
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install requests
+      - name: Run research v2
+        run: python research_v2.py --days "${{ inputs.days }}" --out research_v2_report.md
+      - name: Show in summary
+        run: cat research_v2_report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish report to research-results-v2 branch
+        run: |
+          git config user.name "research-bot"
+          git config user.email "research-bot@users.noreply.github.com"
+          cp research_v2_report.md /tmp/research_v2_report.md
+          git checkout --orphan research-results-v2
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/research_v2_report.md research_v2_report.md
+          git add research_v2_report.md
+          git commit -m "Research v2 report $(date -u +%F)"
+          git push -f origin research-results-v2
