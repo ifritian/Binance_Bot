@@ -88,6 +88,7 @@ def test_late_detection_skips_entries(monkeypatch):
 def test_exit_recorded_with_loss_and_counted(monkeypatch):
     st = tb._state()
     st["positions"]["SOL"] = tb.new_position(100.0, 2.0, T0)
+    st["positions"]["SOL"]["announced"] = True
     tb._save(st)
     crash = [rs.Bar(T0 + tb.BAR_MS * k, 100, 100.5, 90 if k == 1 else 99, 99, 1e6) for k in range(1, 3)] \
         + [rs.Bar(T0 + 400 * tb.BAR_MS, 99, 99.5, 98.5, 99, 1e6)]
@@ -148,3 +149,49 @@ def test_charts_render_for_entry_and_exit(tmp_path, monkeypatch):
 
 def test_chart_failure_returns_none_not_raises():
     assert tb.build_chart({"kind": "entry", "ticker": "SOL", "entry": 1.0, "stop": 0.9, "ts": 1}, fetch=lambda s: []) is None
+
+
+def test_exit_not_posted_if_entry_was_never_announced(monkeypatch):
+    st = tb._state()
+    st["positions"]["SOL"] = tb.new_position(100.0, 2.0, T0)  # announced не выставлен
+    tb._save(st)
+    crash = [rs.Bar(T0 + tb.BAR_MS, 100, 100.5, 90, 99, 1e6), rs.Bar(T0 + 400 * tb.BAR_MS, 99, 99.5, 98.5, 99, 1e6)]
+    btc = _walk(400, 1)
+    monkeypatch.setattr(tb, "universe", lambda: [])
+    tb.run_cycle(btc[-1].t + tb.BAR_MS + 1000, fetch=lambda sym, limit=0: btc if sym == "BTC" else crash)
+    st = tb._state()
+    assert len(st["closed"]) == 1 and st["outbox"] == []  # в счёт идёт, постить нечего
+
+
+def test_events_are_batched_and_marked():
+    import time
+    now = time.time()
+    st = tb._state()
+    for k, t in enumerate(["SOL", "ADA", "XRP", "DOGE"]):
+        st["positions"][t] = tb.new_position(10.0, 0.5, T0)
+        st["outbox"].append({"kind": "entry", "ticker": t, "entry": 10.0, "stop": 8.25, "risk_pct": 17.5, "ts": now})
+    tb._save(st)
+    evs = tb.pending_events(now)
+    assert [e["ticker"] for e in evs] == ["SOL", "ADA", "XRP"]  # не больше 3 тикеров на пост
+    text = tb.build_group_text(evs, {"n": 0, "wins": 0, "avg": 0.0}, "en")
+    assert text.count("$") == 3 and "Several coins" in text and "{" not in text
+    tb.mark_posted(evs)
+    assert [e["ticker"] for e in tb.pending_events(now)] == ["DOGE"]
+    assert tb._state()["positions"]["SOL"]["announced"] and not tb._state()["positions"]["DOGE"].get("announced")
+
+
+def test_stale_entry_events_dropped():
+    import time
+    now = time.time()
+    st = tb._state()
+    st["outbox"].append({"kind": "entry", "ticker": "SOL", "entry": 1.0, "stop": 0.9, "risk_pct": 10, "ts": now - 4 * 3600})
+    tb._save(st)
+    assert tb.pending_events(now) == [] and tb._state()["outbox"] == []
+
+
+def test_group_text_exit_ru_and_en():
+    evs = [{"kind": "exit", "ticker": t, "entry": 1.0, "exit": 1.1, "pnl": p, "held": 6, "reason": "stop", "ts": 1}
+           for t, p in (("SOL", 4.2), ("ADA", -2.5))]
+    for lang, marker in (("ru", "Идеи закрыты"), ("en", "Ideas closed")):
+        t = tb.build_group_text(evs, {"n": 5, "wins": 2, "avg": -0.1}, lang)
+        assert marker in t and "$SOL: +4.2%" in t and "$ADA: -2.5%" in t and "{" not in t

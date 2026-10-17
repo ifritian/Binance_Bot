@@ -44,7 +44,7 @@ COST_PCT = rs.ROUND_TRIP_COST_PCT
 MIN_BARS = 330        # прогрев индикаторов
 FETCH_LIMIT = 500
 ENTRY_MAX_LATE_MS = 90 * 60 * 1000   # опоздали с обнаружением больше чем на 1.5ч - вход пропускаем
-ENTRY_EVENT_TTL_S = 6 * 3600         # пост о входе не публикуем, если он устарел
+ENTRY_EVENT_TTL_S = 3.5 * 3600       # пост о входе не публикуем, если он устарел (цена ушла)
 EXIT_EVENT_TTL_S = 48 * 3600
 STATE_KEY = "trend_breakout_state"
 CLOSED_CAP = 500
@@ -174,7 +174,8 @@ def run_cycle(now_ms: int | None = None, fetch=None) -> None:
                "held": ex["held"], "reason": ex["reason"], "ts": ts,
                "entry_t": pos["entry_t"] + BAR_MS, "stop0": pos["stop0"]}
         st["closed"].append(rec)
-        st["outbox"].append({"kind": "exit", **rec})
+        if pos.get("announced"):
+            st["outbox"].append({"kind": "exit", **rec})
         del st["positions"][sym]
 
     late = now_ms - (bar_t + BAR_MS)
@@ -204,9 +205,12 @@ def run_cycle(now_ms: int | None = None, fetch=None) -> None:
 
 # ---------------- очередь постов ----------------
 
-def pending_event(now_ts: float | None = None):
-    """Самое раннее непросроченное событие (выходы приоритетнее) или None.
-    Просроченные удаляет."""
+MAX_PER_POST = 3  # у Square лимит на число $-тикеров в одном посте
+
+
+def pending_events(now_ts: float | None = None) -> list:
+    """Что публиковать сейчас: до MAX_PER_POST однотипных событий (выходы
+    приоритетнее входов). Просроченные удаляет."""
     now_ts = now_ts or time.time()
     st = _state()
     fresh = []
@@ -218,14 +222,24 @@ def pending_event(now_ts: float | None = None):
         st["outbox"] = fresh
         _save(st)
     if not fresh:
-        return None
-    exits = [e for e in fresh if e["kind"] == "exit"]
-    return (exits or fresh)[0]
+        return []
+    kind = "exit" if any(e["kind"] == "exit" for e in fresh) else "entry"
+    return [e for e in fresh if e["kind"] == kind][:MAX_PER_POST]
 
 
-def mark_posted(ev: dict) -> None:
+def pending_event(now_ts: float | None = None):
+    evs = pending_events(now_ts)
+    return evs[0] if evs else None
+
+
+def mark_posted(evs) -> None:
+    evs = [evs] if isinstance(evs, dict) else list(evs)
+    keys = {(e["kind"], e["ticker"], e["ts"]) for e in evs}
     st = _state()
-    st["outbox"] = [e for e in st["outbox"] if not (e["kind"] == ev["kind"] and e["ticker"] == ev["ticker"] and e["ts"] == ev["ts"])]
+    st["outbox"] = [e for e in st["outbox"] if (e["kind"], e["ticker"], e["ts"]) not in keys]
+    for e in evs:
+        if e["kind"] == "entry" and e["ticker"] in st["positions"]:
+            st["positions"][e["ticker"]]["announced"] = True
     _save(st)
 
 
@@ -326,3 +340,35 @@ def build_text(ev: dict, stats: dict | None = None, lang: str | None = None) -> 
         f"Entry {_fmt(ev['entry'])}, exit {_fmt(ev['exit'])} ({why}).\n\n"
         f"{rec}\n\nWe post the wins and the losses. Not financial advice. {tags}"
     )
+
+
+def build_group_text(evs: list, stats: dict | None = None, lang: str | None = None) -> str:
+    """Один пост про несколько монет сразу (пробои обычно идут пачкой)."""
+    if len(evs) == 1:
+        return build_text(evs[0], stats, lang)
+    lang = lang or config.SQUARE_TEMPLATE_LANG
+    stats = stats if stats is not None else live_stats()
+    rec = record_line(stats, lang)
+    tags = "#" + evs[0]["ticker"] + " #Breakout"
+    if evs[0]["kind"] == "entry":
+        rows = [
+            f"${e['ticker']}: " + (f"вход {_fmt(e['entry'])}, стоп {_fmt(e['stop'])} (−{e['risk_pct']:.1f}%)" if lang == "ru"
+                                   else f"entry {_fmt(e['entry'])}, stop {_fmt(e['stop'])} (-{e['risk_pct']:.1f}%)")
+            for e in evs
+        ]
+        if lang == "ru":
+            head = "Пробой 20-дневного максимума на 4-часовом графике сразу у нескольких монет:"
+            tail = "Цели нет: стоп подтягиваем за ценой, максимум 5 суток. По истории за 3 года метод выигрывает примерно в 4 сделках из 10."
+            return f"{head}\n\n" + "\n".join(rows) + f"\n\n{tail}\n\n{rec}\n\nНе финансовый совет. {tags}"
+        head = "Several coins just broke their 20-day high on the 4h chart:"
+        tail = "No fixed target: stops trail behind price, max hold 5 days. Over 3 years of history this method wins about 4 trades in 10."
+        return f"{head}\n\n" + "\n".join(rows) + f"\n\n{tail}\n\n{rec}\n\nNot financial advice. {tags}"
+    rows = [
+        f"${e['ticker']}: {e['pnl']:+.1f}% " + (f"за {e['held'] * 4 / 24:.1f} сут." if lang == "ru" else f"in {e['held'] * 4 / 24:.1f} d")
+        for e in evs
+    ]
+    if lang == "ru":
+        return ("Идеи закрыты (результат после комиссий):\n\n" + "\n".join(rows)
+                + f"\n\n{rec}\n\nПубликуем и плюсы, и минусы. Не финансовый совет. {tags}")
+    return ("Ideas closed (net of fees):\n\n" + "\n".join(rows)
+            + f"\n\n{rec}\n\nWe post the wins and the losses. Not financial advice. {tags}")
