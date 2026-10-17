@@ -96,6 +96,7 @@ jobs:
       FNG_ENABLED: ${{ secrets.FNG_ENABLED || 'true' }}
       FNG_HOUR_UTC: ${{ secrets.FNG_HOUR_UTC || '11' }}
       ANNOUNCEMENTS_ENABLED: ${{ secrets.ANNOUNCEMENTS_ENABLED || 'true' }}
+      BINANCE_PROMO_ENABLED: ${{ secrets.BINANCE_PROMO_ENABLED || 'false' }}
       MARKET_DIGEST_ENABLED: ${{ secrets.MARKET_DIGEST_ENABLED || 'true' }}
       MARKET_DIGEST_HOURS_UTC: ${{ secrets.MARKET_DIGEST_HOURS_UTC || '6,17' }}
       SQUARE_COIN_WHITELIST_ENABLED: ${{ secrets.SQUARE_COIN_WHITELIST_ENABLED || 'true' }}

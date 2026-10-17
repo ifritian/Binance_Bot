@@ -798,6 +798,7 @@ def test_do_publish_no_ticker_skips_hashtag_line(monkeypatch):
 
 
 def test_try_publish_binance_promo_appends_general_hashtag(monkeypatch):
+    monkeypatch.setattr(main.config, "BINANCE_PROMO_ENABLED", True)
     monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda post_type: 10 ** 9)
     monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda post_type: 0)
     monkeypatch.setattr(main.queue_manager, "should_retry_now", lambda post_type: True)
