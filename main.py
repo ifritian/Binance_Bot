@@ -1175,6 +1175,8 @@ def try_publish_binance_promo() -> None:
     Binance Square, минуя Telegram/Bluesky целиком - это
     площадочно-специфичный формат про выгоду/удобство самой площадки
     (комиссии, Square как соцсеть), а не про рыночный сигнал."""
+    if not config.BINANCE_PROMO_ENABLED:
+        return
     seconds_elapsed = queue_manager.seconds_since_last_post("binance_promo")
     min_seconds = config.BINANCE_PROMO_INTERVAL_HOURS * 3600 + queue_manager.get_jitter_seconds("binance_promo")
 
@@ -1711,6 +1713,7 @@ def try_publish_treasury_post() -> None:
     # картинка при живом текстовом "с запуска" блоке в самом посте.
     single_image_path = composition_path or heatmap_path
 
+    binance_text = post_format.cashtag_top_movers(binance_text, 3)
     try:
         published_result = binance_publisher.publish_post(binance_text, image_paths=image_paths)
     except binance_publisher.PublishError as e:

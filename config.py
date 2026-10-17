@@ -257,6 +257,9 @@ ARTICLE_INTERVAL_HOURS = float(os.environ.get("ARTICLE_INTERVAL_HOURS", "168"))
 # Формат "Промо" - ТОЛЬКО Binance Square (см. binance_promo_generator.py),
 # своё расписание, смещённое от остальных Square-форматов (opinion/
 # article), чтобы не выходить в одно и то же окно каждый раз.
+# Промо-пост про саму площадку: без данных и без $-тикера (нет виджета/комиссии),
+# звучит как реклама, поэтому по умолчанию выключен (BINANCE_PROMO_ENABLED=true вернёт).
+BINANCE_PROMO_ENABLED = (os.environ.get("BINANCE_PROMO_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 BINANCE_PROMO_INTERVAL_HOURS = float(os.environ.get("BINANCE_PROMO_INTERVAL_HOURS", "72"))
 
 # --- Новостной формат "мнение по новости" (см. news_opinion_generator.py) ---

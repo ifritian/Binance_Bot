@@ -118,6 +118,35 @@ def ensure_cashtag(text: str, ticker: str | None, anywhere: bool = False) -> str
     return f"${symbol} {text.lstrip()}"
 
 
+_TIER_LINE_PREFIXES = ("🔵", "🟡", "🔴")
+_COIN_PCT_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,9}) ([+\-−]?\d+(?:\.\d+)?)%")
+
+
+def cashtag_top_movers(text: str, n: int = 3) -> str:
+    """Для Treasury Index на Square: в строках уровней (🔵/🟡/🔴) ставит $ перед
+    n монетами с самым сильным движением - только они становятся кликабельными
+    виджетами цены (весь список из ~15 тикеров с $ выглядел бы как спам)."""
+    coins: dict[str, float] = {}
+    for line in text.split("\n"):
+        if not line.startswith(_TIER_LINE_PREFIXES):
+            continue
+        for m in _COIN_PCT_RE.finditer(line):
+            try:
+                coins.setdefault(m.group(1), float(m.group(2).replace("−", "-")))
+            except ValueError:
+                continue
+    top = {t for t, _ in sorted(coins.items(), key=lambda kv: abs(kv[1]), reverse=True)[:n]}
+    if not top:
+        return text
+    out = []
+    for line in text.split("\n"):
+        if line.startswith(_TIER_LINE_PREFIXES):
+            line = _COIN_PCT_RE.sub(lambda m: (f"${m.group(1)} " if m.group(1) in top else f"{m.group(1)} ")
+                                    + f"{m.group(2)}%", line)
+        out.append(line)
+    return "\n".join(out)
+
+
 def square_hashtags_line(ticker: str | None, topic: str | None = None) -> str | None:
     """#{TICKER} + один тег по теме. topic - тематический тег, подходящий
     именно этому посту (см. strategy_topic_tag); если его нет - один
