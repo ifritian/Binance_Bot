@@ -51,6 +51,7 @@ import mini_lesson_generator
 import news_opinion_generator
 import opinion_generator
 import outcome_tracker
+import binance_alerts
 import listing_tracker
 import news_radar
 import post_cards
@@ -993,6 +994,23 @@ def try_publish_news_radar() -> None:
     queue_manager._set("news_radar_state", {"codes": sorted(seen_codes)[-200:], "news": sorted(seen_news)[-200:]})
     queue_manager.set_last_post_time(key)
     queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_binance_alerts() -> None:
+    """Мгновенные оповещения в Telegram: делистинги и работы с сетями Binance."""
+    if not config.BINANCE_ALERTS_ENABLED or not telegram_publisher.is_configured():
+        return
+    if not queue_manager.should_retry_now("binance_alerts"):
+        return
+    for code, text in binance_alerts.run_once(time.time()):
+        try:
+            telegram_publisher.publish_post(text)
+        except telegram_publisher.TelegramPublishError as e:
+            logger.warning("Оповещение Binance в Telegram не отправлено: %s", e)
+            queue_manager.set_retry_backoff("binance_alerts", 0.25)
+            return
+        binance_alerts.mark_sent(code)
+        logger.info("Оповещение Binance отправлено в Telegram: %s", code)
 
 
 def try_publish_listing_report() -> None:
@@ -2169,6 +2187,7 @@ def tick() -> None:
         try_publish_hot_mover()
         try_publish_listing_announcement()
         try_publish_listing_report()
+        try_publish_binance_alerts()
         try_publish_news_radar()
         try_publish_fng_post()
         if config.LEGACY_SCANNER_ENABLED:
