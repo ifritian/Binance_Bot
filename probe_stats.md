@@ -1,0 +1,10 @@
+ids: ['378225614573422', '378264243836571', '378303549662446', '378342896714652', '378399341003574', '378453449599182', '378519864659467', '378593666127120']
+GET /bapi/composite/v1/public/pgc/content/detail?contentId=378593666127120 -> 400 '{"code":"000002","message":"illegal parameter","messageDetail":null,"data":null,"success":false}'
+GET /bapi/composite/v1/public/pgc/content/detail?id=378593666127120 -> 400 '{"code":"000002","message":"illegal parameter","messageDetail":null,"data":null,"success":false}'
+GET /bapi/composite/v1/public/pgc/content/detail?postId=378593666127120 -> 400 '{"code":"000002","message":"illegal parameter","messageDetail":null,"data":null,"success":false}'
+GET /bapi/composite/v1/public/pgc/content/detail?contentIds=378593666127120 -> 400 '{"code":"000002","message":"illegal parameter","messageDetail":null,"data":null,"success":false}'
+GET /bapi/composite/v2/public/pgc/content/detail?id=378593666127120 -> 404 '{"path":"/v2/public/pgc/content/detail","status":404,"message":"No message available","timestamp":1792330735397,"error":"Not Found"}'
+GET /bapi/composite/v1/public/pgc/content/queryByIds?ids=378593666127120 -> 400 '{"code":"000002","message":"illegal parameter","messageDetail":null,"data":null,"success":false}'
+GET /bapi/composite/v1/public/pgc/content/detail/378593666127120 -> 404 '{"path":"/v1/public/pgc/content/detail/378593666127120","status":404,"message":"No message available","timestamp":1792330735908,"error":"Not Found"}'
+GET /bapi/composite/v3/friendly/pgc/content/detail?id=378593666127120 -> 400 '{"code":"000002","message":"illegal parameter","messageDetail":null,"data":null,"success":false}'
+POST /bapi/composite/v1/public/pgc/content/detail -> 400 '{"code":"000002","message":"illegal parameter","messageDetail":null,"data":null,"success":false}'
