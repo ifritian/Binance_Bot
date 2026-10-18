@@ -251,6 +251,8 @@ HYPOTHETICAL_ENABLED = (os.environ.get("HYPOTHETICAL_ENABLED") or "false").strip
 # Старый сканер сигналов (15м: RSI/Bollinger, MACD, Donchian). Research sweep
 # (3 периода, комиссия 0.2%) показал отрицательное ожидание у всех его
 # стратегий, живая статистика бота то же самое - по умолчанию выключен.
+# Вместе со сканером выключены ВСЕ форматы, построенные на его сигналах: публикация очереди
+# сигналов, отчёт точности, разбор неудач и недельная статья (русские, про старые сигналы).
 # Вернуть: секрет LEGACY_SCANNER_ENABLED=true.
 LEGACY_SCANNER_ENABLED = (os.environ.get("LEGACY_SCANNER_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 # "Пробой 20 дней" (trend_breakout.py): стратегия из research_v2, посты о входах
