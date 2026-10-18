@@ -19,7 +19,8 @@ DISCLAIMER = "Не финансовый совет."
 # день, и одна и та же ссылка в каждом выглядела бы как спам и могла бы
 # триггернуть модерацию Square.
 REFERRAL_LINK = "https://www.binance.com/register?ref=ES7YTYML"
-REFERRAL_LINE = f"Открыть аккаунт на Binance: {REFERRAL_LINK}"
+REFERRAL_LINE = (f"Open a Binance account: {REFERRAL_LINK}" if config.SQUARE_TEMPLATE_LANG != "ru"
+                 else f"Открыть аккаунт на Binance: {REFERRAL_LINK}")
 
 
 # Короткие CTA-строки про выгоду/фичи именно площадки Binance Square -
@@ -201,6 +202,8 @@ def telegram_channel_line() -> str | None:
     if not channel or not str(channel).startswith("@"):
         return None
     username = str(channel).lstrip("@")
+    if config.SQUARE_TEMPLATE_LANG != "ru":
+        return f"📣 More posts in our Telegram: https://t.me/{username}"
     return f"📣 Подробнее и другие посты - в нашем Telegram: https://t.me/{username}"
 
 
@@ -393,8 +396,13 @@ def build_bluesky_post(text: str, ticker: str | None = None) -> tuple[str, list]
 
     body = text.strip()
     if len(body) > max_body_len:
-        body = body[: max_body_len - len(_BLUESKY_TRUNCATION_SUFFIX)].rstrip()
-        body += _BLUESKY_TRUNCATION_SUFFIX
+        cut = body[: max_body_len - len(_BLUESKY_TRUNCATION_SUFFIX)].rstrip()
+        # лучше закончить на границе строки, чем посреди предложения
+        nl = cut.rfind("\n")
+        if nl >= len(cut) // 2:
+            body = cut[:nl].rstrip()
+        else:
+            body = cut + _BLUESKY_TRUNCATION_SUFFIX
 
     parts = [body]
     if hashtag:
@@ -486,7 +494,8 @@ def build_bluesky_teaser(ticker: str | None = None) -> tuple[str, list]:
     tg_line = telegram_channel_line()
     if tg_line:
         tg_url = tg_line.split(" ")[-1]
-        text = f"{cashtag_line}\n\nРазбор - в Telegram: {tg_url}"
+        lead = "Full breakdown on Telegram:" if config.SQUARE_TEMPLATE_LANG != "ru" else "Разбор - в Telegram:"
+        text = f"{cashtag_line}\n\n{lead} {tg_url}"
         link_facets = [(tg_url, tg_url)]
     else:
         text = f"{cashtag_line}\n\n{REFERRAL_LINE}"

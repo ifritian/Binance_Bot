@@ -771,3 +771,9 @@ NEWS_RADAR_ENABLED = (os.environ.get("NEWS_RADAR_ENABLED") or "true").strip().lo
 NEWS_MOVE_MIN_PCT = float(os.environ.get("NEWS_MOVE_MIN_PCT") or 3.0)
 NEWS_MOVE_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_MOVE_MIN_INTERVAL_HOURS") or 6)
 NEWS_RADAR_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_RADAR_MIN_INTERVAL_HOURS") or 20)
+
+# Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
+CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
+                     "digest,fear_greed,breakout,hot_mover,binance_radar,news_move,listing").split(",") if x.strip()}
+# Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
+LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")

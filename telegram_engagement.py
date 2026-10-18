@@ -22,9 +22,11 @@ import logging
 import random
 from typing import Optional
 
+import config
+
 logger = logging.getLogger(__name__)
 
-POLLS: list[dict] = [
+POLLS_RU: list[dict] = [
     {
         "question": "Какую тему разобрать в следующем посте глоссария?",
         "options": ["RSI и дивергенция", "Риск и размер позиции", "Индекс и ребалансировка", "Своё - в комменты"],
@@ -59,11 +61,35 @@ POLLS: list[dict] = [
     },
 ]
 
-AMA_PROMPTS: list[str] = [
+AMA_PROMPTS_RU: list[str] = [
     "🎤 Открываю АМА - задавайте любые вопросы про сигналы, стратегию или индекс в комментариях, отвечу разбором в одном из следующих постов.",
     "🎤 Накопились вопросы про то, как читать сигналы, откуда цифры или почему индекс устроен именно так? Пишите в комменты - соберу самые частые в отдельный разбор.",
     "🎤 Раз в какое-то время стоит остановиться и спросить: что вам непонятно или интересно узнать подробнее? Задавайте вопросы в комментариях.",
 ]
+
+
+POLLS_EN: list[dict] = [
+    {"question": "What do you trade most?", "options": ["Spot", "Futures", "Both", "Just watching"]},
+    {"question": "Where does BTC go this week?", "options": ["Up", "Sideways", "Down", "No idea"]},
+    {"question": "Which post is most useful to you?",
+     "options": ["Market snapshot", "Binance announcements", "Trend ideas", "News + price check"]},
+    {"question": "How much of your portfolio is in altcoins?", "options": ["Under 10%", "10-30%", "30-60%", "Over 60%"]},
+    {"question": "Do you use stop-losses?", "options": ["Always", "Sometimes", "Never"]},
+    {"question": "What timeframe do you usually watch?", "options": ["15m", "1h", "4h", "1d"]},
+    {"question": "When the Fear & Greed Index shows extreme fear, you usually...",
+     "options": ["Buy", "Wait", "Sell", "Ignore the index"]},
+    {"question": "What should we cover more?",
+     "options": ["Binance events and delistings", "Altcoin basket vs BTC", "Trend ideas", "Coin news"]},
+]
+
+AMA_PROMPTS_EN: list[str] = [
+    "🎤 Questions about how the ideas are built, where the numbers come from, or how to read a post? Ask in the comments and the most common ones get a full answer.",
+    "🎤 Anything unclear in the market snapshots or the Binance Radar? Write it below and we will explain it in a follow-up post.",
+    "🎤 What would you like to see more of in this channel? Tell us in the comments.",
+]
+
+POLLS = POLLS_EN if config.SQUARE_TEMPLATE_LANG != "ru" else POLLS_RU
+AMA_PROMPTS = AMA_PROMPTS_EN if config.SQUARE_TEMPLATE_LANG != "ru" else AMA_PROMPTS_RU
 
 
 def pick_poll(last_question: Optional[str]) -> dict:
