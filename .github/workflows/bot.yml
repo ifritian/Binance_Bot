@@ -104,6 +104,7 @@ jobs:
       FNG_HOUR_UTC: ${{ secrets.FNG_HOUR_UTC || '11' }}
       CROSSPOST_FORMATS: ${{ secrets.CROSSPOST_FORMATS }}
       LEGACY_CHANNEL_FORMATS_ENABLED: ${{ secrets.LEGACY_CHANNEL_FORMATS_ENABLED || 'false' }}
+      LISTING_TRACKER_ENABLED: ${{ secrets.LISTING_TRACKER_ENABLED || 'true' }}
       NEWS_RADAR_ENABLED: ${{ secrets.NEWS_RADAR_ENABLED || 'true' }}
       ANNOUNCEMENTS_ENABLED: ${{ secrets.ANNOUNCEMENTS_ENABLED || 'true' }}
       MARKET_DIGEST_ENABLED: ${{ secrets.MARKET_DIGEST_ENABLED || 'true' }}

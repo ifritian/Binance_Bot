@@ -176,3 +176,43 @@ def radar_card(items: list[dict]) -> Path | None:
         logger.exception("Не удалось построить карточку Binance Radar")
         plt.close("all")
         return None
+
+
+def listing_card(ev: dict) -> Path | None:
+    """Карточка отчёта по листингу: линия цены от первого открытия + крупное изменение."""
+    try:
+        s = ev["stats"]
+        closes = s["closes"]
+        fig = plt.figure(figsize=(8, 5), dpi=150)
+        fig.patch.set_facecolor(_BG)
+        up = s["pct_close"] >= 0
+        color = _UP if up else _DOWN
+        label = "24 hours after listing" if ev["kind"] == "d1" else "7 days after listing"
+        fig.text(0.05, 0.92, f"${ev['ticker']}", color=_TEXT, fontsize=22, fontweight="bold", va="center")
+        fig.text(0.05, 0.85, f"Binance listing report: {label}", color=_MUTED, fontsize=11, va="center")
+        fig.text(0.95, 0.90, f"{s['pct_close']:+.1f}%".replace("-", "−"), color=color, fontsize=34,
+                 fontweight="bold", ha="right", va="center")
+        ax = fig.add_axes([0.06, 0.24, 0.88, 0.50])
+        ax.set_facecolor(_BG)
+        xs = list(range(len(closes)))
+        ax.plot(xs, closes, color=color, linewidth=2)
+        ax.fill_between(xs, closes, s["open"], color=color, alpha=0.12)
+        ax.axhline(s["open"], color=_MUTED, linewidth=1, linestyle="--")
+        ax.text(0, s["open"], " first price", color=_MUTED, fontsize=9, va="bottom")
+        for sp in ax.spines.values():
+            sp.set_visible(False)
+        ax.set_xticks([])
+        ax.tick_params(colors=_MUTED, labelsize=8)
+        ax.grid(color=_GRID, linewidth=0.5)
+        low, high = f"{s['pct_low']:+.1f}%".replace("-", "−"), f"{s['pct_high']:+.1f}%".replace("-", "−")
+        vol = s["quote_volume"]
+        vol_txt = f"{vol / 1e9:.1f}B USDT" if vol >= 1e9 else (f"{vol / 1e6:.1f}M USDT" if vol >= 1e6 else f"{vol / 1e3:.0f}K USDT")
+        fig.text(0.05, 0.09, f"Range {low} to {high}    |    Volume {vol_txt}", color=_TEXT, fontsize=11, va="center")
+        path = _out("listing_card.png")
+        fig.savefig(path, facecolor=_BG)
+        plt.close(fig)
+        return path
+    except Exception:
+        logger.exception("Не удалось построить карточку листинга")
+        plt.close("all")
+        return None

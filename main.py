@@ -51,6 +51,7 @@ import mini_lesson_generator
 import news_opinion_generator
 import opinion_generator
 import outcome_tracker
+import listing_tracker
 import news_radar
 import post_cards
 import trend_breakout
@@ -991,6 +992,32 @@ def try_publish_news_radar() -> None:
     seen_codes.update(mark_codes)
     queue_manager._set("news_radar_state", {"codes": sorted(seen_codes)[-200:], "news": sorted(seen_news)[-200:]})
     queue_manager.set_last_post_time(key)
+    queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_listing_report() -> None:
+    """Listing Tracker: отчёт через 24ч и 7 дней после начала торгов новой монетой."""
+    if not config.LISTING_TRACKER_ENABLED:
+        return
+    now = time.time()
+    if queue_manager.seconds_since_last_post("listing_scan") >= 1800:
+        listing_tracker.register(event_posts.fetch_listing_announcements(now, max_age_hours=72), now)
+        queue_manager.set_last_post_time("listing_scan")
+    listing_tracker.advance(now)
+    ev = listing_tracker.pending_event(now)
+    if ev is None or not queue_manager.should_retry_now("listing_report") or not _square_slot_available():
+        return
+    text = listing_tracker.build_text(ev, listing_tracker.summary(ev["kind"]))
+    card = post_cards.listing_card(ev)
+    try:
+        result = _post("listing_report", text, image_paths=[card] if card else None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации отчёта по листингу: %s", e)
+        _record_publish_error("listing_report", e)
+        queue_manager.set_retry_backoff("listing_report", 1)
+        return
+    logger.info("Опубликовано (отчёт по листингу %s %s): %s", ev["ticker"], ev["kind"], result)
+    listing_tracker.mark_posted(ev["id"])
     queue_manager.set_last_post_time("square_global")
 
 
@@ -2141,6 +2168,7 @@ def tick() -> None:
         try_publish_square_question()
         try_publish_hot_mover()
         try_publish_listing_announcement()
+        try_publish_listing_report()
         try_publish_news_radar()
         try_publish_fng_post()
         if config.LEGACY_SCANNER_ENABLED:
