@@ -57,20 +57,39 @@ def fetch_fng() -> dict | None:
     return {"value": value, "label": label, "prev": prev}
 
 
-def _fng_question(value: int, en: bool, rng) -> str:
-    if value <= 40:
+def _fng_question(value: int, en: bool, rng, prev: int | None = None) -> str:
+    """Вопрос под индексом. Пороги совпадают с классификацией источника
+    (alternative.me: до 45 страх, 46-54 нейтрально, от 55 жадность), иначе
+    подпись противоречит заголовку. Резкий сдвиг за сутки получает свой вопрос."""
+    diff = None if prev is None else value - prev
+    if diff is not None and abs(diff) >= 6:
+        if diff < 0:
+            opts = (["Sentiment dropped fast in a day. Panic, or a healthy cool-off? 🤔",
+                     "Mood fell sharply overnight. Do you buy the dip or wait for calm?"] if en else
+                    ["Настроение резко упало за сутки. Паника или здоровое охлаждение? 🤔",
+                     "Индекс заметно просел. Покупаете просадку или ждёте спокойствия?"])
+        else:
+            opts = (["Sentiment jumped in a day. Is the rally real, or are late buyers rushing in? 🤔",
+                     "Mood improved fast overnight. Do you follow it or fade it?"] if en else
+                    ["Настроение резко выросло за сутки. Рост настоящий или заходят поздние покупатели? 🤔",
+                     "Индекс заметно вырос. Идёте за толпой или против?"])
+        return rng.choice(opts)
+    if value <= 45:
         opts = (["Fear like this is usually where people sell, or where they start buying? 🤔",
-                 "Is $BTC a buy when everyone is scared, or does the pain continue?"] if en else
+                 "Is $BTC a buy when everyone is scared, or does the pain continue?",
+                 "When the crowd is fearful, do you wait for confirmation or start scaling in?"] if en else
                 ["Страх на рынке: это момент, когда продают, или когда начинают присматриваться? 🤔",
                  "Когда все боятся, $BTC стоит покупать или боль ещё впереди?"])
-    elif value >= 60:
+    elif value >= 55:
         opts = (["When everyone is greedy, are you taking profit or holding on? 🤔",
-                 "Is $BTC overheated here, or is there room to run?"] if en else
+                 "Is $BTC overheated here, or is there room to run?",
+                 "Greed is building. Do you tighten your stops or let it ride?"] if en else
                 ["Когда все жадничают, вы фиксируете прибыль или держите? 🤔",
                  "$BTC здесь перегрет или запас хода ещё есть?"])
     else:
-        opts = (["The market can't decide. Which way breaks first? 👇"] if en else
-                ["Рынок не может определиться. В какую сторону сломается первым? 👇"])
+        opts = (["Sentiment is balanced. Which way breaks first? 👇",
+                 "Neither fear nor greed is in charge right now. What would change your mind?"] if en else
+                ["Настроение сбалансировано. В какую сторону сломается первым? 👇"])
     return rng.choice(opts)
 
 
@@ -90,7 +109,7 @@ def build_fng_text(data: dict, rng=None) -> str:
             diff = v - prev
             lines.append(f"Вчера: {prev}" + (f" ({diff:+d})" if diff else " (без изменений)"))
         disclaimer = post_format.DISCLAIMER
-    return "\n".join(lines) + "\n\n" + _fng_question(v, en, rng) + "\n\n" + disclaimer + "\n\n#BTC #Sentiment"
+    return "\n".join(lines) + "\n\n" + _fng_question(v, en, rng, prev) + "\n\n" + disclaimer + "\n\n#BTC #Sentiment"
 
 
 # ---------------- Анонсы Binance ----------------

@@ -92,3 +92,15 @@ def test_radar_card_renders():
 
 def test_clean_title_drops_dangling_preposition():
     assert nr.clean_title("Binance Will Delist EPIC, QUICK on 2026-10-28") == "Binance Will Delist EPIC, QUICK"
+
+
+def test_fng_question_matches_label_band():
+    import random
+    import event_posts as ep
+    r = random.Random(1)
+    for v in (55, 60, 70):
+        assert "can't decide" not in ep._fng_question(v, True, r) and "balanced" not in ep._fng_question(v, True, r)
+    for v in (46, 50, 54):
+        q = ep._fng_question(v, True, r)
+        assert "fear" not in q.lower().split()[0:1] and ("balanced" in q or "Neither" in q)
+    assert "dropped" in ep._fng_question(55, True, r, 63) or "fell" in ep._fng_question(55, True, r, 63)
