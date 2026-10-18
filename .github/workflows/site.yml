@@ -1,0 +1,40 @@
+name: Project page
+
+# Пересобирает публичную страницу проекта из состояния бота и публикует в ветку gh-pages.
+# Один раз в Settings -> Pages выберите: Source = Deploy from a branch, Branch = gh-pages, / (root).
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: site
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Build page
+        run: python site_builder.py --out /tmp/site
+      - name: Publish to gh-pages
+        run: |
+          git config user.name "site-bot"
+          git config user.email "site-bot@users.noreply.github.com"
+          git checkout --orphan gh-pages
+          git rm -rf . >/dev/null 2>&1 || true
+          cp -r /tmp/site/. .
+          git add -A
+          git commit -m "Update page $(date -u +%F-%H%M)"
+          git push -f origin gh-pages
