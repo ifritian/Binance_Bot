@@ -60,3 +60,14 @@ def test_win_context_line_is_honest_and_included():
     text = post_format.assemble_win_celebration_post("Есть!", rec, line)
     assert line in text
     assert post_format.win_context_line({}) == ""
+
+
+def test_legacy_signal_formats_are_not_scheduled_when_scanner_off(monkeypatch):
+    """Очередь старых сигналов, отчёт точности, разбор неудач и недельная статья
+    не публикуются, пока LEGACY_SCANNER_ENABLED выключен."""
+    import inspect
+    src = inspect.getsource(main.tick)
+    for name in ("try_publish_currency_post", "try_publish_article_post",
+                 "try_publish_accuracy_report", "try_publish_loss_review"):
+        i = src.index(f"{name}()")
+        assert "LEGACY_SCANNER_ENABLED" in src[max(0, i - 80):i], name

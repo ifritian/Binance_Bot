@@ -2048,7 +2048,8 @@ def tick() -> None:
         try_publish_hot_mover()
         try_publish_listing_announcement()
         try_publish_fng_post()
-        try_publish_currency_post()
+        if config.LEGACY_SCANNER_ENABLED:
+            try_publish_currency_post()
         try_publish_hypothetical_post()
         try_publish_opinion_post()
         try_publish_news_take()
@@ -2060,9 +2061,12 @@ def tick() -> None:
         try_publish_telegram_ama()
         try_publish_rebalance_report()
         try_publish_treasury_post()
-        try_publish_article_post()
-        try_publish_accuracy_report()
-        try_publish_loss_review()
+        if config.LEGACY_SCANNER_ENABLED:
+            try_publish_article_post()
+        if config.LEGACY_SCANNER_ENABLED:
+            try_publish_accuracy_report()
+        if config.LEGACY_SCANNER_ENABLED:
+            try_publish_loss_review()
         if config.INDEX_SIGNALS_ENABLED:
             try_publish_index_signal_post()
     except Exception as e:
