@@ -744,6 +744,12 @@ def _record_publish_error(fmt: str, error) -> None:
         logger.warning("Не удалось записать ошибку публикации", exc_info=True)
 
 
+def _post(fmt: str, *args, **kwargs):
+    """binance_publisher.publish_post + метка формата для журнала публикаций."""
+    binance_publisher.tag_format(fmt)
+    return binance_publisher.publish_post(*args, **kwargs)
+
+
 def _coin_chart(ticker: str, days: int, expected_price: float | None = None):
     """График монеты для поста (Square любит картинки). None при любой
     проблеме: пост тогда уходит без картинки."""
@@ -781,7 +787,7 @@ def try_publish_market_digest() -> None:
     for compact in (False, True):
         text = market_digest.build_digest_text(data, slot, compact=compact)
         try:
-            result = binance_publisher.publish_post(text, image_paths=[card] if card else None)
+            result = _post("digest", text, image_paths=[card] if card else None)
             break
         except binance_publisher.PublishError as e:
             logger.error("Ошибка публикации 'Срез рынка' (%s): %s", "короткий" if compact else "полный", e)
@@ -809,7 +815,7 @@ def try_publish_square_question() -> None:
     text, ticker = square_question.pick_question(queue_manager._get("square_question_last"))
     chart = _coin_chart(ticker, 7)
     try:
-        result = binance_publisher.publish_post(text, image_paths=[chart] if chart else None)
+        result = _post("question", text, image_paths=[chart] if chart else None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации вопроса в Square: %s", e)
         _record_publish_error("square_question", e)
@@ -831,6 +837,10 @@ def try_publish_trend_breakout() -> None:
     except Exception:
         logger.exception("Ошибка цикла 'Пробой 20 дней' - пропускаю до следующего тика")
         return
+    try:
+        trend_breakout.maybe_queue_update()
+    except Exception:
+        logger.exception("Не удалось поставить в очередь сводку по открытым идеям")
     evs = trend_breakout.pending_events()
     if not evs:
         return
@@ -838,7 +848,7 @@ def try_publish_trend_breakout() -> None:
         return
     charts = [c for c in (trend_breakout.build_chart(e) for e in evs) if c]
     try:
-        result = binance_publisher.publish_post(trend_breakout.build_group_text(evs), image_paths=charts or None)
+        result = _post("breakout", trend_breakout.build_group_text(evs), image_paths=charts or None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Пробой 20 дней': %s", e)
         _record_publish_error("trend_breakout", e)
@@ -868,7 +878,7 @@ def try_publish_hot_mover() -> None:
     text = market_digest.build_hot_text(ticker, price, pct)
     chart = _coin_chart(ticker, 2, expected_price=price)
     try:
-        result = binance_publisher.publish_post(text, image_paths=[chart] if chart else None)
+        result = _post("hot_mover", text, image_paths=[chart] if chart else None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Горячая монета': %s", e)
         _record_publish_error("hot_mover", e)
@@ -899,7 +909,7 @@ def try_publish_fng_post() -> None:
     text = event_posts.build_fng_text(data)
     card = post_cards.fng_card(data)
     try:
-        result = binance_publisher.publish_post(text, image_paths=[card] if card else None)
+        result = _post("fear_greed", text, image_paths=[card] if card else None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Индекс страха и жадности': %s", e)
         _record_publish_error("fng", e)
@@ -926,7 +936,7 @@ def try_publish_listing_announcement() -> None:
         return
     item = fresh[0]
     try:
-        result = binance_publisher.publish_post(event_posts.build_announcement_text(item))
+        result = _post("listing", event_posts.build_announcement_text(item))
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации 'Анонс Binance': %s", e)
         _record_publish_error("announcement", e)
@@ -1118,7 +1128,7 @@ def try_publish_opinion_post() -> None:
     binance_text = f"{square_text}\n\n{hashtags}"
 
     try:
-        published_result = binance_publisher.publish_post(binance_text)
+        published_result = _post("opinion", binance_text)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации поста-мнения: %s", e)
         queue_manager.set_retry_backoff("opinion", 1)
@@ -1693,7 +1703,7 @@ def try_publish_treasury_post() -> None:
     single_image_path = composition_path or heatmap_path
 
     try:
-        published_result = binance_publisher.publish_post(binance_text, image_paths=image_paths)
+        published_result = _post("altcoin_basket", binance_text, image_paths=image_paths)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации Treasury Index: %s", e)
         queue_manager.set_retry_backoff("treasury", 2)

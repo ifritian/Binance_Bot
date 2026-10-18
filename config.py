@@ -238,6 +238,8 @@ MARKET_DIGEST_HOURS_UTC = sorted({
     int(h) for h in (os.environ.get("MARKET_DIGEST_HOURS_UTC") or "6,17").split(",")
     if h.strip().isdigit() and 0 <= int(h) <= 23
 }) or [6, 17]
+# Строка "подпишись, чтобы получать срезы" в части постов-срезов (про собственный контент, не реклама).
+SQUARE_FOLLOW_LINE_PROBABILITY = float(os.environ.get("SQUARE_FOLLOW_LINE_PROBABILITY") or "0.3")
 # "Горячая монета" (market_digest.pick_hot_mover): пост при сильном движении.
 HOT_MOVER_ENABLED = (os.environ.get("HOT_MOVER_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 HOT_MOVER_MAX_PER_DAY = int(os.environ.get("HOT_MOVER_MAX_PER_DAY") or "2")
@@ -259,6 +261,8 @@ LEGACY_SCANNER_ENABLED = (os.environ.get("LEGACY_SCANNER_ENABLED") or "false").s
 # и о ВСЕХ закрытых сделках (и плюсовых, и минусовых) с живым счётом.
 TREND_BREAKOUT_ENABLED = (os.environ.get("TREND_BREAKOUT_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 TREND_BREAKOUT_MAX_OPEN = int(os.environ.get("TREND_BREAKOUT_MAX_OPEN") or "8")
+# Сводка "открытые идеи" (где стоп, подтянулся ли): не чаще раза в N часов после последнего поста про идеи.
+TREND_BREAKOUT_UPDATE_HOURS = float(os.environ.get("TREND_BREAKOUT_UPDATE_HOURS") or "24")
 # "Индекс страха и жадности" (event_posts.py): раз в сутки в этот час UTC.
 FNG_ENABLED = (os.environ.get("FNG_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 FNG_HOUR_UTC = int(os.environ.get("FNG_HOUR_UTC") or "11")

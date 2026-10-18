@@ -115,7 +115,8 @@ def breakout_signal(closed: list, btc_up: bool):
 
 def new_position(entry: float, atr: float, bar_t: int) -> dict:
     return {"entry": entry, "atr": atr, "peak": entry, "stop": entry - TRAIL_K * atr,
-            "stop0": entry - TRAIL_K * atr, "held": 0, "last_t": bar_t, "entry_t": bar_t}
+            "stop0": entry - TRAIL_K * atr, "held": 0, "last_t": bar_t, "entry_t": bar_t,
+            "last_close": entry, "stop_at_post": entry - TRAIL_K * atr}
 
 
 def advance_position(pos: dict, closed: list):
@@ -126,6 +127,7 @@ def advance_position(pos: dict, closed: list):
             continue
         pos["last_t"] = b.t
         pos["held"] += 1
+        pos["last_close"] = b.c
         if b.l <= pos["stop"]:
             return pos, {"exit": min(pos["stop"], b.o), "reason": "stop", "held": pos["held"]}
         pos["peak"] = max(pos["peak"], b.c)
@@ -208,23 +210,54 @@ def run_cycle(now_ms: int | None = None, fetch=None) -> None:
 MAX_PER_POST = 3  # у Square лимит на число $-тикеров в одном посте
 
 
-def pending_events(now_ts: float | None = None) -> list:
-    """Что публиковать сейчас: до MAX_PER_POST однотипных событий (выходы
-    приоритетнее входов). Просроченные удаляет."""
+UPDATE_EVENT_TTL_S = 8 * 3600
+
+
+def maybe_queue_update(now_ts: float | None = None) -> None:
+    """Раз в TREND_BREAKOUT_UPDATE_HOURS кладёт в очередь пост "открытые идеи":
+    где сейчас каждая, где стоп. Подписчику, который следует идее, нужно знать
+    про подтяжку стопа, а не только про вход и итог. Не создаётся, если уже
+    есть непубликованные вход/итог или идей нет."""
     now_ts = now_ts or time.time()
     st = _state()
-    fresh = []
-    for ev in st["outbox"]:
-        ttl = ENTRY_EVENT_TTL_S if ev["kind"] == "entry" else EXIT_EVENT_TTL_S
-        if now_ts - ev["ts"] <= ttl:
-            fresh.append(ev)
+    open_ideas = {t: p for t, p in st["positions"].items() if p.get("announced")}
+    if not open_ideas:
+        return
+    if any(e["kind"] in ("entry", "exit", "update") for e in st["outbox"]):
+        return
+    if now_ts - st.get("last_idea_post_ts", 0) < config.TREND_BREAKOUT_UPDATE_HOURS * 3600:
+        return
+    items = []
+    for t, p in open_ideas.items():
+        last = p.get("last_close", p["entry"])
+        items.append({
+            "ticker": t, "entry": p["entry"], "last": last,
+            "pnl": (last - p["entry"]) / p["entry"] * 100,
+            "stop": p["stop"], "stop_prev": p.get("stop_at_post", p["stop0"]),
+            "days": p["held"] * 4 / 24,
+        })
+    st["outbox"].append({"kind": "update", "ticker": "*", "ts": now_ts, "items": items})
+    _save(st)
+
+
+def pending_events(now_ts: float | None = None) -> list:
+    """Что публиковать сейчас: до MAX_PER_POST однотипных событий (выходы
+    приоритетнее входов, затем входы, затем сводка по открытым идеям).
+    Просроченные удаляет."""
+    now_ts = now_ts or time.time()
+    st = _state()
+    ttls = {"entry": ENTRY_EVENT_TTL_S, "exit": EXIT_EVENT_TTL_S, "update": UPDATE_EVENT_TTL_S}
+    fresh = [ev for ev in st["outbox"] if now_ts - ev["ts"] <= ttls.get(ev["kind"], EXIT_EVENT_TTL_S)]
     if len(fresh) != len(st["outbox"]):
         st["outbox"] = fresh
         _save(st)
     if not fresh:
         return []
-    kind = "exit" if any(e["kind"] == "exit" for e in fresh) else "entry"
-    return [e for e in fresh if e["kind"] == kind][:MAX_PER_POST]
+    for kind in ("exit", "entry", "update"):
+        group = [e for e in fresh if e["kind"] == kind]
+        if group:
+            return group[:1] if kind == "update" else group[:MAX_PER_POST]
+    return []
 
 
 def pending_event(now_ts: float | None = None):
@@ -240,6 +273,12 @@ def mark_posted(evs) -> None:
     for e in evs:
         if e["kind"] == "entry" and e["ticker"] in st["positions"]:
             st["positions"][e["ticker"]]["announced"] = True
+        if e["kind"] == "update":
+            for it in e["items"]:
+                if it["ticker"] in st["positions"]:
+                    st["positions"][it["ticker"]]["stop_at_post"] = it["stop"]
+    if evs:
+        st["last_idea_post_ts"] = time.time()  # любой пост про идеи сбрасывает таймер сводки
     _save(st)
 
 
@@ -260,6 +299,8 @@ def _to_candles(bars: list) -> list:
 def build_chart(ev: dict, fetch=None):
     """Картинка к посту: вход (линия входа, стартовый стоп, уровень пробоя) или
     итог (вход/выход). Путь к PNG или None - пост тогда уйдёт без картинки."""
+    if ev["kind"] == "update":
+        return None
     try:
         import chart_generator
         bars = (fetch or fetch_bars)(ev["ticker"])
@@ -342,8 +383,44 @@ def build_text(ev: dict, stats: dict | None = None, lang: str | None = None) -> 
     )
 
 
+def build_update_text(ev: dict, stats: dict | None = None, lang: str | None = None) -> str:
+    """Сводка по открытым идеям: результат до комиссий, где стоп, поднимался ли он."""
+    lang = lang or config.SQUARE_TEMPLATE_LANG
+    stats = stats if stats is not None else live_stats()
+    items = sorted(ev["items"], key=lambda i: abs(i["pnl"]), reverse=True)
+    shown, rest = items[:MAX_PER_POST], len(items) - MAX_PER_POST
+    raised = sum(1 for i in items if i["stop"] > i["stop_prev"] * 1.0005)
+    ru = lang == "ru"
+    if ru:
+        head = f"Открытые идеи: {len(items)} в работе, стоп подтянут у {raised}"
+    else:
+        head = f"Open ideas: {len(items)} running, {raised} with a raised stop"
+    rows = []
+    for i in shown:
+        moved = i["stop"] > i["stop_prev"] * 1.0005
+        if ru:
+            stop = (f"стоп подтянут до {_fmt(i['stop'])} (был {_fmt(i['stop_prev'])})" if moved
+                    else f"стоп без изменений {_fmt(i['stop'])}")
+            rows.append(f"${i['ticker']}: {i['pnl']:+.1f}% от входа до комиссий, {stop}, в позиции {i['days']:.1f} сут.")
+        else:
+            stop = (f"stop raised to {_fmt(i['stop'])} (was {_fmt(i['stop_prev'])})" if moved
+                    else f"stop unchanged at {_fmt(i['stop'])}")
+            rows.append(f"${i['ticker']}: {i['pnl']:+.1f}% since entry before fees, {stop}, day {i['days']:.1f}")
+    if rest > 0:
+        rows.append(f"+{rest} more open" if not ru else f"ещё {rest} в работе")
+    tags = "#" + shown[0]["ticker"] + " #Breakout"
+    rec = record_line(stats, lang)
+    if ru:
+        tail = "Стоп двигается только вверх. Сработал стоп, идея закончена."
+        return f"{head}\n\n" + "\n".join(rows) + f"\n\n{tail}\n\n{rec}\n\nНе финансовый совет. {tags}"
+    tail = "Stops only move up. Once the stop is hit, the idea is over."
+    return f"{head}\n\n" + "\n".join(rows) + f"\n\n{tail}\n\n{rec}\n\nNot financial advice. {tags}"
+
+
 def build_group_text(evs: list, stats: dict | None = None, lang: str | None = None) -> str:
     """Один пост про несколько монет сразу (пробои обычно идут пачкой)."""
+    if evs and evs[0]["kind"] == "update":
+        return build_update_text(evs[0], stats, lang)
     if len(evs) == 1:
         return build_text(evs[0], stats, lang)
     lang = lang or config.SQUARE_TEMPLATE_LANG
