@@ -133,7 +133,12 @@ def build_digest_text(data: dict, slot_hour_utc: int, rng: random.Random | None 
         options.append((_EN_QUESTION_GAINER if en else _QUESTION_GAINER) % data["gainers"][0][0])
     if data["losers"]:
         options.append((_EN_QUESTION_LOSER if en else _QUESTION_LOSER) % data["losers"][0][0])
-    lines += ["", rng.choice(options), "", _EN_DISCLAIMER if en else post_format.DISCLAIMER]
+    lines += ["", rng.choice(options)]
+    if not compact and rng.random() < config.SQUARE_FOLLOW_LINE_PROBABILITY:
+        hours = " and ".join(f"{h:02d}:00" for h in config.MARKET_DIGEST_HOURS_UTC[:2])
+        lines += ["", (f"Follow to get the {hours} UTC snapshots daily." if en
+                       else f"Подпишитесь, чтобы получать срезы рынка в {hours} UTC каждый день.")]
+    lines += ["", _EN_DISCLAIMER if en else post_format.DISCLAIMER]
 
     topic = rng.choice(["#Crypto", "#Market", "#Altcoins"])
     first = data["gainers"][0][0] if data["gainers"] else data["majors"][0][0]

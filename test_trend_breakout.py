@@ -195,3 +195,84 @@ def test_group_text_exit_ru_and_en():
     for lang, marker in (("ru", "Идеи закрыты"), ("en", "Ideas closed")):
         t = tb.build_group_text(evs, {"n": 5, "wins": 2, "avg": -0.1}, lang)
         assert marker in t and "$SOL: +4.2%" in t and "$ADA: -2.5%" in t and "{" not in t
+
+
+# ---------------- сводка "открытые идеи" ----------------
+
+def _announced(sym, entry=100.0, stop_now=None, last=None, held=6):
+    p = tb.new_position(entry, 2.0, T0)
+    p.update({"announced": True, "held": held, "last_close": last if last is not None else entry})
+    if stop_now is not None:
+        p["stop"] = stop_now
+    return sym, p
+
+
+def test_update_needs_announced_idea_and_waits_for_interval():
+    import time
+    now = time.time()
+    tb.maybe_queue_update(now)
+    assert tb._state()["outbox"] == []                      # идей нет
+    st = tb._state()
+    k, p = _announced("SOL")
+    st["positions"][k] = p
+    st["last_idea_post_ts"] = now - 3600                    # недавно уже писали про идеи
+    tb._save(st)
+    tb.maybe_queue_update(now)
+    assert tb._state()["outbox"] == []
+    st = tb._state(); st["last_idea_post_ts"] = now - 25 * 3600; tb._save(st)
+    tb.maybe_queue_update(now)
+    ob = tb._state()["outbox"]
+    assert len(ob) == 1 and ob[0]["kind"] == "update" and ob[0]["items"][0]["ticker"] == "SOL"
+    tb.maybe_queue_update(now + 10)
+    assert len(tb._state()["outbox"]) == 1                   # не дублируется
+
+
+def test_update_not_queued_while_entry_or_exit_pending_and_has_lowest_priority():
+    import time
+    now = time.time()
+    st = tb._state()
+    k, p = _announced("SOL"); st["positions"][k] = p
+    st["outbox"].append({"kind": "entry", "ticker": "ADA", "entry": 1.0, "stop": 0.9, "risk_pct": 10, "ts": now})
+    tb._save(st)
+    tb.maybe_queue_update(now)
+    assert [e["kind"] for e in tb._state()["outbox"]] == ["entry"]
+    st = tb._state()
+    st["outbox"].append({"kind": "update", "ticker": "*", "ts": now, "items": []})
+    tb._save(st)
+    assert tb.pending_events(now)[0]["kind"] == "entry"
+
+
+def test_update_text_shows_raised_and_unchanged_stops_and_rest(monkeypatch):
+    items = [
+        {"ticker": "SOL", "entry": 100.0, "last": 112.0, "pnl": 12.0, "stop": 105.0, "stop_prev": 90.0, "days": 3.5},
+        {"ticker": "ADA", "entry": 1.0, "last": 0.98, "pnl": -2.0, "stop": 0.9, "stop_prev": 0.9, "days": 1.0},
+        {"ticker": "XRP", "entry": 1.0, "last": 1.05, "pnl": 5.0, "stop": 0.95, "stop_prev": 0.9, "days": 2.0},
+        {"ticker": "DOGE", "entry": 1.0, "last": 1.01, "pnl": 1.0, "stop": 0.9, "stop_prev": 0.9, "days": 2.0},
+    ]
+    ev = {"kind": "update", "ticker": "*", "ts": 1, "items": items}
+    stats = {"n": 3, "wins": 1, "avg": -0.2}
+    en = tb.build_group_text([ev], stats, "en")
+    assert en.startswith("Open ideas: 4 running, 2 with a raised stop")
+    assert "$SOL: +12.0% since entry before fees, stop raised to 105 (was 90)" in en
+    assert "stop unchanged at 0.9" in en and "+1 more open" in en
+    assert en.count("$") == 3 and "Stops only move up" in en and "Not financial advice" in en
+    ru = tb.build_group_text([ev], stats, "ru")
+    assert "стоп подтянут до 105 (был 90)" in ru and "ещё 1 в работе" in ru and "{" not in ru
+
+
+def test_mark_posted_update_records_stop_and_resets_timer():
+    import time
+    st = tb._state()
+    k, p = _announced("SOL", stop_now=105.0); st["positions"][k] = p
+    ev = {"kind": "update", "ticker": "*", "ts": 5.0, "items": [{"ticker": "SOL", "stop": 105.0}]}
+    st["outbox"].append(ev); tb._save(st)
+    tb.mark_posted([ev])
+    st = tb._state()
+    assert st["positions"]["SOL"]["stop_at_post"] == 105.0 and st["outbox"] == []
+    assert time.time() - st["last_idea_post_ts"] < 5
+
+
+def test_advance_position_tracks_last_close():
+    bars = [rs.Bar(T0 + tb.BAR_MS * k, 100, 101, 99.5, 100.5 + k, 1e6) for k in range(1, 4)]
+    pos, ex = tb.advance_position(tb.new_position(100.0, 2.0, T0), bars)
+    assert ex is None and pos["last_close"] == bars[-1].c

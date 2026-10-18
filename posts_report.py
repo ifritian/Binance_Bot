@@ -11,4 +11,4 @@ tz = timezone(timedelta(hours=3))
 print(f"Всего записей: {len(log)}")
 for e in log[-40:]:
     t = datetime.fromtimestamp(e["ts"], tz).strftime("%d.%m %H:%M")
-    print(f"{t} | id={e.get('id')} | {'📷' if e.get('img') else '  '} | {e['head']}")
+    print(f"{t} | id={e.get('id')} | {(e.get('fmt') or '?'):<14} | {'📷' if e.get('img') else '  '} | {e['head']}")

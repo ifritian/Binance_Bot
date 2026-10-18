@@ -97,6 +97,7 @@ jobs:
       HYPOTHETICAL_ENABLED: ${{ secrets.HYPOTHETICAL_ENABLED || 'false' }}
       LEGACY_SCANNER_ENABLED: ${{ secrets.LEGACY_SCANNER_ENABLED || 'false' }}
       TREND_BREAKOUT_ENABLED: ${{ secrets.TREND_BREAKOUT_ENABLED || 'true' }}
+      TREND_BREAKOUT_UPDATE_HOURS: ${{ secrets.TREND_BREAKOUT_UPDATE_HOURS || '24' }}
       TREND_BREAKOUT_MAX_OPEN: ${{ secrets.TREND_BREAKOUT_MAX_OPEN || '8' }}
       SQUARE_TEMPLATE_LANG: ${{ secrets.SQUARE_TEMPLATE_LANG || 'en' }}
       FNG_ENABLED: ${{ secrets.FNG_ENABLED || 'true' }}

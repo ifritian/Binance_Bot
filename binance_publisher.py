@@ -159,6 +159,14 @@ def limit_cashtags(text: str, keep: int) -> str:
 
 
 _POST_LOG_MAX = 300
+_NEXT_FORMAT: str | None = None
+
+
+def tag_format(name: str | None) -> None:
+    """Название формата для ближайшей записи журнала (см. main._post). Нужно,
+    чтобы сопоставлять просмотры и реакции из приложения с форматом поста."""
+    global _NEXT_FORMAT
+    _NEXT_FORMAT = name
 
 
 def _log_post(text: str, result: dict, has_image: bool) -> None:
@@ -169,8 +177,11 @@ def _log_post(text: str, result: dict, has_image: bool) -> None:
         import queue_manager
         post_id = result.get("id") if isinstance(result, dict) else None
         log = queue_manager._get("square_post_log", [])
+        global _NEXT_FORMAT
+        fmt, _NEXT_FORMAT = _NEXT_FORMAT, None
         log.append({
             "ts": int(time.time()),
+            "fmt": fmt,
             "id": str(post_id) if post_id is not None else None,
             "head": " ".join(text.split())[:90],
             "len": len(text),
