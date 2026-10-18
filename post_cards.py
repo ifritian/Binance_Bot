@@ -142,3 +142,37 @@ def fng_card(data: dict) -> Path | None:
         logger.exception("Не удалось построить карточку индекса страха и жадности")
         plt.close("all")
         return None
+
+
+_KIND_COLORS = {"delist": "#F6465D", "network": "#F0B90B", "listing": "#0ECB81", "event": "#29ABE2", "news": "#848E9C"}
+
+
+def radar_card(items: list[dict]) -> Path | None:
+    """Карточка "Binance Radar": по строке на объявление, цветная метка типа."""
+    import textwrap
+
+    import news_radar
+    try:
+        n = max(1, len(items))
+        h = 1.5 + 0.95 * n
+        fig = plt.figure(figsize=(8, h), dpi=150)
+        fig.patch.set_facecolor(_BG)
+        fig.text(0.04, 1 - 0.55 / h, "Binance Radar", color=_TEXT, fontsize=19, fontweight="bold", va="center")
+        fig.text(0.96, 1 - 0.55 / h, "official announcements", color=_MUTED, fontsize=10, ha="right", va="center")
+        for k, it in enumerate(items):
+            y = 1 - (1.2 + 0.95 * k) / h
+            color = _KIND_COLORS.get(it["kind"], _MUTED)
+            fig.patches.append(Rectangle((0.04, y - 0.30 / h), 0.012, 0.72 / h, transform=fig.transFigure,
+                                         facecolor=color, edgecolor="none"))
+            fig.text(0.075, y + 0.28 / h, news_radar.LABELS[it["kind"]].upper(), color=color,
+                     fontsize=9, fontweight="bold", va="center")
+            title = "\n".join(textwrap.wrap(news_radar.clean_title(it["title"], 110), 62)[:2])
+            fig.text(0.075, y - 0.05 / h, title, color=_TEXT, fontsize=11.5, va="center", linespacing=1.3)
+        path = _out("radar_card.png")
+        fig.savefig(path, facecolor=_BG)
+        plt.close(fig)
+        return path
+    except Exception:
+        logger.exception("Не удалось построить карточку Binance Radar")
+        plt.close("all")
+        return None

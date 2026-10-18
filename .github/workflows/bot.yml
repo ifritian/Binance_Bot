@@ -102,6 +102,7 @@ jobs:
       SQUARE_TEMPLATE_LANG: ${{ secrets.SQUARE_TEMPLATE_LANG || 'en' }}
       FNG_ENABLED: ${{ secrets.FNG_ENABLED || 'true' }}
       FNG_HOUR_UTC: ${{ secrets.FNG_HOUR_UTC || '11' }}
+      NEWS_RADAR_ENABLED: ${{ secrets.NEWS_RADAR_ENABLED || 'true' }}
       ANNOUNCEMENTS_ENABLED: ${{ secrets.ANNOUNCEMENTS_ENABLED || 'true' }}
       MARKET_DIGEST_ENABLED: ${{ secrets.MARKET_DIGEST_ENABLED || 'true' }}
       MARKET_DIGEST_HOURS_UTC: ${{ secrets.MARKET_DIGEST_HOURS_UTC || '6,17' }}
