@@ -50,6 +50,7 @@ import mini_lesson_generator
 import news_opinion_generator
 import opinion_generator
 import outcome_tracker
+import news_radar
 import post_cards
 import trend_breakout
 import post_format
@@ -917,6 +918,61 @@ def try_publish_fng_post() -> None:
         return
     logger.info("Опубликовано (Индекс страха и жадности %s): %s", data["value"], result)
     queue_manager._set("fng_done", today)
+    queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_news_radar() -> None:
+    """Новости + события Binance: заголовок с ценой за 24ч или сводка объявлений."""
+    if not config.NEWS_RADAR_ENABLED:
+        return
+    if not queue_manager.should_retry_now("news_radar") or not _square_slot_available():
+        return
+    now = time.time()
+    state = queue_manager._get("news_radar_state") or {}
+    seen_codes, seen_news = set(state.get("codes", [])), set(state.get("news", []))
+    news_due = queue_manager.seconds_since_last_post("news_move") >= config.NEWS_MOVE_MIN_INTERVAL_HOURS * 3600
+    radar_due = queue_manager.seconds_since_last_post("binance_radar") >= config.NEWS_RADAR_MIN_INTERVAL_HOURS * 3600
+    if not (news_due or radar_due):
+        return
+    binance = news_radar.fetch_binance(now)
+    queue_manager._set("news_radar_status", {"ts": int(now), "status": news_radar.LAST_STATUS})
+    text = fmt = key = None
+    images, mark_news, mark_codes = [], None, []
+    if news_due:
+        news = [n for n in news_radar.fetch_news(now) if n["id"] not in seen_news]
+        coins = [c for c in dict.fromkeys(filter(None, (news_radar.coin_in_headline(n["title"]) for n in news)))
+                 if coin_whitelist.is_allowed(c)]
+        pick = news_radar.pick_news_move(news, news_radar.fetch_changes(coins), seen_news, config.NEWS_MOVE_MIN_PCT) if coins else None
+        if pick:
+            n, ticker, pct = pick
+            related = next((b for b in binance if ticker in b["tickers"]), None)
+            text, fmt, key, mark_news = news_radar.build_news_text(n, ticker, pct, related), "news_move", "news_move", n["id"]
+            chart = _coin_chart(ticker, 7)
+            images = [chart] if chart else []
+    if text is None and radar_due:
+        picked = news_radar.pick_radar_items(binance, seen_codes)
+        if news_radar.radar_worth_posting(picked):
+            changes = news_radar.fetch_changes([t for i in picked for t in i["tickers"]][:6])
+            text, fmt, key = news_radar.build_radar_text(picked, changes), "binance_radar", "binance_radar"
+            mark_codes = [i["code"] for i in picked]
+            card = post_cards.radar_card(picked)
+            images = [card] if card else []
+    if text is None:
+        queue_manager.set_retry_backoff("news_radar", 1)
+        return
+    try:
+        result = _post(fmt, text, image_paths=images or None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации '%s': %s", fmt, e)
+        _record_publish_error("news_radar", e)
+        queue_manager.set_retry_backoff("news_radar", 1)
+        return
+    logger.info("Опубликовано (%s): %s", fmt, result)
+    if mark_news:
+        seen_news.add(mark_news)
+    seen_codes.update(mark_codes)
+    queue_manager._set("news_radar_state", {"codes": sorted(seen_codes)[-200:], "news": sorted(seen_news)[-200:]})
+    queue_manager.set_last_post_time(key)
     queue_manager.set_last_post_time("square_global")
 
 
@@ -2057,6 +2113,7 @@ def tick() -> None:
         try_publish_square_question()
         try_publish_hot_mover()
         try_publish_listing_announcement()
+        try_publish_news_radar()
         try_publish_fng_post()
         if config.LEGACY_SCANNER_ENABLED:
             try_publish_currency_post()
