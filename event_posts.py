@@ -109,7 +109,10 @@ def build_fng_text(data: dict, rng=None) -> str:
             diff = v - prev
             lines.append(f"Вчера: {prev}" + (f" ({diff:+d})" if diff else " (без изменений)"))
         disclaimer = post_format.DISCLAIMER
-    return "\n".join(lines) + "\n\n" + _fng_question(v, en, rng, prev) + "\n\n" + disclaimer + "\n\n#BTC #Sentiment"
+    body = "\n".join(lines) + "\n\n" + _fng_question(v, en, rng, prev) + "\n\n" + disclaimer
+    # кликабельный тикер ликвидной монеты в каждом посте: по нему идут сделки и комиссия
+    tags = "#Sentiment" if "$BTC" in body else "$BTC #Sentiment"
+    return body + "\n\n" + tags
 
 
 # ---------------- Анонсы Binance ----------------

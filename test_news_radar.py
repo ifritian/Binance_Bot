@@ -104,3 +104,15 @@ def test_fng_question_matches_label_band():
         q = ep._fng_question(v, True, r)
         assert "fear" not in q.lower().split()[0:1] and ("balanced" in q or "Neither" in q)
     assert "dropped" in ep._fng_question(55, True, r, 63) or "fell" in ep._fng_question(55, True, r, 63)
+
+
+def test_every_event_post_carries_a_cashtag():
+    import random
+    import event_posts as ep
+    for v in (20, 50, 80):
+        for seed in range(6):
+            assert "$" in ep.build_fng_text({"value": v, "label": "x", "prev": v}, random.Random(seed))
+    items = [{"code": "a", "title": "Binance Launches X", "ts": 1, "kind": "news", "tickers": []},
+             {"code": "b", "title": "Update Y", "ts": 1, "kind": "news", "tickers": []}]
+    assert "$BNB" in nr.build_radar_text(items, {})
+    assert nr.build_radar_text(items, {}).count("$") == 1
