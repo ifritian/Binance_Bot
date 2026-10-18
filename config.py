@@ -780,3 +780,6 @@ LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED
 
 # Listing Tracker (listing_tracker.py): отчёты через 24ч и 7 дней после листинга.
 LISTING_TRACKER_ENABLED = (os.environ.get("LISTING_TRACKER_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+
+# Мгновенные оповещения Telegram о делистингах и работах с сетями Binance (binance_alerts.py).
+BINANCE_ALERTS_ENABLED = (os.environ.get("BINANCE_ALERTS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
