@@ -73,7 +73,7 @@ def parse_cms(payload: dict, kind: str, now_ts: float, max_age_h: float) -> list
     return out
 
 
-def fetch_binance(now_ts: float, max_age_h: float = 48.0) -> list[dict]:
+def fetch_binance(now_ts: float, max_age_h: float = 96.0) -> list[dict]:
     global LAST_STATUS
     items, ok = [], 0
     for cid, kind in CATALOGS.items():
