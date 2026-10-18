@@ -19,6 +19,7 @@ import base64
 import logging
 import mimetypes
 import random
+import re
 import sys
 import tempfile
 import time
@@ -463,7 +464,8 @@ def _b64_to_tempfile(image_b64: str, content_type: str | None) -> Path:
 
 
 def _schedule_crossposts(
-    post_text: str, telegram_text: str, image_path, ticker: str | None, hook: str | None, signal
+    post_text: str, telegram_text: str, image_path, ticker: str | None, hook: str | None, signal,
+    no_teaser: bool = False,
 ) -> None:
     """Кладёт кроспост в Telegram и в Bluesky в очередь отложенной
     публикации - каждая площадка получает свою НЕЗАВИСИМУЮ случайную
@@ -503,6 +505,7 @@ def _schedule_crossposts(
             "ticker": ticker,
             "hook": hook,
             "signal": asdict(signal) if signal is not None else None,
+            "no_teaser": no_teaser,
         })
         logger.info("Кросспост в Bluesky (%s) отложен на ~%.0f мин", ticker, delay_seconds / 60)
 
@@ -541,7 +544,7 @@ def _publish_scheduled_bluesky(data: dict) -> None:
         )
         bluesky_ref = bluesky_publisher.thread_ref(results[0]) if results else None
     else:
-        if image_bytes and random.random() < config.BLUESKY_TEASER_PROBABILITY:
+        if image_bytes and not data.get("no_teaser") and random.random() < config.BLUESKY_TEASER_PROBABILITY:
             bluesky_text, link_facets = post_format.build_bluesky_teaser(ticker=ticker)
         else:
             bluesky_text, link_facets = post_format.build_bluesky_post(text, ticker=ticker)
@@ -748,7 +751,22 @@ def _record_publish_error(fmt: str, error) -> None:
 def _post(fmt: str, *args, **kwargs):
     """binance_publisher.publish_post + метка формата для журнала публикаций."""
     binance_publisher.tag_format(fmt)
-    return binance_publisher.publish_post(*args, **kwargs)
+    result = binance_publisher.publish_post(*args, **kwargs)
+    _maybe_crosspost(fmt, args[0] if args else kwargs.get("text", ""), kwargs.get("image_paths"))
+    return result
+
+
+def _maybe_crosspost(fmt: str, text: str, image_paths) -> None:
+    """Дублирует пост нового формата в Telegram и Bluesky (с обычной случайной
+    задержкой). Любая ошибка здесь не должна ломать уже состоявшуюся публикацию."""
+    if fmt not in config.CROSSPOST_FORMATS or not text:
+        return
+    try:
+        image = image_paths[0] if image_paths else None
+        tickers = re.findall(r"\$([A-Z0-9]{2,10})", text)
+        _schedule_crossposts(text, text, image, tickers[0] if tickers else None, None, None, no_teaser=True)
+    except Exception:
+        logger.exception("Не удалось поставить кросспост формата %s в очередь", fmt)
 
 
 def _coin_chart(ticker: str, days: int, expected_price: float | None = None):
@@ -1367,6 +1385,8 @@ def try_publish_hot_take() -> None:
     заточенный под механику конкретно этой площадки - см. docstring
     hot_take_generator.py). Если Bluesky не настроен - даже не пытаемся
     генерировать текст, незачем тратить вызов LLM впустую."""
+    if not config.LEGACY_CHANNEL_FORMATS_ENABLED:
+        return
     if not bluesky_publisher.is_configured():
         return
 
@@ -1432,6 +1452,8 @@ def try_publish_mini_lesson() -> None:
     образовательный пост, не про конкретный актив сейчас), поэтому нет
     проверки allowed_numbers - только validate_mini_lesson (дисклеймер/
     длина/отсутствие заявлений о конкретной цене)."""
+    if not config.LEGACY_CHANNEL_FORMATS_ENABLED:
+        return
     if not bluesky_publisher.is_configured():
         return
 
@@ -1493,6 +1515,8 @@ def try_publish_audience_question() -> None:
     в Bluesky. Без обращения к LLM (см. docstring
     audience_question_generator.py) - вопрос это статический,
     заранее написанный текст, генерировать и валидировать нечего."""
+    if not config.LEGACY_CHANNEL_FORMATS_ENABLED:
+        return
     if not bluesky_publisher.is_configured():
         return
 
@@ -1530,6 +1554,8 @@ def try_publish_telegram_glossary() -> None:
     форматов выше) - минуя Binance Square/Bluesky целиком. Темы идут
     строго последовательно (queue_manager.get_glossary_index), а не
     случайно - см. docstring telegram_glossary.py."""
+    if not config.LEGACY_CHANNEL_FORMATS_ENABLED:
+        return
     if not telegram_publisher.is_configured():
         return
 
@@ -1657,6 +1683,8 @@ def try_publish_rebalance_report() -> None:
     rebalance_advisor.py). Если кандидатов нет - отчёт не публикуется
     вообще (это нормальный, самый частый исход, не ошибка). Публикует
     ТОЛЬКО в Telegram."""
+    if not config.LEGACY_CHANNEL_FORMATS_ENABLED:
+        return
     if not telegram_publisher.is_configured():
         return
 

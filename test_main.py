@@ -24,6 +24,7 @@ def _isolated_db(tmp_path, monkeypatch):
     main._square_slot_available) - первый ключ состояния, общий сразу
     для нескольких форматов, а не изолированный по имени формата."""
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "test_bot_state.db")
+    monkeypatch.setattr(config, "LEGACY_CHANNEL_FORMATS_ENABLED", True)  # старые форматы тестируются включёнными
 
 
 class _FakeResponse:
@@ -995,3 +996,49 @@ if __name__ == "__main__":
 
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
+
+def test_legacy_channel_formats_off_by_default_gate(monkeypatch):
+    monkeypatch.setattr(config, "LEGACY_CHANNEL_FORMATS_ENABLED", False)
+    called = []
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: called.append("tg") or True)
+    monkeypatch.setattr(main.bluesky_publisher, "is_configured", lambda: called.append("bs") or True)
+    for fn in (main.try_publish_hot_take, main.try_publish_mini_lesson, main.try_publish_audience_question,
+               main.try_publish_telegram_glossary, main.try_publish_rebalance_report):
+        fn()
+    assert called == []
+
+
+def test_post_crossposts_new_formats_with_ticker_and_no_teaser(monkeypatch):
+    sched = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda *a, **k: {"id": 1})
+    monkeypatch.setattr(main.binance_publisher, "tag_format", lambda f: None)
+    monkeypatch.setattr(main, "_schedule_crossposts", lambda *a, **k: sched.append((a, k)))
+    main._post("fear_greed", "Index 53 $BTC #Sentiment", image_paths=["/tmp/x.png"])
+    assert sched and sched[0][0][3] == "BTC" and sched[0][1]["no_teaser"] is True and sched[0][0][2] == "/tmp/x.png"
+    sched.clear()
+    main._post("opinion", "text")  # опинион кросспостит сам
+    main._post("question", "text")
+    assert sched == []
+
+
+def test_crosspost_failure_never_breaks_publication(monkeypatch):
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda *a, **k: {"id": 7})
+    monkeypatch.setattr(main.binance_publisher, "tag_format", lambda f: None)
+    def boom(*a, **k): raise RuntimeError("x")
+    monkeypatch.setattr(main, "_schedule_crossposts", boom)
+    assert main._post("digest", "hi $BTC") == {"id": 7}
+
+
+def test_channel_language_is_english_by_default():
+    import post_format, telegram_engagement
+    assert post_format.REFERRAL_LINE.startswith("Open a Binance account")
+    assert all(not any("а" <= ch.lower() <= "я" for ch in p["question"]) for p in telegram_engagement.POLLS)
+
+
+def test_bluesky_truncation_prefers_line_boundary():
+    import post_format
+    text = "Line one is here\n\n" + "Second line with plenty of words " * 12 + "\n\nLast line"
+    body, _ = post_format.build_bluesky_post(text, ticker="BTC")
+    assert len(body) <= post_format.BLUESKY_CHAR_LIMIT
+    assert "Line one is here" in body
