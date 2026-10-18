@@ -198,9 +198,10 @@ def build_radar_text(items: list[dict], changes: dict[str, float] | None = None)
             cash += mark.startswith("$")
             line += f" ({mark} {_signed(changes[t])} in 24h)"
         lines.append(line)
-    return ("Binance Radar: what changed on the exchange\n\n" + "\n".join(lines) +
+    body = ("Binance Radar: what changed on the exchange\n\n" + "\n".join(lines) +
             "\n\nOfficial Binance announcements, shown as published. Not financial advice."
-            "\nWhich of these affects you most?\n\n#Binance #Crypto")
+            "\nWhich of these affects you most?")
+    return body + ("\n\n#Binance #Crypto" if "$" in body else "\n\n$BNB #Binance #Crypto")
 
 
 def build_news_text(news: dict, ticker: str, pct: float, binance_item: dict | None = None) -> str:
