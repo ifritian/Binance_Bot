@@ -1,0 +1,28 @@
+name: Probe stats
+on:
+  workflow_dispatch:
+  push:
+    branches: [probe/stats]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - run: python probe_stats.py | tee probe_stats.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish
+        run: |
+          git config user.name "research-bot"
+          git config user.email "research-bot@users.noreply.github.com"
+          cp probe_stats.md /tmp/probe_stats.md
+          git checkout --orphan probe-stats-results
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/probe_stats.md probe_stats.md
+          git add probe_stats.md
+          git commit -m "Probe stats $(date -u +%F)"
+          git push -f origin probe-stats-results
