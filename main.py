@@ -1351,8 +1351,8 @@ def try_publish_news_take() -> None:
     binance_text = f"{post_text}\n\n{hashtags}"
 
     try:
-        published_result = binance_publisher.publish_post(
-            binance_text, image_paths=[image_path] if image_path else None,
+        published_result = _post(
+            "news_take", binance_text, image_paths=[image_path] if image_path else None,
         )
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации новостного поста: %s", e)
