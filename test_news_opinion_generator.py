@@ -21,6 +21,7 @@ def _isolated_db(tmp_path, monkeypatch):
     """Каждый тест пишет в свой временный sqlite-файл, а не в реальный
     bot_state.db рядом с кодом."""
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "test_bot_state.db")
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "ru")  # старые тесты проверяют русский путь
 
 
 def test_is_news_window_open_true_when_never_posted():
@@ -173,3 +174,20 @@ def test_generate_news_take_works_without_article_url(monkeypatch):
     assert result is not None
     text, post_id, image_path = result
     assert image_path is None
+
+
+def test_generate_news_take_english_uses_english_prompt_and_disclaimer(monkeypatch):
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
+    fake_post = news_channel_reader.NewsPost(post_id=5, text="Ledger признал уязвимость в кошельках " * 6,
+                                             article_url="https://example.com/x")
+    monkeypatch.setattr(news_channel_reader, "fetch_recent_posts", lambda limit=10: [fake_post])
+    seen = {}
+
+    def fake_groq(system, user, **kw):
+        seen["system"], seen["user"] = system, user
+        return "Ledger admits some hardware wallets can carry a flaw, and that hits trust more than price. Do you still hold coins on a device?"
+    monkeypatch.setattr(news_opinion_generator, "call_groq", fake_groq)
+    monkeypatch.setattr(news_opinion_generator.chart_generator, "generate_chart_image", lambda *a, **k: None)
+    text, post_id, _ = news_opinion_generator.generate_news_take()
+    assert "write your post in English" in seen["system"] and seen["user"].startswith("News item:")
+    assert text.endswith("Not financial advice.") and "Не финансовый" not in text and post_id == 5

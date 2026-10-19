@@ -37,6 +37,7 @@ import queue_manager
 import voice_guidelines
 import voice_memory
 from groq_client import call_groq
+import post_format
 from post_format import DISCLAIMER
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,26 @@ _SYSTEM_PROMPT = """Ты - независимый криптотрейдер и 
 пересказ конкретного источника. Не добавляй сам никакой дисклеймер - он
 будет добавлен отдельно после твоего текста. Отвечай только текстом
 поста, без пояснений и без кавычек.""" + voice_guidelines.STYLE_DIRECTIVE
+
+
+_SYSTEM_PROMPT_EN = """You are an independent crypto trader and analyst who occasionally comments on fresh
+industry news on your blog. You are given the text of a news item from a third-party outlet (it may be
+in another language; write your post in English).
+
+The post has exactly two parts:
+1. First sentence: say in your own words what happened. A concrete fact, not a hint at a topic. A reader
+   who has not seen the news must understand it from this sentence alone.
+2. Then 2-4 sentences with your own opinion: why it matters or does not, how it could affect the market,
+   whether you agree with what is happening.
+
+Conversational tone, no corporate language. Sound current: a first reaction to something that just
+happened, not a recap of old news. Do not invent when it happened.
+
+CRITICAL: retell the substance in your own words and do not copy phrases from the source.
+FORBIDDEN: entry/stop/target levels and direct calls to buy or sell. This is commentary, not a signal.
+Do not mention any exchange unless the exchange itself is the subject, and then stay neutral. Do not name
+the outlet or channel the news came from. Do not add a disclaimer, it is added separately.
+Reply with the post text only, no explanations, no quotes.""" + voice_guidelines.style_directive()
 
 
 # Названия монет (по началу слова, чтобы ловить падежи) и тикеры (ТОЛЬКО
@@ -182,10 +203,10 @@ def _has_verbatim_overlap(generated_text: str, source_text: str, min_words: int 
     return False
 
 
-def validate_news_take_text(text: str, source_text: str) -> tuple[bool, str]:
+def validate_news_take_text(text: str, source_text: str, disclaimer: str = DISCLAIMER) -> tuple[bool, str]:
     """Дисклеймер на месте, без ИИ-штампов, и без дословного копирования
     источника (см. _has_verbatim_overlap)."""
-    if DISCLAIMER.lower() not in text.lower():
+    if disclaimer.lower() not in text.lower():
         return False, "В тексте отсутствует дисклеймер"
 
     cliche_ok, found = cliche_filter.check_cliches(text)
@@ -208,22 +229,26 @@ def generate_news_take() -> Optional[tuple[str, int, Optional[Path]]]:
         logger.info("Нет новых непрочитанных постов в %s - пропускаю новостной формат", news_channel_reader.NEWS_CHANNEL)
         return None
 
+    en = config.SQUARE_TEMPLATE_LANG != "ru"
+    disclaimer = post_format.DISCLAIMER_EN if en else DISCLAIMER
     user_prompt = (
-        f"Новость:\n{news_post.text}\n"
-        f"{voice_memory.anti_repeat_block()}\n\n"
-        "Напиши своё авторское мнение об этой новости."
+        (f"News item:\n{news_post.text}\n{voice_memory.anti_repeat_block()}\n\nWrite your own take on this news.")
+        if en else
+        (f"Новость:\n{news_post.text}\n"
+         f"{voice_memory.anti_repeat_block()}\n\n"
+         "Напиши своё авторское мнение об этой новости.")
     )
 
-    hook = call_groq(_SYSTEM_PROMPT, user_prompt, max_tokens=450,
+    hook = call_groq(_SYSTEM_PROMPT_EN if en else _SYSTEM_PROMPT, user_prompt, max_tokens=450,
                       temperature=0.9, model=config.GROQ_MODEL_SECONDARY)
 
     if len(hook.strip()) < 10:
         logger.warning("Хук новостного поста пустой или слишком короткий (%r) - пропускаю окно", hook)
         return None
 
-    text = f"{hook.strip()}\n\n{DISCLAIMER}"
+    text = f"{hook.strip()}\n\n{disclaimer}"
 
-    ok, reason = validate_news_take_text(text, news_post.text)
+    ok, reason = validate_news_take_text(text, news_post.text, disclaimer)
     if not ok:
         logger.warning("Новостной пост не прошёл проверку, пропускаю окно: %s", reason)
         return None
@@ -235,7 +260,7 @@ def generate_news_take() -> Optional[tuple[str, int, Optional[Path]]]:
     tickers = detect_tickers(hook)
     if tickers:
         cashtags = " ".join(f"${t}" for t in tickers)
-        text = f"{hook.strip()}\n\n{cashtags}\n\n{DISCLAIMER}"
+        text = f"{hook.strip()}\n\n{cashtags}\n\n{disclaimer}"
         try:
             image_path = chart_generator.generate_chart_image(tickers[0], days=2)
         except Exception as e:
