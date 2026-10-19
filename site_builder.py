@@ -65,7 +65,7 @@ def collect() -> dict:
     tb = g("trend_breakout_state") or {}
     lt = g("listing_tracker_state") or {}
     return {
-        "snapshots": g("treasury_snapshots") or [],
+        "snapshots": __import__("basket_tracker").series(),
         "closed": tb.get("closed", []),
         "open": tb.get("positions", {}),
         "listings": lt.get("history", []),
