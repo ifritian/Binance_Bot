@@ -789,3 +789,6 @@ PROJECT_NAME = (os.environ.get("PROJECT_NAME") or "Market Radar").strip()
 # Недельный обзор (weekly_brief.py): воскресенье вечером UTC.
 WEEKLY_BRIEF_ENABLED = (os.environ.get("WEEKLY_BRIEF_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 WEEKLY_BRIEF_HOUR_UTC = int(os.environ.get("WEEKLY_BRIEF_HOUR_UTC") or 17)
+
+# Куда вести читателей со страницы проекта (необязательно): профиль Binance Square.
+SQUARE_PROFILE_URL = (os.environ.get("SQUARE_PROFILE_URL") or "").strip()
