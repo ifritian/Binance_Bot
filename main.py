@@ -51,6 +51,7 @@ import mini_lesson_generator
 import news_opinion_generator
 import opinion_generator
 import outcome_tracker
+import basket_tracker
 import binance_alerts
 import listing_tracker
 import news_radar
@@ -1025,6 +1026,14 @@ def try_publish_weekly_brief() -> None:
     logger.info("Опубликовано (недельный обзор %s): %s", week, result)
     queue_manager._set("weekly_brief_done", week)
     queue_manager.set_last_post_time("square_global")
+
+
+def try_track_basket() -> None:
+    """Раз в 6 часов дописывает точку в ряд "корзина против BTC/ETH" для страницы и обзора."""
+    try:
+        basket_tracker.tick(time.time())
+    except Exception:
+        logger.exception("Не удалось обновить ряд корзины")
 
 
 def try_publish_binance_alerts() -> None:
@@ -2219,6 +2228,7 @@ def tick() -> None:
         try_publish_listing_announcement()
         try_publish_listing_report()
         try_publish_binance_alerts()
+        try_track_basket()
         try_publish_weekly_brief()
         try_publish_news_radar()
         try_publish_fng_post()

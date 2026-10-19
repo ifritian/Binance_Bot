@@ -8,6 +8,7 @@ import time
 
 import requests
 
+import basket_tracker
 import coin_whitelist
 import news_radar
 import queue_manager
@@ -85,7 +86,7 @@ def collect(now_ts: float, symbols: list | None = None, fetch_changes=fetch_week
         "period": time.strftime("%b %d", time.gmtime(now_ts - 7 * DAY)) + " to " + time.strftime("%b %d", time.gmtime(now_ts)),
         "btc": core.get("BTC"), "eth": core.get("ETH"),
         "best": ranked[:4], "worst": [r for r in ranked[::-1] if r[1] < 0][:4],
-        "basket_info": basket_week(queue_manager._get("treasury_snapshots") or [], now_ts),
+        "basket_info": basket_week(basket_tracker.series(), now_ts),
         "fng": fetch_fng(),
         "ideas": ideas_week(tb.get("closed", []), tb.get("positions", {}), now_ts),
         "binance": binance_week(fetch_binance(now_ts, 7 * 24)),
