@@ -19,11 +19,11 @@ from pathlib import Path
 import config
 import queue_manager
 
-PROJECT = "Market Radar"
+PROJECT = config.PROJECT_NAME
 SQUARE_POST_URL = "https://www.binance.com/en/square/post/{id}"
 FMT_LABELS = {"digest": "Market snapshot", "fear_greed": "Fear & Greed", "breakout": "Trend idea",
               "hot_mover": "Hot mover", "binance_radar": "Binance Radar", "news_move": "News + price",
-              "listing": "New listing", "listing_report": "Listing report", "altcoin_basket": "Altcoin basket",
+              "listing": "New listing", "listing_report": "Listing report", "altcoin_basket": "Altcoin basket", "weekly_brief": "Weekly review",
               "question": "Question", "opinion": "Opinion"}
 
 

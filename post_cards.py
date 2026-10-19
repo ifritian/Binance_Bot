@@ -27,6 +27,12 @@ _MUTED = cg._AXIS_TEXT_COLOR
 _GRID = cg._GRID_COLOR
 
 
+def _save(fig, path) -> None:
+    """Сохраняет карточку с единым фирменным знаком проекта в правом нижнем углу."""
+    fig.text(0.965, 0.018, config.PROJECT_NAME, color=_MUTED, fontsize=8, ha="right", va="bottom", alpha=0.8)
+    fig.savefig(path, facecolor=_BG)
+
+
 def _out(name: str) -> Path:
     cg._CHARTS_DIR.mkdir(exist_ok=True)
     return cg._CHARTS_DIR / name
@@ -88,7 +94,7 @@ def digest_card(data: dict, slot_hour_utc: int) -> Path | None:
             y += 1.8
 
         path = _out("digest_card.png")
-        fig.savefig(path, facecolor=_BG)
+        _save(fig, path)
         plt.close(fig)
         return path
     except Exception:
@@ -135,7 +141,7 @@ def fng_card(data: dict) -> Path | None:
             sub += f"   |   yesterday {data['prev']} ({v - data['prev']:+d})"
         fig.text(0.5, 0.86, sub, color=_MUTED, fontsize=11, ha="center", va="center")
         path = _out("fng_card.png")
-        fig.savefig(path, facecolor=_BG)
+        _save(fig, path)
         plt.close(fig)
         return path
     except Exception:
@@ -169,7 +175,7 @@ def radar_card(items: list[dict]) -> Path | None:
             title = "\n".join(textwrap.wrap(news_radar.clean_title(it["title"], 110), 62)[:2])
             fig.text(0.075, y - 0.05 / h, title, color=_TEXT, fontsize=11.5, va="center", linespacing=1.3)
         path = _out("radar_card.png")
-        fig.savefig(path, facecolor=_BG)
+        _save(fig, path)
         plt.close(fig)
         return path
     except Exception:
@@ -209,10 +215,58 @@ def listing_card(ev: dict) -> Path | None:
         vol_txt = f"{vol / 1e9:.1f}B USDT" if vol >= 1e9 else (f"{vol / 1e6:.1f}M USDT" if vol >= 1e6 else f"{vol / 1e3:.0f}K USDT")
         fig.text(0.05, 0.09, f"Range {low} to {high}    |    Volume {vol_txt}", color=_TEXT, fontsize=11, va="center")
         path = _out("listing_card.png")
-        fig.savefig(path, facecolor=_BG)
+        _save(fig, path)
         plt.close(fig)
         return path
     except Exception:
         logger.exception("Не удалось построить карточку листинга")
+        plt.close("all")
+        return None
+
+
+def weekly_card(data: dict) -> Path | None:
+    """Карточка недельного обзора: BTC/ETH/корзина сверху, ниже лидеры и аутсайдеры недели."""
+    try:
+        best, worst = data["best"][:4], data["worst"][:4]
+        sections = [("Best of the week", _UP, best), ("Weakest of the week", _DOWN, worst)]
+        sections = [s for s in sections if s[2]]
+        rows = sum(len(s[2]) for s in sections)
+        max_abs = max([abs(p) for _t, p in sum([s[2] for s in sections], [])] or [1.0])
+        height_units = 40 + len(sections) * 6.0 + rows * 4.6 + 3
+        fig = plt.figure(figsize=(8, height_units * 0.08), dpi=150)
+        fig.patch.set_facecolor(_BG)
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, height_units)
+        ax.invert_yaxis()
+        ax.axis("off")
+        ax.text(5, 7, "Week in review", color=_TEXT, fontsize=17, fontweight="bold", va="center")
+        ax.text(5, 12.5, data["period"], color=_MUTED, fontsize=10, va="center")
+        tiles = [(n, v) for n, v in (("BTC", data.get("btc")), ("ETH", data.get("eth")), ("Basket", data.get("basket"))) if v is not None]
+        w = 90 / max(len(tiles), 1) - 2
+        x = 5
+        for name, pct in tiles:
+            color = _UP if pct >= 0 else _DOWN
+            ax.add_patch(Rectangle((x, 17), w, 14, facecolor="#12171D", edgecolor=_GRID, linewidth=1))
+            ax.text(x + 2.5, 21.5, name, color=_MUTED, fontsize=10, va="center")
+            ax.text(x + 2.5, 27, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=15, fontweight="bold", va="center")
+            x += w + 3
+        y = 38
+        for name, color, items in sections:
+            ax.text(5, y, name, color=color, fontsize=11, fontweight="bold", va="center")
+            y += 4.2
+            for t, pct in items:
+                ax.text(5, y, f"${t}", color=_TEXT, fontsize=11, va="center")
+                bw = max(abs(pct) / max_abs * 52, 1.5)
+                ax.add_patch(Rectangle((30, y - 1.5), bw, 3, facecolor=color, alpha=0.85, linewidth=0))
+                ax.text(95, y, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=11, fontweight="bold", ha="right", va="center")
+                y += 4.6
+            y += 1.8
+        path = _out("weekly_card.png")
+        _save(fig, path)
+        plt.close(fig)
+        return path
+    except Exception:
+        logger.exception("Не удалось построить карточку недельного обзора")
         plt.close("all")
         return None

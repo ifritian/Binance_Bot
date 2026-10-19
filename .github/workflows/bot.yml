@@ -106,6 +106,7 @@ jobs:
       LEGACY_CHANNEL_FORMATS_ENABLED: ${{ secrets.LEGACY_CHANNEL_FORMATS_ENABLED || 'false' }}
       LISTING_TRACKER_ENABLED: ${{ secrets.LISTING_TRACKER_ENABLED || 'true' }}
       BINANCE_ALERTS_ENABLED: ${{ secrets.BINANCE_ALERTS_ENABLED || 'true' }}
+      WEEKLY_BRIEF_ENABLED: ${{ secrets.WEEKLY_BRIEF_ENABLED || 'true' }}
       NEWS_RADAR_ENABLED: ${{ secrets.NEWS_RADAR_ENABLED || 'true' }}
       ANNOUNCEMENTS_ENABLED: ${{ secrets.ANNOUNCEMENTS_ENABLED || 'true' }}
       MARKET_DIGEST_ENABLED: ${{ secrets.MARKET_DIGEST_ENABLED || 'true' }}
