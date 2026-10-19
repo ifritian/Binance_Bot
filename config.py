@@ -774,7 +774,7 @@ NEWS_RADAR_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_RADAR_MIN_INTERVAL_HO
 
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
 CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
-                     "digest,fear_greed,breakout,hot_mover,binance_radar,news_move,listing,listing_report").split(",") if x.strip()}
+                     "digest,fear_greed,breakout,hot_mover,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
 # Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
 LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 
@@ -783,3 +783,9 @@ LISTING_TRACKER_ENABLED = (os.environ.get("LISTING_TRACKER_ENABLED") or "true").
 
 # Мгновенные оповещения Telegram о делистингах и работах с сетями Binance (binance_alerts.py).
 BINANCE_ALERTS_ENABLED = (os.environ.get("BINANCE_ALERTS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+
+# Название проекта: на карточках, на публичной странице.
+PROJECT_NAME = (os.environ.get("PROJECT_NAME") or "Market Radar").strip()
+# Недельный обзор (weekly_brief.py): воскресенье вечером UTC.
+WEEKLY_BRIEF_ENABLED = (os.environ.get("WEEKLY_BRIEF_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+WEEKLY_BRIEF_HOUR_UTC = int(os.environ.get("WEEKLY_BRIEF_HOUR_UTC") or 17)

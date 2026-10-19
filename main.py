@@ -55,6 +55,7 @@ import binance_alerts
 import listing_tracker
 import news_radar
 import post_cards
+import weekly_brief
 import trend_breakout
 import post_format
 import queue_manager
@@ -993,6 +994,36 @@ def try_publish_news_radar() -> None:
     seen_codes.update(mark_codes)
     queue_manager._set("news_radar_state", {"codes": sorted(seen_codes)[-200:], "news": sorted(seen_news)[-200:]})
     queue_manager.set_last_post_time(key)
+    queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_weekly_brief() -> None:
+    """Недельный обзор: воскресенье вечером (UTC), раз в неделю."""
+    if not config.WEEKLY_BRIEF_ENABLED:
+        return
+    now = event_posts.now_utc()
+    if now.weekday() != 6 or now.hour < config.WEEKLY_BRIEF_HOUR_UTC:
+        return
+    week = now.strftime("%G-W%V")
+    if queue_manager._get("weekly_brief_done") == week:
+        return
+    if not queue_manager.should_retry_now("weekly_brief") or not _square_slot_available():
+        return
+    d = weekly_brief.collect(time.time())
+    if not weekly_brief.enough_data(d):
+        queue_manager.set_retry_backoff("weekly_brief", 1)
+        return
+    text = weekly_brief.build_text(d)
+    card = post_cards.weekly_card(d)
+    try:
+        result = _post("weekly_brief", text, image_paths=[card] if card else None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации недельного обзора: %s", e)
+        _record_publish_error("weekly_brief", e)
+        queue_manager.set_retry_backoff("weekly_brief", 1)
+        return
+    logger.info("Опубликовано (недельный обзор %s): %s", week, result)
+    queue_manager._set("weekly_brief_done", week)
     queue_manager.set_last_post_time("square_global")
 
 
@@ -2188,6 +2219,7 @@ def tick() -> None:
         try_publish_listing_announcement()
         try_publish_listing_report()
         try_publish_binance_alerts()
+        try_publish_weekly_brief()
         try_publish_news_radar()
         try_publish_fng_post()
         if config.LEGACY_SCANNER_ENABLED:
