@@ -237,3 +237,21 @@ def test_english_fallback_hook(monkeypatch):
     monkeypatch.setattr(opinion_generator, "calc_theme_stats", lambda theme: _fake_single_stats(-2.11))
     text, _, _ = opinion_generator.generate_opinion_post("BTC")
     assert "-2.11% in 2 days. Continuation or pullback?" in text
+
+
+def test_is_significant_gate():
+    flat = {"single": {"pct": 0.18, "amplitude_pct": 4.32, "current_price": 1.0}}
+    move = {"single": {"pct": -2.5, "amplitude_pct": 4.0, "current_price": 1.0}}
+    wild = {"single": {"pct": 0.3, "amplitude_pct": 6.0, "current_price": 1.0}}
+    assert not opinion_generator.is_significant(flat)
+    assert opinion_generator.is_significant(move)
+    assert opinion_generator.is_significant(wild)
+    assert not opinion_generator.is_significant({"breakdown": {"BTC": 0.2, "ETH": -0.4}, "avg_pct": -0.1})
+    assert opinion_generator.is_significant({"breakdown": {"BTC": 0.2, "SOL": 3.5}, "avg_pct": 1.0})
+
+
+def test_generate_opinion_post_skips_flat_market(monkeypatch):
+    flat = {"single": {"pct": 0.1, "amplitude_pct": 1.0, "current_price": 1.0}}
+    monkeypatch.setattr(opinion_generator, "calc_theme_stats", lambda theme: flat)
+    monkeypatch.setattr(opinion_generator, "call_groq", lambda *a, **k: pytest.fail("LLM must not be called"))
+    assert opinion_generator.generate_opinion_post("XRP") is None

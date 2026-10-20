@@ -1244,11 +1244,22 @@ def try_publish_opinion_post() -> None:
 
     logger.info("Окно публикации (мнение) открыто - генерирую пост")
 
-    theme = opinion_generator.pick_theme(queue_manager.get_last_opinion_theme())
     hook_mode = post_format.pick_hook_mode(queue_manager.get_last_hook_mode())
-
+    theme = None
+    result = None
+    tried: list = []
+    last_theme = queue_manager.get_last_opinion_theme()
     try:
-        result = opinion_generator.generate_opinion_post(theme, hook_mode=hook_mode)
+        # до 4 разных тем: берём первую, где движение достаточно заметное
+        for _ in range(4):
+            cand = opinion_generator.pick_theme(last_theme)
+            if cand in tried:
+                continue
+            tried.append(cand)
+            result = opinion_generator.generate_opinion_post(cand, hook_mode=hook_mode)
+            if result is not None:
+                theme = cand
+                break
     except groq_client.GroqRateLimited as e:
         backoff_hours = max(e.retry_after_seconds / 3600, 5 / 60)
         logger.warning("Groq rate limit на посте-мнении - жду %.1fч перед следующей попыткой", backoff_hours)
@@ -1260,8 +1271,8 @@ def try_publish_opinion_post() -> None:
         return
 
     if result is None:
-        logger.warning("Не удалось получить данные для темы %s - пропускаю до следующего окна", theme)
-        queue_manager.set_retry_backoff("opinion", 1)
+        logger.warning("Нет темы с заметным движением (пробовал %s) - пропускаю до следующего окна", tried)
+        queue_manager.set_retry_backoff("opinion", 2)
         return
 
     post_text, allowed_numbers, headline_pct = result
