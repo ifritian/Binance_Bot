@@ -889,11 +889,12 @@ def _mover_setup_chart(setup: dict):
         bars = mover_setups.fetch_klines(setup["ticker"], "1h", 72)
         if len(bars) < 20:
             return None
-        candles = [{"open_time": t, "open": o, "high": h, "low": l, "close": c, "volume": 0.0}
-                   for t, o, h, l, c in bars]
+        candles = [{"open_time": b[0], "open": b[1], "high": b[2], "low": b[3], "close": b[4],
+                    "volume": b[5] if len(b) > 5 else 0.0} for b in bars]
         return chart_generator.generate_trade_chart(
             setup["ticker"], candles, entry=setup["entry"], stop=setup["stop"], target=setup["target"],
-            title=f"Momentum {setup['side']} idea", suffix="_mover", tf_label="1h")
+            title=f"Momentum {setup['side']} idea", suffix="_mover", tf_label="1h",
+            sketch_side=setup["side"])
     except Exception:
         logger.exception("Не удалось построить график сетапа %s", setup.get("ticker"))
         return None
