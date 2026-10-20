@@ -168,6 +168,30 @@ def calc_theme_stats(theme: str) -> Optional[dict]:
     return {"breakdown": breakdown, "avg_pct": avg_pct}
 
 
+MIN_SINGLE_PCT = 2.0      # |движение за 48ч|, ниже которого "мнение" - пустая болтовня
+MIN_SINGLE_SWING = 5.0    # ...если только амплитуда не большая
+MIN_BASKET_AVG = 1.5
+MIN_BASKET_ANY = 3.0
+
+_STRUCTURES_EN = [
+    "Open with the single most striking number, then one sentence on what it could mean.",
+    "Open with a question to the reader, then give the number as context.",
+    "Compare the move to what a calm market would look like, then give a clear lean (up/down/sideways) and say what would change your mind.",
+    "Name one level or condition to watch next, and why.",
+    "Write it as a short two-line note: what happened, what you are watching.",
+]
+
+
+def is_significant(stats: dict) -> bool:
+    """Мнение пишем только когда есть что обсуждать - иначе получается
+    '$XRP almost flat... 4% swing' ни о чём."""
+    if "single" in stats:
+        s = stats["single"]
+        return abs(s["pct"]) >= MIN_SINGLE_PCT or s["amplitude_pct"] >= MIN_SINGLE_SWING
+    vals = list(stats["breakdown"].values())
+    return abs(stats["avg_pct"]) >= MIN_BASKET_AVG or any(abs(v) >= MIN_BASKET_ANY for v in vals)
+
+
 def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Optional[tuple]:
     """Возвращает (готовый текст поста, набор разрешённых чисел для
     проверки), либо None, если не удалось получить данные.
@@ -180,6 +204,9 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
     без персоны, как раньше."""
     stats = calc_theme_stats(theme)
     if stats is None:
+        return None
+    if not is_significant(stats):
+        logger.info("Тема %s: движение слишком мелкое для мнения - пропускаю", theme)
         return None
 
     label = _label(theme)
@@ -242,6 +269,8 @@ def generate_opinion_post(theme: str, hook_mode: Optional[str] = None) -> Option
         allowed_numbers |= {abs(v) for v in stats["breakdown"].values()} | {abs(avg)}
         headline_pct = avg
 
+    if en:
+        user_prompt += "\n\nStructure for this post: " + random.choice(_STRUCTURES_EN)
     user_prompt += voice_memory.anti_repeat_block() + voice_memory.continuity_block(theme, label)
 
     hook = call_groq(system_prompt, user_prompt, max_tokens=500, temperature=0.9, model=config.GROQ_MODEL_SECONDARY)
