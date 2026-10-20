@@ -150,6 +150,15 @@ def coin_in_headline(title: str) -> str | None:
     return COIN_NAMES[m.group(1)] if m else None
 
 
+def coin_is_subject(title: str, ticker: str) -> bool:
+    """Монета - герой заголовка (в первых ~45 знаках), а не упомянута вскользь
+    ("...SkyAI launches on Solana")."""
+    for m in _NAME_RE.finditer(title):
+        if COIN_NAMES[m.group(1)] == ticker and m.start() <= 45:
+            return not re.search(r"\b(?:on|via|for|with|to|from|in)\s+$", title[:m.start()].lower() + " ")
+    return False
+
+
 def clean_title(title: str, limit: int = 120) -> str:
     t = _DATE_TAIL_RE.sub("", title).strip()
     t = re.sub(r"\s+(?:on|at|from)$", "", t)
@@ -174,7 +183,7 @@ def pick_news_move(news: list[dict], changes: dict[str, float], seen: set[str],
         if n["id"] in seen:
             continue
         t = coin_in_headline(n["title"])
-        if not t or t not in changes or abs(changes[t]) < min_pct:
+        if not t or t not in changes or abs(changes[t]) < min_pct or not coin_is_subject(n["title"], t):
             continue
         if best is None or abs(changes[t]) > abs(best[2]):
             best = (n, t, changes[t])
@@ -205,11 +214,11 @@ def build_radar_text(items: list[dict], changes: dict[str, float] | None = None)
 
 
 def build_news_text(news: dict, ticker: str, pct: float, binance_item: dict | None = None) -> str:
-    head = f"{news['title']} ({news['source']})"
-    body = f"{head}\n\nPrice check: ${ticker} is {_signed(pct)} over the last 24h."
+    head = f"🚨 {news['title']} ({news['source']})"
+    body = f"{head}\n\n${ticker} is {_signed(pct)} over the last 24h. Tap the tag for the live price."
     if binance_item:
         body += f"\nOn Binance: {clean_title(binance_item['title'])}"
-    body += ("\n\nThe headline and the move are shown side by side; they may or may not be related."
-             "\nDoes the news explain the move, or is it already priced in?\n\n"
+    body += ("\n\nHeadline and price move shown side by side; they may or may not be related."
+             "\nPriced in, or is there more to come?\n\n"
              f"#{ticker} #Crypto #Binance")
     return body

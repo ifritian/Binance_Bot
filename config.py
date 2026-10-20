@@ -771,8 +771,8 @@ def validate_config() -> list[str]:
     return [name for name, value in required.items() if not value]
 # Новости + события Binance (news_radar.py): сводка объявлений и заголовок с ценой за 24ч.
 NEWS_RADAR_ENABLED = (os.environ.get("NEWS_RADAR_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
-NEWS_MOVE_MIN_PCT = float(os.environ.get("NEWS_MOVE_MIN_PCT") or 3.0)
-NEWS_MOVE_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_MOVE_MIN_INTERVAL_HOURS") or 6)
+NEWS_MOVE_MIN_PCT = float(os.environ.get("NEWS_MOVE_MIN_PCT") or 1.0)
+NEWS_MOVE_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_MOVE_MIN_INTERVAL_HOURS") or 3)
 NEWS_RADAR_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_RADAR_MIN_INTERVAL_HOURS") or 20)
 
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).

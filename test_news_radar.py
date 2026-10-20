@@ -116,3 +116,10 @@ def test_every_event_post_carries_a_cashtag():
              {"code": "b", "title": "Update Y", "ts": 1, "kind": "news", "tickers": []}]
     assert "$BNB" in nr.build_radar_text(items, {})
     assert nr.build_radar_text(items, {}).count("$") == 1
+
+
+def test_coin_must_be_subject_of_headline():
+    assert nr.coin_is_subject("Solana outage ends after 4 hours", "SOL")
+    assert not nr.coin_is_subject("SkyAI launches its agent network on Solana", "SOL")
+    news = [{"id": "1", "title": "SkyAI launches agents on Solana", "source": "x"}]
+    assert nr.pick_news_move(news, {"SOL": 9.0}, set(), 1.0) is None
