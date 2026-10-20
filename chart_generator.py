@@ -672,7 +672,8 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
 def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: float | None = None,
                          level: float | None = None, exit_price: float | None = None,
                          title: str = "", entry_t: int | None = None, exit_t: int | None = None,
-                         suffix: str = "_tb") -> Path | None:
+                         suffix: str = "_tb", target: float | None = None,
+                         tf_label: str = "4h") -> Path | None:
     """График идеи на 4ч свечах (trend_breakout.py): линия входа, стартовый
     стоп, уровень пробоя; для закрытой сделки - ещё цена выхода и метки
     входа/выхода. candles - как из fetch_klines. Подписи только английские
@@ -710,6 +711,8 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
         tag(entry, f"Entry {_format_price(entry)}", "#E8E8E8")
         if stop:
             tag(stop, f"Stop {_format_price(stop)}", _DOWN_COLOR)
+        if target:
+            tag(target, f"Target {_format_price(target)}", _UP_COLOR)
         if closed_trade:
             tag(exit_price, f"Exit {_format_price(exit_price)}", result_color)
 
@@ -725,7 +728,7 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
             ax.plot([i_out], [exit_price], marker="o", markersize=8, color=result_color, zorder=6, clip_on=False)
 
         ys = [c["low"] for c in candles] + [c["high"] for c in candles] + [entry]
-        ys += [v for v in (stop, level, exit_price) if v]
+        ys += [v for v in (stop, level, exit_price, target) if v]
         pad = (max(ys) - min(ys)) * 0.06
         ax.set_ylim(min(ys) - pad, max(ys) + pad)
 
@@ -756,7 +759,7 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
             for i in pos
         ])
 
-        fig.text(0.04, 0.96, f"{ticker}/USDT  4h", color="white", fontsize=15, fontweight="bold", va="top")
+        fig.text(0.04, 0.96, f"{ticker}/USDT  {tf_label}", color="white", fontsize=15, fontweight="bold", va="top")
         fig.text(0.04, 0.915, title, color=result_color, fontsize=11, fontweight="bold", va="top")
         fig.savefig(out_path, facecolor=fig.get_facecolor())
         plt.close(fig)

@@ -242,7 +242,10 @@ MARKET_DIGEST_HOURS_UTC = sorted({
 SQUARE_FOLLOW_LINE_PROBABILITY = float(os.environ.get("SQUARE_FOLLOW_LINE_PROBABILITY") or "0.3")
 # "Горячая монета" (market_digest.pick_hot_mover): пост при сильном движении.
 HOT_MOVER_ENABLED = (os.environ.get("HOT_MOVER_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
-HOT_MOVER_MAX_PER_DAY = int(os.environ.get("HOT_MOVER_MAX_PER_DAY") or "2")
+HOT_MOVER_MAX_PER_DAY = int(os.environ.get("HOT_MOVER_MAX_PER_DAY") or "4")
+# Порог движения за 24ч для "горячей монеты" и сетапа (вход/стоп/цель).
+HOT_MOVER_MIN_PCT = float(os.environ.get("HOT_MOVER_MIN_PCT") or "6")
+MOVER_SETUPS_ENABLED = (os.environ.get("MOVER_SETUPS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 # Сигналы по корзине индекса (index_signal_scanner) и "Забрали профит!" строятся на тех
 # же стратегиях, что и старый сканер (отрицательное ожидание) - по умолчанию выключены.
 INDEX_SIGNALS_ENABLED = (os.environ.get("INDEX_SIGNALS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
@@ -774,7 +777,7 @@ NEWS_RADAR_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_RADAR_MIN_INTERVAL_HO
 
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
 CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
-                     "digest,fear_greed,breakout,hot_mover,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
+                     "digest,fear_greed,breakout,hot_mover,mover_result,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
 # Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
 LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 

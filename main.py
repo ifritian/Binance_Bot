@@ -38,6 +38,7 @@ import chart_generator
 import coin_whitelist
 import event_posts
 import market_digest
+import mover_setups
 import square_question
 import config
 import image_analyzer
@@ -882,6 +883,48 @@ def try_publish_trend_breakout() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def _mover_setup_chart(setup: dict):
+    """График сетапа: часовые свечи + линии входа/стопа/цели. None при сбое."""
+    try:
+        bars = mover_setups.fetch_klines(setup["ticker"], "1h", 72)
+        if len(bars) < 20:
+            return None
+        candles = [{"open_time": t, "open": o, "high": h, "low": l, "close": c, "volume": 0.0}
+                   for t, o, h, l, c in bars]
+        return chart_generator.generate_trade_chart(
+            setup["ticker"], candles, entry=setup["entry"], stop=setup["stop"], target=setup["target"],
+            title=f"Momentum {setup['side']} idea", suffix="_mover", tf_label="1h")
+    except Exception:
+        logger.exception("Не удалось построить график сетапа %s", setup.get("ticker"))
+        return None
+
+
+def try_publish_mover_result() -> None:
+    """Итог закрытой идеи (цель / стоп / 24ч) - публикуем и прибыльные, и убыточные.
+    Заодно продвигаем открытые идеи."""
+    if not config.MOVER_SETUPS_ENABLED:
+        return
+    try:
+        mover_setups.advance()
+    except Exception:
+        logger.exception("Сетапы: ошибка проверки открытых идей")
+        return
+    c = mover_setups.pending_result()
+    if c is None or not queue_manager.should_retry_now("mover_result") or not _square_slot_available():
+        return
+    text = mover_setups.build_result_text(c)
+    try:
+        result = _post("mover_result", text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации итога идеи: %s", e)
+        _record_publish_error("mover_result", e)
+        queue_manager.set_retry_backoff("mover_result", 1)
+        return
+    logger.info("Опубликовано (итог идеи %s %s): %s", c["ticker"], c["outcome"], result)
+    mover_setups.mark_result_posted(c["closed_t"])
+    queue_manager.set_last_post_time("square_global")
+
+
 def try_publish_hot_mover() -> None:
     """Событийный пост (Square): монета из белого списка резко двинулась.
     Не чаще HOT_MOVER_MAX_PER_DAY в сутки и не по одной монете чаще раза в сутки."""
@@ -893,13 +936,20 @@ def try_publish_hot_mover() -> None:
     log = {t: ts for t, ts in (queue_manager._get("hot_mover_log") or {}).items() if now - ts < 86400}
     if len(log) >= config.HOT_MOVER_MAX_PER_DAY:
         return
-    hot = market_digest.pick_hot_mover(recent=log, now_ts=now)
+    hot = market_digest.pick_hot_mover(recent=log, now_ts=now, min_pct=config.HOT_MOVER_MIN_PCT)
     if hot is None:
         queue_manager.set_retry_backoff("hot_mover", 0.25)  # не опрашивать Binance каждые 10 минут
         return
     ticker, price, pct = hot
-    text = market_digest.build_hot_text(ticker, price, pct)
-    chart = _coin_chart(ticker, 2, expected_price=price)
+    setup = None
+    if config.MOVER_SETUPS_ENABLED and config.SQUARE_TEMPLATE_LANG == "en":
+        setup = mover_setups.build_setup(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 60))
+    if setup:
+        text = mover_setups.build_text(setup)
+        chart = _mover_setup_chart(setup)
+    else:
+        text = market_digest.build_hot_text(ticker, price, pct)
+        chart = _coin_chart(ticker, 2, expected_price=price)
     try:
         result = _post("hot_mover", text, image_paths=[chart] if chart else None)
     except binance_publisher.PublishError as e:
@@ -908,6 +958,8 @@ def try_publish_hot_mover() -> None:
         queue_manager.set_retry_backoff("hot_mover", 1)
         return
     logger.info("Опубликовано (Горячая монета %s %+.1f%%): %s", ticker, pct, result)
+    if setup:
+        mover_setups.register(setup, now)
     log[ticker] = now
     queue_manager._set("hot_mover_log", log)
     queue_manager.set_last_post_time("square_global")
@@ -2236,6 +2288,7 @@ def tick() -> None:
         try_publish_market_digest()
         try_publish_square_question()
         try_publish_hot_mover()
+        try_publish_mover_result()
         try_publish_listing_announcement()
         try_publish_listing_report()
         try_publish_binance_alerts()
