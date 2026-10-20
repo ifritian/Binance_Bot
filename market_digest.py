@@ -184,7 +184,7 @@ _HOT_TEMPLATES = [
 
 
 def pick_hot_mover(rows: list[dict] | None = None, recent: dict | None = None, now_ts: float = 0.0,
-                   cooldown_s: float = 86400.0):
+                   cooldown_s: float = 86400.0, min_pct: float | None = None):
     """Самая сильная монета (|изменение| >= HOT_MOVE_PCT, объём >= HOT_MIN_VOLUME_USD)
     из белого списка, по которой не было поста за cooldown. -> (ticker, price, pct) | None"""
     if rows is None:
@@ -209,7 +209,7 @@ def pick_hot_mover(rows: list[dict] | None = None, recent: dict | None = None, n
             price = float(row["lastPrice"]); pct = float(row["priceChangePercent"]); vol = float(row["quoteVolume"])
         except (KeyError, ValueError, TypeError):
             continue
-        if price <= 0 or vol < HOT_MIN_VOLUME_USD or abs(pct) < HOT_MOVE_PCT:
+        if price <= 0 or vol < HOT_MIN_VOLUME_USD or abs(pct) < (HOT_MOVE_PCT if min_pct is None else min_pct):
             continue
         if best is None or abs(pct) > abs(best[2]):
             best = (t, price, pct)
