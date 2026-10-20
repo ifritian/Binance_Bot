@@ -1154,6 +1154,13 @@ def remove_crosspost(entry_id: str) -> None:
     _set_crosspost_queue(queue)
 
 
+def requeue_crosspost(item: dict) -> None:
+    """Возвращает запись в очередь (с +1 к попыткам и небольшой задержкой)."""
+    queue = _get_crosspost_queue()
+    queue.append(dict(item, attempts=item.get("attempts", 0) + 1, due_ts=time.time() + 600))
+    _set_crosspost_queue(queue)
+
+
 def register_failed_crosspost(entry_id: str, max_attempts: int = 3) -> bool:
     """Как register_failed_attempt для основной очереди - увеличивает
     счётчик попыток, выбрасывает запись из очереди при превышении

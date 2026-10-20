@@ -116,6 +116,13 @@ def publish_post(text: str, image_paths: Optional[list[Path]] = None) -> dict:
     оставлено на случай, если понадобится публичная ссылка на картинку
     где-то ещё.
     """
+    global _NEXT_FORMAT
+    dup = _recent_duplicate(text)
+    if dup:
+        logger.warning("Square: пост пропущен как дубль (%s): %s", dup, " ".join(text.split())[:60])
+        _NEXT_FORMAT = None
+        return {"id": None, "status": "duplicate_skipped", "image_urls": []}
+
     body: dict = {"contentType": 1, "bodyTextOnly": text}
 
     image_urls: list[str] = []
@@ -215,10 +222,50 @@ def publish_article(title: str, text: str, cover_path: Optional[Path] = None) ->
     return result
 
 
+def _outcome_unknown(e: Exception) -> bool:
+    """True, если запрос мог дойти до Square (тогда повтор создаст дубль)."""
+    if isinstance(e, (requests.ConnectTimeout,)):
+        return False
+    if isinstance(e, (requests.ReadTimeout, requests.exceptions.ChunkedEncodingError)):
+        return True
+    msg = str(e)
+    return isinstance(e, requests.ConnectionError) and any(
+        k in msg for k in ("Connection aborted", "RemoteDisconnected", "Read timed out", "Connection reset"))
+
+
+def _recent_duplicate(text: str) -> str | None:
+    """Причина, по которой пост считаем дублем недавнего, иначе None. Смотрит журнал
+    публикаций: тот же формат слишком рано (config.SAME_FORMAT_MIN_GAP_HOURS) или тот же
+    текст за последние 6 часов."""
+    try:
+        import queue_manager
+        log = queue_manager._get("square_post_log", [])
+        now = time.time()
+        fmt = _NEXT_FORMAT
+        head = " ".join(text.split())[:90]
+        gap = config.SAME_FORMAT_MIN_GAP_HOURS.get(fmt or "", 0) * 3600
+        for e in reversed(log):
+            age = now - e.get("ts", 0)
+            if age > max(gap, 6 * 3600):
+                break
+            if fmt and gap and e.get("fmt") == fmt and age < gap:
+                return f"формат {fmt} уже выходил {age / 3600:.1f}ч назад"
+            if e.get("head") == head and age < 6 * 3600:
+                return "точно такой же текст уже опубликован"
+    except Exception:
+        logger.warning("Проверка дублей не сработала", exc_info=True)
+    return None
+
+
 def _send_content(body: dict) -> dict:
     try:
         resp = requests.post(config.BINANCE_SQUARE_ENDPOINT, json=body, headers=_headers(), timeout=30)
     except requests.RequestException as e:
+        if _outcome_unknown(e):
+            # Запрос ушёл, ответ не получили: пост мог создаться. Повтор дал бы
+            # дубль, поэтому считаем публикацию состоявшейся (как и 504 ниже).
+            logger.warning("Square: ответа нет (%s). Пост мог опубликоваться - повтор не делаю.", e)
+            return {"id": None, "status": "unknown_network"}
         raise PublishError(f"Сетевая ошибка при публикации: {e}") from e
 
     if resp.status_code == 504:
