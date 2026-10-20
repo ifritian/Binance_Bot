@@ -577,6 +577,9 @@ def _process_pending_crossposts() -> None:
     for item in due:
         platform = item["platform"]
         data = item["data"]
+        # Убираем запись из очереди ДО отправки: если запуск оборвётся после
+        # отправки, но до сохранения состояния, повторной отправки (дубля) не будет.
+        queue_manager.remove_crosspost(item["id"])
         try:
             if platform == "telegram":
                 _publish_scheduled_telegram(data)
@@ -584,15 +587,12 @@ def _process_pending_crossposts() -> None:
                 _publish_scheduled_bluesky(data)
             else:
                 logger.warning("Неизвестная площадка в очереди отложенных кроспостов: %s", platform)
-            queue_manager.remove_crosspost(item["id"])
         except Exception as e:
             logger.warning("Отложенный кросспост (%s, %s) не удался: %s", platform, data.get("ticker"), e)
-            dropped = queue_manager.register_failed_crosspost(item["id"])
-            if dropped:
-                logger.warning(
-                    "Отложенный кросспост (%s, %s) выброшен из очереди после превышения лимита попыток",
-                    platform, data.get("ticker"),
-                )
+            # Сбой ДО отправки (например, нет сети) можно повторить, но сбой после неё даст дубль,
+            # поэтому повторяем только явные сетевые отказы соединения.
+            if isinstance(e, (ConnectionError, TimeoutError)) and item.get("attempts", 0) < 2:
+                queue_manager.requeue_crosspost(item)
 
     queue_manager.prune_stale_crossposts(config.CROSSPOST_STALE_HOURS)
 
@@ -757,6 +757,8 @@ def _post(fmt: str, *args, **kwargs):
     """binance_publisher.publish_post + метка формата для журнала публикаций."""
     binance_publisher.tag_format(fmt)
     result = binance_publisher.publish_post(*args, **kwargs)
+    if isinstance(result, dict) and result.get("status") == "duplicate_skipped":
+        return result   # дубль не публикуем и не кросспостим
     _maybe_crosspost(fmt, args[0] if args else kwargs.get("text", ""), kwargs.get("image_paths"))
     return result
 

@@ -795,3 +795,12 @@ WEEKLY_BRIEF_HOUR_UTC = int(os.environ.get("WEEKLY_BRIEF_HOUR_UTC") or 17)
 
 # Куда вести читателей со страницы проекта (необязательно): профиль Binance Square.
 SQUARE_PROFILE_URL = (os.environ.get("SQUARE_PROFILE_URL") or "").strip()
+
+
+# Защита от дублей в Square: тот же формат не чаще, чем раз в N часов
+# (формат -> часы). Форматы, которых здесь нет (горячие монеты, новости,
+# итоги идей), по этому правилу не ограничиваются.
+SAME_FORMAT_MIN_GAP_HOURS = {
+    "digest": 4, "fear_greed": 12, "altcoin_basket": 6, "binance_radar": 6,
+    "weekly_brief": 48, "question": 3, "opinion": 6, "listing_report": 1,
+}
