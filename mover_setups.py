@@ -41,14 +41,14 @@ def _state() -> dict:
 
 
 def fetch_klines(symbol: str, interval: str, limit: int, start_ms: int | None = None) -> list:
-    """[(t, o, h, l, c)] ; [] при ошибке."""
+    """[(t, o, h, l, c, объём)] ; [] при ошибке."""
     params = {"symbol": f"{symbol}USDT", "interval": interval, "limit": limit}
     if start_ms:
         params["startTime"] = int(start_ms)
     try:
         r = requests.get(f"{BASE_URL}/klines", params=params, timeout=20)
         r.raise_for_status()
-        return [(int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4])) for k in r.json()]
+        return [(int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])) for k in r.json()]
     except (requests.RequestException, ValueError, IndexError) as e:
         logger.warning("Сетап: нет свечей %s %s: %s", symbol, interval, e)
         return []
@@ -59,7 +59,7 @@ def atr(bars: list, n: int = ATR_N) -> float | None:
         return None
     trs = []
     for i in range(1, len(bars)):
-        _, _, h, l, _ = bars[i]
+        h, l = bars[i][2], bars[i][3]
         pc = bars[i - 1][4]
         trs.append(max(h - l, abs(h - pc), abs(l - pc)))
     return sum(trs[-n:]) / n
@@ -100,7 +100,7 @@ def _net(side: str, entry: float, exit_: float) -> float:
 def evaluate_one(pos: dict, bars: list, now_ts: float) -> dict | None:
     """Результат {'outcome','exit','net'} либо None, если идея ещё открыта."""
     long = pos["side"] == "long"
-    for t, o, h, l, c in bars:
+    for t, o, h, l, c, *_ in bars:
         if t < pos["t0"] * 1000 - 15 * 60 * 1000:
             continue
         hit_stop = l <= pos["stop"] if long else h >= pos["stop"]

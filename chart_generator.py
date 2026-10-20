@@ -673,7 +673,7 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
                          level: float | None = None, exit_price: float | None = None,
                          title: str = "", entry_t: int | None = None, exit_t: int | None = None,
                          suffix: str = "_tb", target: float | None = None,
-                         tf_label: str = "4h") -> Path | None:
+                         tf_label: str = "4h", sketch_side: str | None = None) -> Path | None:
     """График идеи на 4ч свечах (trend_breakout.py): линия входа, стартовый
     стоп, уровень пробоя; для закрытой сделки - ещё цена выхода и метки
     входа/выхода. candles - как из fetch_klines. Подписи только английские
@@ -752,6 +752,9 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
         _style_axis(ax_vol, show_xticks=True)
         ax_vol.set_xlim(-1, len(candles) + 1)
         ax_vol.set_yticks([])
+        if sketch_side and target and stop:
+            import hand_draw
+            hand_draw.annotate_setup(fig, ax, ax_vol, candles, entry, stop, target, sketch_side, seed=ticker)
         pos = [int(i * (len(candles) - 1) / 4) for i in range(5)]
         ax_vol.set_xticks(pos)
         ax_vol.set_xticklabels([
