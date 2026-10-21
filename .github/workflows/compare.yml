@@ -1,0 +1,41 @@
+name: Compare strategies
+
+# Только вручную (или пуш в research/compare). Честное сравнение стратегий бота
+# и кандидата (см. compare_strategies.py). Отчёт - вкладка Summary и ветка
+# research-results-compare.
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/compare]
+
+permissions:
+  contents: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run comparison
+        run: python compare_strategies.py --days 120 --top 40 --out compare_report.md
+      - name: Show in summary
+        if: always()
+        run: cat compare_report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Publish report
+        if: always()
+        run: |
+          git config user.name "research-bot"
+          git config user.email "research-bot@users.noreply.github.com"
+          cp compare_report.md /tmp/compare_report.md
+          git checkout --orphan research-results-compare
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/compare_report.md compare_report.md
+          git add compare_report.md
+          git commit -m "Compare report $(date -u +%F)"
+          git push -f origin research-results-compare

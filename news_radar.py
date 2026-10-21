@@ -213,12 +213,28 @@ def build_radar_text(items: list[dict], changes: dict[str, float] | None = None)
     return body + ("\n\n#Binance #Crypto" if "$" in body else "\n\n$BNB #Binance #Crypto")
 
 
-def build_news_text(news: dict, ticker: str, pct: float, binance_item: dict | None = None) -> str:
-    head = f"🚨 {news['title']} ({news['source']})"
-    body = f"{head}\n\n${ticker} is {_signed(pct)} over the last 24h. Tap the tag for the live price."
+def build_news_text(news: dict, ticker: str, pct: float, binance_item: dict | None = None, rng=None) -> str:
+    import random as _r
+    rng = rng or _r
+    title, src, mv = news["title"], news["source"], _signed(pct)
+    lead = rng.choice(["🚨 ", "🚨 ", "📰 ", ""])
+    layout = rng.choice(["a", "b", "c", "d"])
+    if layout == "a":
+        body = f"{lead}{title} ({src})\n\n${ticker} is {mv} over the last 24h."
+    elif layout == "b":
+        body = f"{lead}{title}\n\nVia {src}. ${ticker} {mv} in 24h."
+    elif layout == "c":
+        body = f"{lead}${ticker}: {title}\n\nPrice so far: {mv} (24h). Source: {src}."
+    else:
+        body = f"{lead}{title} - {src}\n\nMeanwhile ${ticker} trades {mv} on the day."
+    body += rng.choice([" Tap the tag for the live price.", " Live price one tap away.", "", ""])
     if binance_item:
         body += f"\nOn Binance: {clean_title(binance_item['title'])}"
-    body += ("\n\nHeadline and price move shown side by side; they may or may not be related."
-             "\nPriced in, or is there more to come?\n\n"
-             f"#{ticker} #Crypto #Binance")
+    caveat = rng.choice(["The headline and the move may or may not be related.",
+                         "No claim that one caused the other.",
+                         "Correlation here is not proof of cause."])
+    ask = rng.choice(["Priced in, or more to come?", "Bullish, bearish or noise?",
+                      "Does this change anything for you?", "Is this the start of something?", ""])
+    tags = rng.choice([f"#{ticker} #Crypto", f"#{ticker}", f"#{ticker} #CryptoNews", f"#{ticker} #Crypto #Binance"])
+    body += "\n\n" + caveat + (("\n" + ask) if ask else "") + "\n\n" + tags
     return body
