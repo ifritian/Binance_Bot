@@ -194,3 +194,63 @@ def _annotate(fig, ax, ax_vol, candles, entry, stop, target, side, pct24, seed):
             vmax = max(vols)
             bb = vp.text(0.55, 0.62, "volume spike", 17)
             vp.arrow((bb[2] + 0.005, (bb[1] + bb[3]) / 2), (fx(n - 1) - 0.02, min(0.9, recent / vmax * 0.85)))
+
+
+def annotate_levels(fig, ax, ax_vol, candles: list, lv: dict, seed: str = "") -> None:
+    """Пометки для поста "уровни": откуда пошло, максимум/минимум суток, где сейчас, всплеск объёма.
+    lv = {"hi": цена, "lo": цена, "now": цена, "up": bool}. Любая ошибка - картинка без пометок."""
+    try:
+        _annotate_levels(fig, ax, ax_vol, candles, lv, seed)
+    except Exception:
+        logger.exception("Рукописные пометки (уровни) не нарисовались")
+
+
+def _annotate_levels(fig, ax, ax_vol, candles, lv, seed):
+    rng = random.Random(f"{seed}{lv['now']:.6f}")
+    n = len(candles)
+    y0, y1 = ax.get_ylim()
+    x0, x1 = ax.get_xlim()
+
+    def fx(i): return (i - x0) / (x1 - x0)
+    def fy(p): return (p - y0) / (y1 - y0)
+
+    cf = [(fx(i), fy(c["low"]), fy(c["high"])) for i, c in enumerate(candles)]
+    pen = Pen(fig, ax, rng)
+
+    def place(anchor, label, size=19, min_d=0.09, max_d=0.42):
+        ax_, ay_ = anchor
+        hw = 0.0105 * len(label) * (size / 19) + 0.012
+        hh = 0.05 * (size / 19)
+        steps = [i * 0.03 for i in range(-14, 15)]
+        cands = sorted((math.hypot(dx * 0.6, dy) + rng.uniform(0, 0.05), dx, dy)
+                       for dx in steps for dy in steps if min_d <= math.hypot(dx * 0.6, dy) <= max_d)
+        for _, dx, dy in cands:
+            cx, cy = ax_ + dx, ay_ + dy
+            if _free((cx - hw, cy - hh, cx + hw, cy + hh), cf, pen.boxes):
+                bb = pen.text(cx, cy, label, size)
+                bx0, by0, bx1, by1 = bb
+                if ax_ > bx1:
+                    sx, sy = bx1 + 0.012, (by0 + by1) / 2 - 0.01
+                elif ax_ < bx0:
+                    sx, sy = bx0 - 0.012, (by0 + by1) / 2 - 0.01
+                else:
+                    sx, sy = ax_, (by0 - 0.012) if ay_ < by0 else (by1 + 0.012)
+                pen.arrow((sx, sy), (ax_ - (ax_ - sx) * 0.08, ay_ - (ay_ - sy) * 0.08))
+                return True
+        return False
+
+    day = range(max(0, n - 24), n)       # "суточные" максимум/минимум - только последние 24 свечи
+    hi_i = max(day, key=lambda i: candles[i]["high"])
+    lo_i = min(day, key=lambda i: candles[i]["low"])
+    place((fx(hi_i), fy(candles[hi_i]["high"])), "range high")
+    place((fx(lo_i), fy(candles[lo_i]["low"])), "range low")
+    last = (fx(n - 1), fy(lv["now"]))
+    pen.circle(last, 0.2, 0.17)
+    place(last, "price now", min_d=0.13)
+    vols = [c.get("volume", 0.0) for c in candles]
+    if ax_vol is not None and n > 26 and max(vols) > 0:
+        base_v = sum(vols[-26:-4]) / 22
+        if base_v > 0 and max(vols[-4:]) > 1.8 * base_v:
+            vp = Pen(fig, ax_vol, rng)
+            bb = vp.text(0.55, 0.62, "volume spike", 17)
+            vp.arrow((bb[2] + 0.005, (bb[1] + bb[3]) / 2), (fx(n - 1) - 0.02, min(0.9, max(vols[-4:]) / max(vols) * 0.85)))
