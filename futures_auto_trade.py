@@ -86,6 +86,11 @@ def main() -> int:
 
     status = _StatusHandler()
     logging.getLogger().addHandler(status)
+    if args.live and not config.FUTURES_SCANNER_TRADING_ENABLED:
+        logger.info("Торговля по сигналам сканера выключена (FUTURES_SCANNER_TRADING_ENABLED=false): "
+                    "бэктест показал отрицательное ожидание, см. compare_strategies.py")
+        _save_status(status, "выключено: торговля по сигналам сканера (отрицательное ожидание в бэктесте)")
+        return 0
     api_key = os.environ.get("BINANCE_FUTURES_API_KEY", "")
     api_secret = os.environ.get("BINANCE_FUTURES_API_SECRET", "")
     if not api_key or not api_secret:

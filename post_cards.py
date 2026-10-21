@@ -270,3 +270,35 @@ def weekly_card(data: dict) -> Path | None:
         logger.exception("Не удалось построить карточку недельного обзора")
         plt.close("all")
         return None
+
+
+def momentum_card(event: dict) -> Path | None:
+    """Карточка недельного моментума: слева сильнейшие монеты за 28 дней, справа слабейшие."""
+    try:
+        new = event["opened"]
+        longs, shorts = new["long"][:5], new["short"][:5]
+        fig = plt.figure(figsize=(8, 5), dpi=150)
+        fig.patch.set_facecolor(_BG)
+        fig.text(0.05, 0.92, "Momentum board", color=_TEXT, fontsize=22, fontweight="bold", va="center")
+        fig.text(0.05, 0.855, "28-day return, weekly paper test", color=_MUTED, fontsize=11, va="center")
+        c = event.get("closed")
+        if c:
+            col = _UP if c["net"] >= 0 else _DOWN
+            fig.text(0.95, 0.90, f"{c['net']:+.1f}%".replace("-", "−"), color=col, fontsize=30, fontweight="bold",
+                     ha="right", va="center")
+            fig.text(0.95, 0.83, "last week's basket, after costs", color=_MUTED, fontsize=9, ha="right", va="center")
+        for col_x, title, rows, color in ((0.05, "STRONGEST", longs, _UP), (0.54, "WEAKEST", shorts, _DOWN)):
+            fig.text(col_x, 0.73, title, color=color, fontsize=11, fontweight="bold", va="center")
+            for k, x in enumerate(rows):
+                y = 0.63 - 0.115 * k
+                fig.text(col_x, y, x["sym"].removesuffix("USDT"), color=_TEXT, fontsize=17, fontweight="bold", va="center")
+                fig.text(col_x + 0.40, y, f"{x['ret28'] * 100:+.0f}%".replace("-", "−"), color=color, fontsize=17,
+                         fontweight="bold", ha="right", va="center")
+        path = _out("momentum_card.png")
+        _save(fig, path)
+        plt.close(fig)
+        return path
+    except Exception:
+        logger.exception("Не удалось построить карточку моментума")
+        plt.close("all")
+        return None
