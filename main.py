@@ -2346,6 +2346,7 @@ def tick() -> None:
         try_publish_emergency_post()
         try_publish_trend_breakout()
         try_publish_market_digest()
+        try_publish_fng_post()   # дневной слот: идёт раньше событийных форматов, иначе они забирают окно
         try_publish_square_question()
         try_publish_hot_mover()
         try_publish_mover_result()
@@ -2356,7 +2357,6 @@ def tick() -> None:
         try_publish_momentum()
         try_publish_weekly_brief()
         try_publish_news_radar()
-        try_publish_fng_post()
         if config.LEGACY_SCANNER_ENABLED:
             try_publish_currency_post()
         try_publish_hypothetical_post()
