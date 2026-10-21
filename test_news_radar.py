@@ -78,9 +78,15 @@ def test_texts_limits_and_no_claims():
         {"code": str(i), "title": f"Thing {i} (T{i}AA)", "ts": 1, "kind": "news", "tickers": [f"T{i}AA"]} for i in range(4)]
     txt = nr.build_radar_text(items, {"EPIC": -12.34, "T0AA": 1.0, "T1AA": 2.0, "T2AA": 3.0})
     assert txt.count("$") <= 3 and "−12.3%" in txt and "Not financial advice" in txt
-    nt = nr.build_news_text({"title": "Solana outage ends", "source": "B"}, "SOL", -6.0,
-                            {"title": "Binance Will Support X (SOL) Upgrade - 2026-10-19"})
-    assert nt.count("$") == 1 and "On Binance: Binance Will Support X (SOL) Upgrade" in nt and "may or may not be related" in nt
+    import random
+    seen = set()
+    for i in range(30):
+        nt = nr.build_news_text({"title": "Solana outage ends", "source": "B"}, "SOL", -6.0,
+                                {"title": "Binance Will Support X (SOL) Upgrade - 2026-10-19"}, random.Random(i))
+        seen.add(nt)
+        assert nt.count("$") == 1 and "On Binance: Binance Will Support X (SOL) Upgrade" in nt
+        assert any(c in nt for c in ("may or may not be related", "No claim that one caused", "not proof of cause"))
+    assert len(seen) >= 10
 
 
 def test_radar_card_renders():
