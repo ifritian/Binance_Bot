@@ -902,6 +902,26 @@ def _mover_setup_chart(setup: dict):
         return None
 
 
+def _mover_result_chart(c: dict):
+    """График закрытой идеи: вход, стоп, цель и точка выхода. None при сбое."""
+    try:
+        bars = mover_setups.fetch_klines(c["ticker"], "1h", 72)
+        if len(bars) < 20:
+            return None
+        candles = [{"open_time": b[0], "open": b[1], "high": b[2], "low": b[3], "close": b[4],
+                    "volume": b[5] if len(b) > 5 else 0.0} for b in bars]
+        entry_t = int(c["t0"] * 1000)
+        exit_t = int(c.get("closed_t", time.time()) * 1000)
+        word = {"target": "Target hit", "stop": "Stopped out", "time": "Closed after 24h"}.get(c["outcome"], "Closed")
+        return chart_generator.generate_trade_chart(
+            c["ticker"], candles, entry=c["entry"], stop=c["stop"], target=c["target"], exit_price=c["exit"],
+            title=f"{word}: {c['net']:+.2f}% after fees", entry_t=entry_t, exit_t=exit_t,
+            suffix="_mover_result", tf_label="1h")
+    except Exception:
+        logger.exception("Не удалось построить график итога идеи %s", c.get("ticker"))
+        return None
+
+
 def try_publish_mover_result() -> None:
     """Итог закрытой идеи (цель / стоп / 24ч) - публикуем и прибыльные, и убыточные.
     Заодно продвигаем открытые идеи."""
@@ -916,8 +936,9 @@ def try_publish_mover_result() -> None:
     if c is None or not queue_manager.should_retry_now("mover_result") or not _square_slot_available():
         return
     text = mover_setups.build_result_text(c)
+    chart = _mover_result_chart(c)
     try:
-        result = _post("mover_result", text)
+        result = _post("mover_result", text, image_paths=[chart] if chart else None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации итога идеи: %s", e)
         _record_publish_error("mover_result", e)
@@ -1352,8 +1373,9 @@ def try_publish_opinion_post() -> None:
         hashtags = post_format.square_general_hashtag_line()
     binance_text = f"{square_text}\n\n{hashtags}"
 
+    opinion_chart = _coin_chart(opinion_ticker, 3) if opinion_ticker else None
     try:
-        published_result = _post("opinion", binance_text)
+        published_result = _post("opinion", binance_text, image_paths=[opinion_chart] if opinion_chart else None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации поста-мнения: %s", e)
         queue_manager.set_retry_backoff("opinion", 1)
