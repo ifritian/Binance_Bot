@@ -5,6 +5,7 @@ import pytest
 
 import config
 import market_digest
+import voice_variety
 import main
 import queue_manager
 
@@ -69,7 +70,8 @@ def test_english_text(monkeypatch):
     monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
     d = market_digest.fetch_movers(_rows())
     text = market_digest.build_digest_text(d, 17, random.Random(1))
-    assert "Evening market snapshot" in text and "Top gainers" in text and "financial advice" in text
+    assert "$BTC" in text and "$SUI" in text and "+12.3%" in text
+    assert any(h.split(" ", 1)[-1] in text for h in voice_variety.EVENING_HEADS)
     assert not any("а" <= ch <= "я" for ch in text.lower())
 
 
@@ -99,3 +101,21 @@ def test_digest_falls_back_to_compact_and_records_error(monkeypatch):
     assert len(sent) == 1
     errs = queue_manager._get("publish_errors")
     assert errs and errs[0]["fmt"] == "market_digest" and "too many tags" in errs[0]["error"]
+
+
+def test_digest_texts_vary(monkeypatch):
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
+    d = market_digest.fetch_movers(_rows())
+    texts = {market_digest.build_digest_text(d, 6, random.Random(i)) for i in range(30)}
+    assert len(texts) >= 15
+    heads = {t.split("\n")[0] for t in texts}
+    assert len(heads) >= 6
+
+
+def test_fng_texts_vary(monkeypatch):
+    import event_posts
+    monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
+    d = {"value": 55, "label": "Greed", "prev": 59}
+    texts = {event_posts.build_fng_text(d, random.Random(i)) for i in range(40)}
+    assert len(texts) >= 15
+    assert all("$BTC" in t for t in texts)
