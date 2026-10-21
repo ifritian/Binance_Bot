@@ -39,6 +39,7 @@ import coin_whitelist
 import event_posts
 import market_digest
 import mover_setups
+import xs_momentum
 import square_question
 import config
 import image_analyzer
@@ -1101,6 +1102,40 @@ def try_publish_weekly_brief() -> None:
         return
     logger.info("Опубликовано (недельный обзор %s): %s", week, result)
     queue_manager._set("weekly_brief_done", week)
+    queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_momentum() -> None:
+    """Недельный бумажный моментум: раз в 7 дней закрывает прошлую корзину и открывает новую,
+    итог и новая доска - в Square (честно, с минусами). Если пост не вышел, текст ждёт в состоянии."""
+    if not config.XSMOM_ENABLED:
+        return
+    pending = queue_manager._get("xsmom_pending")
+    if pending is None:
+        try:
+            event = xs_momentum.tick(time.time())
+        except Exception:
+            logger.exception("Моментум: ошибка расчёта")
+            return
+        if not event or not event.get("opened"):
+            return
+        pending = {"text": xs_momentum.build_text(event), "event": event, "ts": time.time()}
+        queue_manager._set("xsmom_pending", pending)
+    if time.time() - pending.get("ts", 0) > 36 * 3600:
+        queue_manager._set("xsmom_pending", None)     # устарело - не публикуем вчерашнюю доску
+        return
+    if not queue_manager.should_retry_now("momentum") or not _square_slot_available():
+        return
+    card = post_cards.momentum_card(pending["event"])
+    try:
+        result = _post("momentum", pending["text"], image_paths=[card] if card else None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации моментума: %s", e)
+        _record_publish_error("momentum", e)
+        queue_manager.set_retry_backoff("momentum", 1)
+        return
+    logger.info("Опубликовано (моментум): %s", result)
+    queue_manager._set("xsmom_pending", None)
     queue_manager.set_last_post_time("square_global")
 
 
@@ -2318,6 +2353,7 @@ def tick() -> None:
         try_publish_listing_report()
         try_publish_binance_alerts()
         try_track_basket()
+        try_publish_momentum()
         try_publish_weekly_brief()
         try_publish_news_radar()
         try_publish_fng_post()
