@@ -98,20 +98,39 @@ def build_fng_text(data: dict, rng=None) -> str:
     en = config.SQUARE_TEMPLATE_LANG == "en"
     v, label, prev = data["value"], data["label"], data["prev"]
     if en:
-        lines = [f"😱 Crypto Fear & Greed Index: {v} ({label})"]
-        if prev is not None:
-            diff = v - prev
-            lines.append(f"Yesterday: {prev}" + (f" ({diff:+d})" if diff else " (no change)"))
-        disclaimer = "Not financial advice."
+        import voice_variety
+        diff = None if prev is None else v - prev
+        prev_txt = ("" if prev is None else
+                    rng.choice([f"Yesterday: {prev}", f"was {prev} yesterday", f"{prev} a day ago"]) +
+                    ((" (" + f"{diff:+d}" + ")") if diff else rng.choice([" (flat)", " (no change)"])))
+        layout = rng.choice(["classic", "sentence", "short", "question_first"])
+        mood = label.lower()
+        if layout == "classic":
+            head = rng.choice(["😱 Crypto Fear & Greed Index", "Crypto Fear & Greed Index", "Fear & Greed Index"])
+            lines = [f"{head}: {v} ({label})"] + ([prev_txt[0].upper() + prev_txt[1:]] if prev_txt else [])
+        elif layout == "sentence":
+            lines = [rng.choice([f"The Fear & Greed Index reads {v} today, which is {mood}.",
+                                 f"Market sentiment: {v}/100, {mood}.",
+                                 f"Fear & Greed is at {v} ({mood})."]) + (f" {prev_txt[0].upper() + prev_txt[1:]}." if prev_txt else "")]
+        elif layout == "short":
+            lines = [f"{v} on the Fear & Greed Index. {label}." + (f" {prev_txt[0].upper() + prev_txt[1:]}." if prev_txt else "")]
+        else:
+            lines = [_fng_question(v, en, rng, prev), "", f"Fear & Greed: {v} ({label})" + (f", {prev_txt}" if prev_txt else "")]
+        disclaimer = voice_variety.disclaimer(rng)
     else:
         lines = [f"😱 Индекс страха и жадности: {v} ({_FNG_RU.get(label, label).lower()})"]
         if prev is not None:
             diff = v - prev
             lines.append(f"Вчера: {prev}" + (f" ({diff:+d})" if diff else " (без изменений)"))
         disclaimer = post_format.DISCLAIMER
-    body = "\n".join(lines) + "\n\n" + _fng_question(v, en, rng, prev) + "\n\n" + disclaimer
+    if en and layout == "question_first":
+        body = "\n".join(lines) + "\n\n" + disclaimer
+    else:
+        body = "\n".join(lines) + "\n\n" + _fng_question(v, en, rng, prev) + "\n\n" + disclaimer
     # кликабельный тикер ликвидной монеты в каждом посте: по нему идут сделки и комиссия
     tags = "#Sentiment" if "$BTC" in body else "$BTC #Sentiment"
+    if en:
+        tags = rng.choice([tags, tags.replace("#Sentiment", "#FearAndGreed"), tags.replace("#Sentiment", "#Crypto")])
     return body + "\n\n" + tags
 
 

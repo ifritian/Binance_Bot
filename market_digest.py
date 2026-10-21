@@ -13,6 +13,8 @@ $CASHTAG известных монет (лидеры роста/падения �
 """
 import logging
 import random
+
+import voice_variety
 from datetime import datetime, timezone
 
 import requests
@@ -40,6 +42,10 @@ _EN_QUESTIONS_GENERIC = [
     "What would you put on your watchlist for today? 🤔",
     "Do moves like these usually fade or keep going? What do you think?",
     "Are any of these in your portfolio? Share how it's going 👇",
+    "Anything here catch your eye?",
+    "Quiet tape or just the calm before something? 🤔",
+    "Who's buying this, and who's fading it?",
+    "What's on your radar today?",
 ]
 _EN_QUESTION_GAINER = "Will $%s keep climbing or pull back from here? 🤔"
 _EN_QUESTION_LOSER = "$%s has dropped hard - a dip worth watching or nothing to catch? 👇"
@@ -113,36 +119,68 @@ def build_digest_text(data: dict, slot_hour_utc: int, rng: random.Random | None 
     if compact:
         data = {"majors": data["majors"][:1], "gainers": data["gainers"][:1], "losers": data["losers"][:1]}
     en = config.SQUARE_TEMPLATE_LANG == "en"
+    style = rng.choice(["list", "inline", "story"]) if en else "list"
     if en:
-        head = "☀️ Morning market snapshot" if slot_hour_utc < 12 else "🌙 Evening market snapshot"
-        lines = [f"{head} (24h):", ""]
+        heads = voice_variety.MORNING_HEADS if slot_hour_utc < 12 else voice_variety.EVENING_HEADS
+        head = voice_variety.strip_emoji_prob(rng, rng.choice(heads))
+        suffix = rng.choice([" (24h):", " (last 24h):", ":", ""])
+        lines = [f"{head}{suffix}", ""]
     else:
         head = "☀️ Утренний срез рынка" if slot_hour_utc < 12 else "🌙 Вечерний срез рынка"
         lines = [f"{head} за 24 часа:", ""]
-    for t, price, pct in data["majors"]:
-        lines.append(f"${t} {_fmt_price(price)} ({_fmt_pct(pct)})")
-    if data["gainers"]:
-        lines += ["", "🚀 Top gainers:" if en else "🚀 Лидеры роста:"]
-        lines += [f"${t} {_fmt_pct(c)}" for t, _p, c in data["gainers"]]
-    if data["losers"]:
-        lines += ["", "🔻 Top losers:" if en else "🔻 Лидеры падения:"]
-        lines += [f"${t} {_fmt_pct(c)}" for t, _p, c in data["losers"]]
+    if en and style == "inline":
+        lines = [lines[0].rstrip(), ""]
+        majors = ", ".join(f"${t} {_fmt_price(price)} ({_fmt_pct(pct)})" for t, price, pct in data["majors"])
+        lines.append(majors)
+        if data["gainers"]:
+            lines.append(rng.choice(["Leading: ", "Up most: ", "Best: "]) +
+                         ", ".join(f"${t} {_fmt_pct(c)}" for t, _p, c in data["gainers"]))
+        if data["losers"]:
+            lines.append(rng.choice(["Lagging: ", "Down most: ", "Worst: "]) +
+                         ", ".join(f"${t} {_fmt_pct(c)}" for t, _p, c in data["losers"]))
+    elif en and style == "story":
+        lines = [lines[0].rstrip(), ""]
+        (t0, p0, c0) = data["majors"][0]
+        sent = f"${t0} sits at {_fmt_price(p0)} ({_fmt_pct(c0)})"
+        if len(data["majors"]) > 1:
+            t1, p1, c1 = data["majors"][1]
+            sent += f", ${t1} at {_fmt_price(p1)} ({_fmt_pct(c1)})"
+        lines.append(sent + ".")
+        if data["gainers"]:
+            t, _p, c = data["gainers"][0]
+            lines.append(rng.choice([f"Strongest move up: ${t} {_fmt_pct(c)}.", f"${t} is the day's leader at {_fmt_pct(c)}."]))
+        if data["losers"]:
+            t, _p, c = data["losers"][0]
+            lines.append(rng.choice([f"Weakest: ${t} {_fmt_pct(c)}.", f"${t} took the biggest hit, {_fmt_pct(c)}."]))
+    else:
+        for t, price, pct in data["majors"]:
+            lines.append(f"${t} {_fmt_price(price)} ({_fmt_pct(pct)})")
+        pair = rng.choice([("🚀 Top gainers:", "🔻 Top losers:"), ("Gainers:", "Losers:"),
+                           ("🚀 Leaders:", "🔻 Laggards:"), ("Leading:", "Lagging:")]) if en else ("🚀 Лидеры роста:", "🔻 Лидеры падения:")
+        if data["gainers"]:
+            lines += ["", pair[0]]
+            lines += [f"${t} {_fmt_pct(c)}" for t, _p, c in data["gainers"]]
+        if data["losers"]:
+            lines += ["", pair[1]]
+            lines += [f"${t} {_fmt_pct(c)}" for t, _p, c in data["losers"]]
 
     options = list(_EN_QUESTIONS_GENERIC if en else _QUESTIONS_GENERIC)
     if data["gainers"]:
         options.append((_EN_QUESTION_GAINER if en else _QUESTION_GAINER) % data["gainers"][0][0])
     if data["losers"]:
         options.append((_EN_QUESTION_LOSER if en else _QUESTION_LOSER) % data["losers"][0][0])
-    lines += ["", rng.choice(options)]
+    if not en or rng.random() < 0.8:
+        lines += ["", rng.choice(options)]
     if not compact and rng.random() < config.SQUARE_FOLLOW_LINE_PROBABILITY:
         hours = " and ".join(f"{h:02d}:00" for h in config.MARKET_DIGEST_HOURS_UTC[:2])
         lines += ["", (f"Follow to get the {hours} UTC snapshots daily." if en
                        else f"Подпишитесь, чтобы получать срезы рынка в {hours} UTC каждый день.")]
-    lines += ["", _EN_DISCLAIMER if en else post_format.DISCLAIMER]
+    lines += ["", voice_variety.disclaimer(rng) if en else post_format.DISCLAIMER]
 
-    topic = rng.choice(["#Crypto", "#Market", "#Altcoins"])
+    topic = rng.choice(["#Crypto", "#Market", "#Altcoins", "#CryptoMarket"])
     first = data["gainers"][0][0] if data["gainers"] else data["majors"][0][0]
-    lines += ["", f"#{first} {topic}"]
+    tags = rng.choice([f"#{first} {topic}", f"{topic} #{first}", f"{topic}", f"#{first}"])
+    lines += ["", tags]
     return "\n".join(lines)
 
 
