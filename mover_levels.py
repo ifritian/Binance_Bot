@@ -25,8 +25,10 @@ def build_levels(ticker: str, price: float, pct24: float, bars_1h: list) -> dict
         base = sum(vols[-27:-3]) / 24
         if base > 0:
             vol_ratio = (sum(vols[-3:]) / 3) / base
+    rng_h = hi - lo
     return {"ticker": ticker, "price": price, "pct24": pct24, "hi": hi, "lo": lo, "mid": (hi + lo) / 2,
-            "pos": (price - lo) / (hi - lo), "vol_ratio": vol_ratio}
+            "up_ext": hi + 0.5 * rng_h, "dn_ext": max(lo - 0.5 * rng_h, lo * 0.5),
+            "pos": (price - lo) / rng_h, "vol_ratio": vol_ratio}
 
 
 def build_text(lv: dict, rng=None) -> str:
@@ -46,13 +48,23 @@ def build_text(lv: dict, rng=None) -> str:
         lines.append(f"Volume over the last 3 hours is {vr:.1f}x the daily hourly average.")
     elif vr and vr <= 0.7:
         lines.append("Volume is fading compared with the rest of the day.")
-    lines += ["", rng.choice([
-        f"Levels people watch: {px(lv['hi'])} (24h high), {px(lv['mid'])} (middle), {px(lv['lo'])} (24h low).",
-        f"The range edges are {px(lv['hi'])} and {px(lv['lo'])}; the middle is {px(lv['mid'])}.",
-        f"Key levels: high {px(lv['hi'])}, midpoint {px(lv['mid'])}, low {px(lv['lo'])}."])]
-    lines.append(rng.choice(["A move like this can continue or fade, nobody knows which.",
-                             "Moves like this are as likely to fade as to continue.",
-                             "No edge claimed here, just what the chart shows."]))
+    pc = lambda a, b: f"{(a / b - 1) * 100:+.1f}%".replace("-", "−")
+    up_line = rng.choice([
+        f"Bulls: a hold above {px(lv['hi'])} (24h high) opens the way to {px(lv['up_ext'])} ({pc(lv['up_ext'], lv['price'])}).",
+        f"If it pushes through {px(lv['hi'])}, the next area is {px(lv['up_ext'])} ({pc(lv['up_ext'], lv['price'])}).",
+        f"Upside scenario: break and hold {px(lv['hi'])}, then {px(lv['up_ext'])} ({pc(lv['up_ext'], lv['price'])}) is in view."])
+    dn_line = rng.choice([
+        f"Bears: losing {px(lv['lo'])} (24h low) points to {px(lv['dn_ext'])} ({pc(lv['dn_ext'], lv['price'])}).",
+        f"If {px(lv['lo'])} breaks, the next area is {px(lv['dn_ext'])} ({pc(lv['dn_ext'], lv['price'])}).",
+        f"Downside scenario: a close under {px(lv['lo'])} and {px(lv['dn_ext'])} ({pc(lv['dn_ext'], lv['price'])}) comes into play."])
+    risk_line = rng.choice([
+        f"Either way, the idea is wrong once price closes back through {px(lv['mid'])} against you: that is where many traders place the stop, and size the position so that stop costs about 1% of the account.",
+        f"Risk first: pick the level that proves you wrong (the middle, {px(lv['mid'])}, is a common one) and size the trade so being wrong costs a small fixed share of the account.",
+        f"Plan the exit before the entry: the stop goes where the idea fails, not where it hurts less. The middle, {px(lv['mid'])}, is one reference."])
+    lines += ["", up_line, dn_line, "", risk_line]
+    lines.append(rng.choice(["Levels are mechanical (24h range and its extension), not a forecast.",
+                             "These are range levels, not a prediction. Moves like this fade as often as they continue.",
+                             "No edge claimed: just the range, its extension and where it breaks."]))
     ask = rng.choice(["What's your read?", "Continuation or reversal?", "", ""])
     if ask:
         lines += ["", ask]
