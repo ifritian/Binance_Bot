@@ -1,0 +1,41 @@
+name: Backtest movers
+
+# Только вручную (или пуш в research/movers). Честное сравнение стратегий бота
+# и кандидата (см. compare_strategies.py). Отчёт - вкладка Summary и ветка
+# research-results-movers.
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/movers]
+
+permissions:
+  contents: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run movers backtest
+        run: python backtest_movers.py --days 365 --top 60 --out movers_report.md
+      - name: Show in summary
+        if: always()
+        run: cat movers_report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Publish report
+        if: always()
+        run: |
+          git config user.name "research-bot"
+          git config user.email "research-bot@users.noreply.github.com"
+          cp movers_report.md /tmp/movers_report.md
+          git checkout --orphan research-results-movers
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/movers_report.md movers_report.md
+          git add movers_report.md
+          git commit -m "Compare report $(date -u +%F)"
+          git push -f origin research-results-movers
