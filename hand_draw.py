@@ -242,8 +242,8 @@ def _annotate_levels(fig, ax, ax_vol, candles, lv, seed):
     day = range(max(0, n - 24), n)       # "суточные" максимум/минимум - только последние 24 свечи
     hi_i = max(day, key=lambda i: candles[i]["high"])
     lo_i = min(day, key=lambda i: candles[i]["low"])
-    place((fx(hi_i), fy(candles[hi_i]["high"])), "range high")
-    place((fx(lo_i), fy(candles[lo_i]["low"])), "range low")
+    place((fx(hi_i), fy(candles[hi_i]["high"])), "bulls need this")
+    place((fx(lo_i), fy(candles[lo_i]["low"])), "bears target this")
     last = (fx(n - 1), fy(lv["now"]))
     pen.circle(last, 0.2, 0.17)
     place(last, "price now", min_d=0.13)

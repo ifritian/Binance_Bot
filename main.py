@@ -915,7 +915,8 @@ def _mover_levels_chart(lv: dict):
         return chart_generator.generate_trade_chart(
             lv["ticker"], candles, entry=lv["price"], title=f"24h move {lv['pct24']:+.1f}%", suffix="_levels",
             tf_label="1h", entry_label="Now",
-            extra_levels=[(lv["hi"], "24h high", "#29ABE2"), (lv["lo"], "24h low", "#E4007A")],
+            extra_levels=[(lv["hi"], "Breakout", "#29ABE2"), (lv["lo"], "Breakdown", "#E4007A"),
+                          (lv["up_ext"], "Up area", "#7FD3F5"), (lv["dn_ext"], "Down area", "#F58BBF")],
             sketch_levels={"now": lv["price"]})
     except Exception:
         logger.exception("Не удалось построить график уровней %s", lv.get("ticker"))
