@@ -52,6 +52,31 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("futures_auto_trade")
 
 
+class _StatusHandler(logging.Handler):
+    """Собирает сообщения моста и риск-гарда этого запуска, чтобы причину "почему
+    не торгует" можно было прочитать из bot_state.db без логов GitHub Actions."""
+
+    def __init__(self):
+        super().__init__(level=logging.INFO)
+        self.lines: list = []
+
+    def emit(self, record):
+        if record.name.startswith(("futures_signal_bridge", "risk_guard", "futures_client")):
+            self.lines.append(record.getMessage()[:240])
+
+
+def _save_status(handler: "_StatusHandler", outcome: str, executed: int = 0) -> None:
+    try:
+        import time
+        import queue_manager
+        queue_manager._set("futures_status", {
+            "ts": int(time.time()), "outcome": outcome, "executed": executed,
+            "kill_switch": queue_manager.get_kill_switch(), "messages": handler.lines[-12:],
+        })
+    except Exception:
+        logger.warning("Не удалось сохранить статус фьючерсов", exc_info=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--live", action="store_true",
@@ -59,6 +84,8 @@ def main() -> int:
                              "показывает, какие сигналы прошли бы фильтры, ничего не открывая.")
     args = parser.parse_args()
 
+    status = _StatusHandler()
+    logging.getLogger().addHandler(status)
     api_key = os.environ.get("BINANCE_FUTURES_API_KEY", "")
     api_secret = os.environ.get("BINANCE_FUTURES_API_SECRET", "")
     if not api_key or not api_secret:
@@ -66,6 +93,7 @@ def main() -> int:
             "Не заданы BINANCE_FUTURES_API_KEY/BINANCE_FUTURES_API_SECRET (testnet-ключи, "
             "см. https://testnet.binancefuture.com) - выставь через export, не хардкодь в файл."
         )
+        _save_status(status, "нет ключей BINANCE_FUTURES_API_KEY/SECRET")
         return 1
 
     # Жёстко TESTNET_BASE_URL - см. docstring модуля, пункт 1.
@@ -95,7 +123,12 @@ def main() -> int:
         if result is not None:
             executed.append(result)
 
-    added_to_queue = scanner.run_scan(on_signal_accepted=_on_signal_accepted)
+    try:
+        added_to_queue = scanner.run_scan(on_signal_accepted=_on_signal_accepted)
+    except Exception as e:
+        _save_status(status, f"ошибка: {type(e).__name__}: {str(e)[:200]}")
+        raise
+    _save_status(status, "ok" if args.live else "dry-run", len(executed))
 
     logger.info(
         "Готово: %d сигнал(ов) добавлено в очередь постов, %d позици(й) реально открыто%s",
