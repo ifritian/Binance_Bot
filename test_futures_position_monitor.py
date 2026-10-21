@@ -600,3 +600,17 @@ if __name__ == "__main__":
 
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
+
+def test_classify_exit_by_price():
+    import futures_position_monitor as m
+    rec = {"side": "BUY", "entry_price": 100.0, "stop_price": 98.0, "take_profit_price": 104.0}
+    assert m.classify_exit(rec, 97.9) == "стоп-лосс (SL)"
+    assert m.classify_exit(rec, 98.3) == "стоп-лосс (SL)"      # проскальзывание в пределах допуска
+    assert m.classify_exit(rec, 104.2) == "тейк-профит (TP)"
+    assert m.classify_exit(rec, 101.0).startswith("закрыта между")
+    assert m.classify_exit(dict(rec, partial_tp_done=True), 101.0).startswith("трейлинг")
+    short = {"side": "SELL", "entry_price": 100.0, "stop_price": 102.0, "take_profit_price": 96.0}
+    assert m.classify_exit(short, 102.5) == "стоп-лосс (SL)"
+    assert m.classify_exit(short, 95.9) == "тейк-профит (TP)"
+    assert m.classify_exit(rec, 0).startswith("неизвестно")
