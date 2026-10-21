@@ -96,7 +96,7 @@ jobs:
       HOT_MOVER_ENABLED: ${{ secrets.HOT_MOVER_ENABLED || 'true' }}
       HOT_MOVER_MAX_PER_DAY: ${{ secrets.HOT_MOVER_MAX_PER_DAY || '4' }}
       HOT_MOVER_MIN_PCT: ${{ secrets.HOT_MOVER_MIN_PCT || '6' }}
-      MOVER_SETUPS_ENABLED: ${{ secrets.MOVER_SETUPS_ENABLED || 'true' }}
+      MOVER_SETUPS_ENABLED: ${{ secrets.MOVER_SETUPS_ENABLED || 'false' }}
       INDEX_SIGNALS_ENABLED: ${{ secrets.INDEX_SIGNALS_ENABLED || 'false' }}
       WIN_CELEBRATIONS_ENABLED: ${{ secrets.WIN_CELEBRATIONS_ENABLED || 'false' }}
       HYPOTHETICAL_ENABLED: ${{ secrets.HYPOTHETICAL_ENABLED || 'false' }}

@@ -673,7 +673,9 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
                          level: float | None = None, exit_price: float | None = None,
                          title: str = "", entry_t: int | None = None, exit_t: int | None = None,
                          suffix: str = "_tb", target: float | None = None,
-                         tf_label: str = "4h", sketch_side: str | None = None) -> Path | None:
+                         tf_label: str = "4h", sketch_side: str | None = None,
+                         extra_levels: list | None = None, entry_label: str = "Entry",
+                         sketch_levels: dict | None = None) -> Path | None:
     """График идеи на 4ч свечах (trend_breakout.py): линия входа, стартовый
     стоп, уровень пробоя; для закрытой сделки - ещё цена выхода и метки
     входа/выхода. candles - как из fetch_klines. Подписи только английские
@@ -708,7 +710,9 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
             ax.axhline(level, color=_AXIS_TEXT_COLOR, linewidth=0.9, linestyle=":", zorder=3)
             ax.annotate("20d high", xy=(0.01, level), xycoords=("axes fraction", "data"), xytext=(0, 4),
                         textcoords="offset points", fontsize=7.5, color=_AXIS_TEXT_COLOR, zorder=5)
-        tag(entry, f"Entry {_format_price(entry)}", "#E8E8E8")
+        tag(entry, f"{entry_label} {_format_price(entry)}", "#E8E8E8")
+        for lv_price, lv_label, lv_color in (extra_levels or []):
+            tag(lv_price, f"{lv_label} {_format_price(lv_price)}", lv_color)
         if stop:
             tag(stop, f"Stop {_format_price(stop)}", _DOWN_COLOR)
         if target:
@@ -728,7 +732,7 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
             ax.plot([i_out], [exit_price], marker="o", markersize=8, color=result_color, zorder=6, clip_on=False)
 
         ys = [c["low"] for c in candles] + [c["high"] for c in candles] + [entry]
-        ys += [v for v in (stop, level, exit_price, target) if v]
+        ys += [v for v in (stop, level, exit_price, target) if v] + [lv[0] for lv in (extra_levels or [])]
         pad = (max(ys) - min(ys)) * 0.06
         ax.set_ylim(min(ys) - pad, max(ys) + pad)
 
@@ -752,6 +756,9 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
         _style_axis(ax_vol, show_xticks=True)
         ax_vol.set_xlim(-1, len(candles) + 1)
         ax_vol.set_yticks([])
+        if sketch_levels:
+            import hand_draw
+            hand_draw.annotate_levels(fig, ax, ax_vol, candles, sketch_levels, seed=ticker)
         if sketch_side and target and stop:
             import hand_draw
             hand_draw.annotate_setup(fig, ax, ax_vol, candles, entry, stop, target, sketch_side, seed=ticker)

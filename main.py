@@ -38,6 +38,7 @@ import chart_generator
 import coin_whitelist
 import event_posts
 import market_digest
+import mover_levels
 import mover_setups
 import xs_momentum
 import square_question
@@ -903,6 +904,24 @@ def _mover_setup_chart(setup: dict):
         return None
 
 
+def _mover_levels_chart(lv: dict):
+    """График поста "уровни": 72 часовые свечи, суточные максимум/минимум, текущая цена, пометки от руки."""
+    try:
+        bars = mover_setups.fetch_klines(lv["ticker"], "1h", 72)
+        if len(bars) < 30:
+            return None
+        candles = [{"open_time": b[0], "open": b[1], "high": b[2], "low": b[3], "close": b[4],
+                    "volume": b[5] if len(b) > 5 else 0.0} for b in bars]
+        return chart_generator.generate_trade_chart(
+            lv["ticker"], candles, entry=lv["price"], title=f"24h move {lv['pct24']:+.1f}%", suffix="_levels",
+            tf_label="1h", entry_label="Now",
+            extra_levels=[(lv["hi"], "24h high", "#29ABE2"), (lv["lo"], "24h low", "#E4007A")],
+            sketch_levels={"now": lv["price"]})
+    except Exception:
+        logger.exception("Не удалось построить график уровней %s", lv.get("ticker"))
+        return None
+
+
 def _mover_result_chart(c: dict):
     """График закрытой идеи: вход, стоп, цель и точка выхода. None при сбое."""
     try:
@@ -966,12 +985,18 @@ def try_publish_hot_mover() -> None:
         queue_manager.set_retry_backoff("hot_mover", 0.25)  # не опрашивать Binance каждые 10 минут
         return
     ticker, price, pct = hot
-    setup = None
-    if config.MOVER_SETUPS_ENABLED and config.SQUARE_TEMPLATE_LANG == "en":
-        setup = mover_setups.build_setup(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 60))
+    setup = levels = None
+    if config.SQUARE_TEMPLATE_LANG == "en":
+        if config.MOVER_SETUPS_ENABLED:
+            setup = mover_setups.build_setup(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 60))
+        else:
+            levels = mover_levels.build_levels(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 72))
     if setup:
         text = mover_setups.build_text(setup)
         chart = _mover_setup_chart(setup)
+    elif levels:
+        text = mover_levels.build_text(levels)
+        chart = _mover_levels_chart(levels)
     else:
         text = market_digest.build_hot_text(ticker, price, pct)
         chart = _coin_chart(ticker, 2, expected_price=price)

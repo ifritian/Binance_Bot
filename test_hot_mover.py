@@ -55,3 +55,18 @@ def test_publish_with_setup_registers_idea(monkeypatch):
     main.try_publish_hot_mover()
     assert len(sent) == 1 and "Entry:" in sent[0] and "Stop:" in sent[0] and "Target:" in sent[0]
     assert len(reg) == 1 and reg[0]["ticker"] == "SUI"
+
+
+def test_publish_levels_post_by_default(monkeypatch):
+    import mover_setups
+    sent = []
+    monkeypatch.setattr(market_digest, "pick_hot_mover", lambda **k: ("SUI", 2.5, 12.0))
+    monkeypatch.setattr(main.config, "SQUARE_TEMPLATE_LANG", "en")
+    monkeypatch.setattr(main.config, "MOVER_SETUPS_ENABLED", False)
+    bars = [(i * 3600_000, 2.5, 2.55, 2.45, 2.5, 100.0) for i in range(80)]
+    monkeypatch.setattr(mover_setups, "fetch_klines", lambda *a, **k: bars)
+    monkeypatch.setattr(main, "_mover_levels_chart", lambda lv: None)
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, image_paths=None: sent.append(text) or {})
+    main.try_publish_hot_mover()
+    assert len(sent) == 1 and "Entry:" not in sent[0] and "Target" not in sent[0] and "$SUI" in sent[0]
+    assert "24h" in sent[0]
