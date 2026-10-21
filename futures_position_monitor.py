@@ -77,6 +77,44 @@ def _realized_pnl_since(client, symbol: str, since_ts: float) -> float:
     )
 
 
+def classify_exit(record: dict, exit_price: float) -> str:
+    """По реальной цене выхода: стоп, тейк или "между" (частичный профит, трейлинг, вручную).
+    Допуск - четверть расстояния до уровня (проскальзывание на стопе - норма)."""
+    entry = float(record.get("entry_price") or 0)
+    stop = record.get("stop_price")
+    tp = record.get("take_profit_price")
+    if not entry or not exit_price:
+        return "неизвестно (нет цены выхода)"
+    long = str(record.get("side", "BUY")).upper() == "BUY"
+    if stop:
+        d = abs(entry - float(stop))
+        if (exit_price <= float(stop) + 0.25 * d) if long else (exit_price >= float(stop) - 0.25 * d):
+            return "стоп-лосс (SL)"
+    if tp:
+        d = abs(float(tp) - entry)
+        if (exit_price >= float(tp) - 0.25 * d) if long else (exit_price <= float(tp) + 0.25 * d):
+            return "тейк-профит (TP)"
+    if record.get("partial_tp_done"):
+        return "трейлинг/стоп после частичного профита"
+    return "закрыта между стопом и тейком (вручную, трейлинг или сбой тейка)"
+
+
+def _exit_details(client, record: dict, symbol: str):
+    """(средняя цена выхода, комиссии USDT) по fills после входа; (None, None) при сбое."""
+    try:
+        rows = client.get_user_trades(symbol, start_time_ms=int(float(record.get("opened_at", 0)) * 1000) - 1000)
+    except Exception as e:
+        logger.warning("futures_position_monitor: не удалось получить fills %s: %s", symbol, e)
+        return None, None
+    closing = "SELL" if str(record.get("side", "BUY")).upper() == "BUY" else "BUY"
+    qty = sum(float(r["qty"]) for r in rows if r.get("side") == closing)
+    if qty <= 0:
+        return None, None
+    px = sum(float(r["price"]) * float(r["qty"]) for r in rows if r.get("side") == closing) / qty
+    fees = sum(float(r.get("commission", 0)) for r in rows)
+    return px, fees
+
+
 def _determine_close_reason_and_cleanup(client, record: dict, symbol: str) -> str:
     """Возвращает человекочитаемую причину закрытия и попутно отменяет
     "осиротевший" условный ордер, если он остался висеть (см. docstring
@@ -437,6 +475,11 @@ def check_open_positions(client) -> dict:
 
         reason = _determine_close_reason_and_cleanup(client, record, symbol)
         pnl = _realized_pnl_since(client, symbol, record.get("opened_at", 0))
+        exit_px, fees = _exit_details(client, record, symbol)
+        if exit_px is not None:
+            if reason.startswith("неизвестно"):
+                reason = classify_exit(record, exit_px)
+            record = dict(record, exit_price=exit_px, fees=fees)
 
         # Cooldown по символу (см. config.FUTURES_SYMBOL_COOLDOWN_HOURS) -
         # только для НАСТОЯЩЕГО стоп-лосса, не для стопа в безубытке после

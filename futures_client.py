@@ -192,6 +192,14 @@ class FuturesClient:
             params["startTime"] = start_time_ms
         return self._signed_request("GET", "/fapi/v1/income", params)
 
+    def get_user_trades(self, symbol: str, start_time_ms: Optional[int] = None, limit: int = 500) -> list:
+        """Исполнения (fills) по символу: цена, количество, сторона, комиссия.
+        Нужны, чтобы узнать реальную цену выхода и причину закрытия позиции."""
+        params = {"symbol": symbol, "limit": limit}
+        if start_time_ms is not None:
+            params["startTime"] = start_time_ms
+        return self._signed_request("GET", "/fapi/v1/userTrades", params)
+
     def set_leverage(self, symbol: str, leverage: int) -> dict:
         return self._signed_request("POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": leverage})
 
