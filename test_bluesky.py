@@ -47,10 +47,10 @@ def test_build_bluesky_post_includes_hashtag_and_links(monkeypatch):
     result, facets = post_format.build_bluesky_post(text, ticker="BTC")
 
     assert "#BTC" in result
-    assert post_format.REFERRAL_LINK in result
+    assert config.SITE_URL in result and post_format.REFERRAL_LINK not in result
     assert "https://t.me/my_channel" in result
     assert len(result) <= post_format.BLUESKY_CHAR_LIMIT
-    assert (post_format.REFERRAL_LINK, post_format.REFERRAL_LINK) in facets
+    assert (config.SITE_URL, config.SITE_URL) in facets
     assert ("https://t.me/my_channel", "https://t.me/my_channel") in facets
 
 
@@ -58,9 +58,20 @@ def test_build_bluesky_post_without_telegram_channel_still_has_binance_link(monk
     monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "")
     result, facets = post_format.build_bluesky_post("Хук без канала.", ticker=None)
 
-    assert post_format.REFERRAL_LINK in result
+    assert config.SITE_URL in result
     assert "t.me" not in result
     assert len(facets) == 1
+
+
+def test_referral_line_only_when_enabled_or_no_site(monkeypatch):
+    monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "")
+    monkeypatch.setattr(config, "BLUESKY_REFERRAL_ENABLED", True)
+    result, _ = post_format.build_bluesky_post("x", ticker=None)
+    assert post_format.REFERRAL_LINK in result and config.SITE_URL in result
+    monkeypatch.setattr(config, "BLUESKY_REFERRAL_ENABLED", False)
+    monkeypatch.setattr(config, "SITE_URL", "")
+    result, _ = post_format.build_bluesky_post("x", ticker=None)
+    assert post_format.REFERRAL_LINK in result
 
 
 def test_build_bluesky_post_truncates_long_body_but_keeps_links(monkeypatch):
@@ -70,7 +81,7 @@ def test_build_bluesky_post_truncates_long_body_but_keeps_links(monkeypatch):
     result, facets = post_format.build_bluesky_post(long_text, ticker="DOGE")
 
     assert len(result) <= post_format.BLUESKY_CHAR_LIMIT
-    assert post_format.REFERRAL_LINK in result
+    assert config.SITE_URL in result
     assert "https://t.me/my_channel" in result
     assert "#DOGE" in result
     assert result.count("…") >= 1
@@ -445,3 +456,14 @@ if __name__ == "__main__":
 
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
+def test_telegram_crosspost_adds_site_line_sometimes(monkeypatch):
+    import main
+    sent = []
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: True)
+    monkeypatch.setattr(main.telegram_publisher, "publish_post", lambda text, img=None: sent.append(text) or {})
+    monkeypatch.setattr(config, "TELEGRAM_SITE_LINE_PROBABILITY", 1.0)
+    main._crosspost_to_telegram("hello")
+    monkeypatch.setattr(config, "TELEGRAM_SITE_LINE_PROBABILITY", 0.0)
+    main._crosspost_to_telegram("hello")
+    assert config.SITE_URL in sent[0] and sent[1] == "hello"

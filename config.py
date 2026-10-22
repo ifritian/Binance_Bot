@@ -800,6 +800,13 @@ WEEKLY_BRIEF_HOUR_UTC = int(os.environ.get("WEEKLY_BRIEF_HOUR_UTC") or 17)
 
 # Куда вести читателей со страницы проекта (необязательно): профиль Binance Square.
 SQUARE_PROFILE_URL = (os.environ.get("SQUARE_PROFILE_URL") or "").strip()
+# Публичная страница проекта (GitHub Pages). Ссылка идёт ТОЛЬКО в Bluesky и Telegram; в Binance Square ссылки не ставим.
+SITE_URL = (os.environ.get("SITE_URL") or "https://ifritian.github.io/Binance_Bot/").strip()
+# Доля кросспостов в Telegram, к которым добавляется строка со ссылкой на сайт.
+TELEGRAM_SITE_LINE_PROBABILITY = float(os.environ.get("TELEGRAM_SITE_LINE_PROBABILITY") or "0.35")
+# Реферальная ссылка Binance в Bluesky-кросспостах. Выключена: взамен - ссылка на сайт, а читатели, пришедшие по реферальной
+# ссылке, не приносят комиссию Write-to-Earn.
+BLUESKY_REFERRAL_ENABLED = (os.environ.get("BLUESKY_REFERRAL_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 
 
 # Защита от дублей в Square: тот же формат не чаще, чем раз в N часов

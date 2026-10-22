@@ -351,6 +351,9 @@ def _crosspost_to_telegram(text: str, image_path=None) -> None:
     откатывать или блокировать уже состоявшуюся публикацию на Square."""
     if not telegram_publisher.is_configured():
         return
+    site = post_format.site_line()
+    if site and random.random() < config.TELEGRAM_SITE_LINE_PROBABILITY and site[1] not in text and len(text) + len(site[0]) < 950:
+        text = f"{text}\n\n📊 {site[0]}"
     try:
         telegram_publisher.publish_post(text, image_path)
     except telegram_publisher.TelegramPublishError as e:
