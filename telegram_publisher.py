@@ -129,3 +129,15 @@ def publish_poll(question: str, options: list, is_anonymous: bool = True) -> dic
     )
     logger.info("Опрос опубликован в Telegram: message_id=%s", result.get("message_id"))
     return result
+
+
+def get_member_count() -> int | None:
+    """Число подписчиков канала (getChatMemberCount) или None, если канал не настроен / запрос не удался."""
+    if not is_configured():
+        return None
+    try:
+        res = _post("getChatMemberCount", data={"chat_id": config.TELEGRAM_PUBLISH_CHANNEL})
+    except TelegramPublishError as e:
+        logger.warning("Не удалось получить число подписчиков Telegram: %s", e)
+        return None
+    return res if isinstance(res, int) else None

@@ -351,7 +351,7 @@ def _crosspost_to_telegram(text: str, image_path=None) -> None:
     откатывать или блокировать уже состоявшуюся публикацию на Square."""
     if not telegram_publisher.is_configured():
         return
-    site = post_format.site_line()
+    site = post_format.site_line("tg")
     if site and random.random() < config.TELEGRAM_SITE_LINE_PROBABILITY:
         line = (post_format.REFERRAL_LINE if random.random() < config.REFERRAL_LINK_SHARE else site[0])
         if line.split(" ")[-1] not in text and len(text) + len(line) < 950:

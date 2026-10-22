@@ -117,8 +117,9 @@ def test_build_digest_combines_all_sections(monkeypatch):
     monkeypatch.setattr(ops_digest, "_signal_stats_section", lambda: "SIG")
     monkeypatch.setattr(ops_digest, "_futures_stats_section", lambda: "FUT")
     monkeypatch.setattr(ops_digest, "_risk_section", lambda: "RISK")
+    monkeypatch.setattr(ops_digest, "_audience_section", lambda: "AUD")
     digest = ops_digest.build_digest()
-    assert digest == "PUB\n\nSIG\n\nFUT\n\nRISK"
+    assert digest == "PUB\n\nAUD\n\nSIG\n\nFUT\n\nRISK"
 
 
 def test_main_uses_neutral_prefix_not_alert(monkeypatch):

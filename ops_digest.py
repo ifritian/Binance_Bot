@@ -109,6 +109,19 @@ def _risk_section() -> str:
     )
 
 
+def _audience_section() -> str:
+    try:
+        import audience
+        import telegram_publisher
+        n = telegram_publisher.get_member_count()
+        if n is None:
+            return audience.summary(queue_manager._get(audience.KEY) or [])
+        return audience.summary(audience.record(n))
+    except Exception as e:
+        logger.warning("ops_digest: аудитория недоступна: %s", e)
+        return "Telegram: подписчики недоступны"
+
+
 def _is_end_of_day_window() -> bool:
     """True, если сейчас "конец дня" по UTC (см. config.OPS_DIGEST_HOUR_UTC) -
     т.е. текущий час >= порога. НЕ "час ровно == порогу", потому что
@@ -122,6 +135,7 @@ def _is_end_of_day_window() -> bool:
 def build_digest() -> str:
     return (
         f"{_publishing_section()}\n\n"
+        f"{_audience_section()}\n\n"
         f"{_signal_stats_section()}\n\n"
         f"{_futures_stats_section()}\n\n"
         f"{_risk_section()}"

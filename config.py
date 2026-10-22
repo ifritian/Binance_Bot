@@ -802,6 +802,8 @@ WEEKLY_BRIEF_HOUR_UTC = int(os.environ.get("WEEKLY_BRIEF_HOUR_UTC") or 17)
 SQUARE_PROFILE_URL = (os.environ.get("SQUARE_PROFILE_URL") or "").strip()
 # Публичная страница проекта (GitHub Pages). Ссылка идёт ТОЛЬКО в Bluesky и Telegram; в Binance Square ссылки не ставим.
 SITE_URL = (os.environ.get("SITE_URL") or "https://ifritian.github.io/Binance_Bot/").strip()
+# Код счётчика посещений GoatCounter (бесплатно, без cookie): goatcounter.com -> создать сайт -> код. Пусто = без счётчика.
+GOATCOUNTER_CODE = (os.environ.get("GOATCOUNTER_CODE") or "").strip()
 # Доля кросспостов в Telegram, к которым добавляется строка со ссылкой на сайт.
 TELEGRAM_SITE_LINE_PROBABILITY = float(os.environ.get("TELEGRAM_SITE_LINE_PROBABILITY") or "0.5")
 # Доля Bluesky-кросспостов (и добавляемых ссылок в Telegram), где вместо ссылки на сайт стоит реферальная ссылка Binance:

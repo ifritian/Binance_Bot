@@ -51,7 +51,7 @@ def test_build_bluesky_post_includes_hashtag_and_links(monkeypatch):
     assert config.SITE_URL in result and post_format.REFERRAL_LINK not in result
     assert "https://t.me/my_channel" in result
     assert len(result) <= post_format.BLUESKY_CHAR_LIMIT
-    assert (config.SITE_URL, config.SITE_URL) in facets
+    assert (config.SITE_URL + "?s=bsky", config.SITE_URL + "?s=bsky") in facets
     assert ("https://t.me/my_channel", "https://t.me/my_channel") in facets
 
 

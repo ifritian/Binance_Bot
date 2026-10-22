@@ -31,6 +31,7 @@ jobs:
           SQUARE_PROFILE_URL: ${{ secrets.SQUARE_PROFILE_URL }}
           TELEGRAM_PUBLISH_CHANNEL: ${{ secrets.TELEGRAM_PUBLISH_CHANNEL }}
           BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+          GOATCOUNTER_CODE: ${{ secrets.GOATCOUNTER_CODE }}
         run: python site_builder.py --out /tmp/site
       - name: Publish to gh-pages
         run: |
