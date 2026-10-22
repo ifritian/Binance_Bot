@@ -190,11 +190,14 @@ def square_general_hashtag_line() -> str:
     return random.choice(_SQUARE_GENERAL_HASHTAGS)
 
 
-def site_line() -> tuple[str, str] | None:
-    """(строка, url) со ссылкой на сайт проекта или None. Только для Bluesky/Telegram."""
+def site_line(src: str | None = None) -> tuple[str, str] | None:
+    """(строка, url) со ссылкой на сайт проекта или None. Только для Bluesky/Telegram.
+    src - метка источника (?s=bsky / ?s=tg), чтобы счётчик посещений показывал, откуда пришли."""
     url = (config.SITE_URL or "").strip()
     if not url:
         return None
+    if src:
+        url += ("&" if "?" in url else "?") + f"s={src}"
     lead = "Full record of every call:" if config.SQUARE_TEMPLATE_LANG != "ru" else "Все результаты:"
     return f"{lead} {url}", url
 
@@ -384,7 +387,7 @@ def build_bluesky_post(text: str, ticker: str | None = None) -> tuple[str, list]
     Ничего не меняет в исходном text - используется только здесь, отдельно
     от текста, который реально уходит на Binance Square/Telegram."""
     links, link_facets = [], []
-    site = site_line()
+    site = site_line("bsky")
     use_ref = site is None or random.random() < config.REFERRAL_LINK_SHARE   # ссылки чередуются: Binance / сайт
     if use_ref:
         links.append(REFERRAL_LINE)

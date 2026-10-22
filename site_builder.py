@@ -171,6 +171,7 @@ h1{font-size:clamp(36px,6.4vw,62px);line-height:1.02;margin:0 0 18px;font-weight
 .cta{display:flex;gap:12px;flex-wrap:wrap}
 .btn{display:inline-block;padding:11px 17px;border-radius:10px;font-weight:600;text-decoration:none;border:1.5px solid var(--ink)}
 .btn.main{background:var(--ink);color:var(--bg)}
+.btn.ref{border-color:var(--cyan);color:var(--cyan)}
 .btn:hover{transform:translateY(-1px)}
 .now{margin-top:26px;color:var(--muted);font-size:15px;display:flex;flex-wrap:wrap;gap:6px 22px}
 .now b{color:var(--ink);font-weight:600}
@@ -281,7 +282,7 @@ FAQ = [
     ("Who writes the posts?", "An automated system builds them from Binance market data and public announcements. Numbers come from code, not from a person typing them. The owner reads and answers comments."),
     ("Are the trend ideas profitable?", "Unproven. In historical tests the method's edge was small and statistically weak, so this page exists to measure it in real time instead of promising anything. The table above is the answer, whatever it turns out to be."),
     ("What about fees?", "Results are shown after an estimated 0.2% fee per round trip. Real fills can differ."),
-    ("Is anything paid or promoted?", "No coin promotions and no paid placements. Posts include a clickable coin tag, which Binance Square rewards when readers trade, and that is how this project can earn."),
+    ("Is anything paid or promoted?", "No coin promotions and no paid placements. The project can earn in two ways: Binance Square pays a commission when readers click a coin tag and trade, and the \"Open a Binance account\" button and some post links are referral links, which pay a share of trading fees if you sign up through them. It costs you nothing extra."),
 ]
 
 
@@ -444,6 +445,8 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
     primary = ls[0] if ls else None
     cta = (f'<a class="btn main" href="{_e(primary[1])}" rel="noopener">Follow on {_e(primary[0])}</a>' if primary else "")
     cta += "".join(f'<a class="btn" href="{_e(u)}" rel="noopener">{_e(n)}</a>' for n, u in ls[1:])
+    import post_format
+    cta += f'<a class="btn ref" href="{_e(post_format.REFERRAL_LINK)}" rel="noopener sponsored">Open a Binance account</a>'
 
     idea_stats = (
         f'<div class="statline"><div><span>Closed</span><b class="big">{ideas["n"]}</b></div>'
@@ -474,6 +477,8 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
     upd = datetime.fromtimestamp(now_ts, timezone.utc).strftime("%b %d, %Y, %H:%M UTC")
     faq = "".join(f"<details><summary>{_e(q)}</summary><p>{_e(a)}</p></details>" for q, a in FAQ)
     import site_heatmap
+    counter = (f'<script data-goatcounter="https://{_e(config.GOATCOUNTER_CODE)}.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>'
+               if config.GOATCOUNTER_CODE else "")
     heat = live.get("heat") or []
     heat_html = site_heatmap.heatmap_html(heat)
     mood_html = _mood_html(live)
@@ -540,8 +545,8 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
 
 <section class="faq"><h2 class="s">Questions</h2>{faq}</section>
 
-<footer>Not financial advice. Past results do not predict future results. Market data from Binance, sentiment index from alternative.me. Page rebuilt {upd}.</footer>
-</div><script>{site_heatmap.SCRIPT}</script></body></html>"""
+<footer>Not financial advice. Past results do not predict future results. Market data from Binance, sentiment index from alternative.me. Some links to Binance are referral links; the project may earn a commission if you sign up through them, at no cost to you. Page rebuilt {upd}.</footer>
+</div><script>{site_heatmap.SCRIPT}</script>{counter}</body></html>"""
 
 
 
