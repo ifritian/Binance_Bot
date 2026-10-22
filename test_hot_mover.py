@@ -98,3 +98,14 @@ def test_snapshots_pruned_and_text_mentions_window(monkeypatch):
     monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
     txt = market_digest.build_hot_text("SUI", 2.0, 3.0, fast_pct=4.2, fast_min=60)
     assert "last hour" in txt and "+4.2%" in txt and "24 hours" not in txt
+
+
+def test_mover_poll_limited_to_once_per_day(monkeypatch, tmp_path):
+    import queue_manager
+    monkeypatch.setattr(queue_manager, "DB_PATH", str(tmp_path / "p.db"), raising=False)
+    polls = []
+    monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: True)
+    monkeypatch.setattr(main.telegram_publisher, "publish_poll", lambda q, o: polls.append((q, o)) or {})
+    main._telegram_mover_poll("SUI", 4.2, 60)
+    main._telegram_mover_poll("SOL", 5.0, 60)
+    assert len(polls) == 1 and "SUI is +4.2% in the last hour" in polls[0][0] and len(polls[0][1]) == 4
