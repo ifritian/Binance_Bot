@@ -39,7 +39,7 @@ _MUTED_TEXT_COLOR = "#848E9C"
 
 # Та же палитра, что и _TIER_ACCENT в treasury_heatmap.py - визуальная
 # консистентность между двумя картинками одного поста.
-_TIER_ACCENT = {"tier1": "#29ABE2", "tier2": "#F0B90B", "tier3": "#E4007A"}
+_TIER_ACCENT = {"tier1": "#F0B90B", "tier2": "#B7BDC6", "tier3": "#F6465D"}
 _TIER_LABELS = {"tier1": "Фундамент", "tier2": "Рост", "tier3": "Риск"}
 
 

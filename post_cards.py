@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 _BG = cg._BG_COLOR
 _UP = cg._UP_COLOR
-_DOWN = cg._DOWN_COLOR
+_DOWN = cg._NEG_COLOR
 _TEXT = "#EAECEF"
 _MUTED = cg._AXIS_TEXT_COLOR
 _GRID = cg._GRID_COLOR
@@ -104,7 +104,7 @@ def digest_card(data: dict, slot_hour_utc: int) -> Path | None:
 
 
 def _fng_color(v: float) -> str:
-    stops = [(0, "#E4007A"), (25, "#F0662F"), (50, "#F0B90B"), (75, "#7FCB4B"), (100, "#29ABE2")]
+    stops = [(0, "#F6465D"), (25, "#F0662F"), (50, "#F0B90B"), (75, "#FCD535"), (100, "#FFF1B8")]
     for (a, ca), (b, cb) in zip(stops, stops[1:]):
         if v <= b:
             t = (v - a) / (b - a)
@@ -150,7 +150,7 @@ def fng_card(data: dict) -> Path | None:
         return None
 
 
-_KIND_COLORS = {"delist": "#F6465D", "network": "#F0B90B", "listing": "#0ECB81", "event": "#29ABE2", "news": "#848E9C"}
+_KIND_COLORS = {"delist": "#F6465D", "network": "#F0B90B", "listing": "#FCD535", "event": "#EAECEF", "news": "#848E9C"}
 
 
 def radar_card(items: list[dict]) -> Path | None:

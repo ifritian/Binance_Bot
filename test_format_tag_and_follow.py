@@ -38,7 +38,7 @@ def test_follow_line_probability_and_compact(monkeypatch):
     monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
     monkeypatch.setattr(config, "SQUARE_FOLLOW_LINE_PROBABILITY", 1.0)
     full = market_digest.build_digest_text(DATA, 6, random.Random(1))
-    assert "Follow to get the 06:00 and 17:00 UTC snapshots daily." in full
+    assert "Follow to get the 07:00 and 13:00 UTC snapshots daily." in full
     assert "Follow" not in market_digest.build_digest_text(DATA, 6, random.Random(1), compact=True)
     monkeypatch.setattr(config, "SQUARE_FOLLOW_LINE_PROBABILITY", 0.0)
     assert "Follow" not in market_digest.build_digest_text(DATA, 6, random.Random(1))
