@@ -782,7 +782,7 @@ NEWS_RADAR_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_RADAR_MIN_INTERVAL_HO
 
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
 CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
-                     "digest,fear_greed,breakout,hot_mover,mover_result,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
+                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
 # Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
 LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 
@@ -807,7 +807,7 @@ SQUARE_PROFILE_URL = (os.environ.get("SQUARE_PROFILE_URL") or "").strip()
 # итоги идей), по этому правилу не ограничиваются.
 SAME_FORMAT_MIN_GAP_HOURS = {
     "digest": 4, "fear_greed": 12, "altcoin_basket": 6, "binance_radar": 6,
-    "weekly_brief": 48, "momentum": 72, "question": 3, "opinion": 6, "listing_report": 1,
+    "weekly_brief": 48, "momentum": 72, "mover_followup": 4, "question": 3, "opinion": 6, "listing_report": 1,
 }
 
 # Недельный бумажный моментум (xs_momentum.py).

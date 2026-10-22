@@ -18,12 +18,14 @@ from datetime import datetime, timezone
 
 import requests
 
+import micro_moments
+
 import config
 import post_format
 
 logger = logging.getLogger(__name__)
 
-FNG_URL = "https://api.alternative.me/fng/?limit=2"
+FNG_URL = "https://api.alternative.me/fng/?limit=30"
 ANNOUNCEMENTS_URL = (
     "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query"
     "?type=1&catalogId=48&pageNo=1&pageSize=10"
@@ -49,12 +51,13 @@ def fetch_fng() -> dict | None:
         value = int(rows[0]["value"])
         label = str(rows[0]["value_classification"])
         prev = int(rows[1]["value"]) if len(rows) > 1 else None
+        history = [int(r["value"]) for r in rows]
     except (requests.RequestException, KeyError, IndexError, ValueError, TypeError) as e:
         logger.warning("Индекс страха и жадности: не удалось получить данные: %s", e)
         return None
     if not 0 <= value <= 100:
         return None
-    return {"value": value, "label": label, "prev": prev}
+    return {"value": value, "label": label, "prev": prev, "history": history}
 
 
 def _fng_question(value: int, en: bool, rng, prev: int | None = None) -> str:
@@ -116,6 +119,9 @@ def build_fng_text(data: dict, rng=None) -> str:
             lines = [f"{v} on the Fear & Greed Index. {label}." + (f" {prev_txt[0].upper() + prev_txt[1:]}." if prev_txt else "")]
         else:
             lines = [_fng_question(v, en, rng, prev), "", f"Fear & Greed: {v} ({label})" + (f", {prev_txt}" if prev_txt else "")]
+        streak = micro_moments.fng_streak_line(data.get("history"), rng)
+        if streak and rng.random() < 0.75:
+            lines.append(streak)
         disclaimer = voice_variety.disclaimer(rng)
     else:
         lines = [f"😱 Индекс страха и жадности: {v} ({_FNG_RU.get(label, label).lower()})"]
