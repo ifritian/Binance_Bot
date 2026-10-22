@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 
 import requests
 
+import micro_moments
+
 import coin_whitelist
 import config
 import post_format
@@ -171,6 +173,10 @@ def build_digest_text(data: dict, slot_hour_utc: int, rng: random.Random | None 
         options.append((_EN_QUESTION_LOSER if en else _QUESTION_LOSER) % data["losers"][0][0])
     if not en or rng.random() < 0.8:
         lines += ["", rng.choice(options)]
+    if en and not compact and rng.random() < 0.4:
+        ctx = micro_moments.context_line(now_utc(), rng)
+        if ctx:
+            lines += ["", ctx]
     if not compact and rng.random() < config.SQUARE_FOLLOW_LINE_PROBABILITY:
         hours = " and ".join(f"{h:02d}:00" for h in config.MARKET_DIGEST_HOURS_UTC[:2])
         lines += ["", (f"Follow to get the {hours} UTC snapshots daily." if en
@@ -346,3 +352,14 @@ def build_hot_text(ticker: str, price: float, pct: float, rng: random.Random | N
         tpl = tpl.replace("The start of a move or already late?", "A bounce coming or more downside?")
     body = tpl.replace("${t}", f"${ticker}").format(pct=_fmt_pct(pct), price=_fmt_price(price))
     return f"{body}\n\n{_EN_DISCLAIMER if en else post_format.DISCLAIMER}\n\n#{ticker} #Crypto"
+
+
+def fetch_price(ticker: str) -> float | None:
+    try:
+        resp = requests.get(f"{scanner._BASE_URL}/ticker/price", params={"symbol": f"{ticker}USDT"}, timeout=15)
+        resp.raise_for_status()
+        p = float(resp.json()["price"])
+        return p if p > 0 else None
+    except (requests.RequestException, ValueError, KeyError, TypeError) as e:
+        logger.warning("Цена %s: %s", ticker, e)
+        return None

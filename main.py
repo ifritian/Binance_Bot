@@ -38,6 +38,7 @@ import chart_generator
 import coin_whitelist
 import event_posts
 import market_digest
+import micro_moments
 import mover_levels
 import mover_setups
 import xs_momentum
@@ -1023,6 +1024,10 @@ def try_publish_hot_mover() -> None:
     logger.info("Опубликовано (Горячая монета %s 24ч %+.1f%%, быстро %s): %s", ticker, pct, fp, result)
     if setup:
         mover_setups.register(setup, now)
+    if levels:
+        fl = [f for f in (queue_manager._get("mover_followups") or []) if now - f["ts"] < 48 * 3600]
+        fl.append(micro_moments.followup_record(ev, levels, now))
+        queue_manager._set("mover_followups", fl[-10:])
     log[ticker] = now
     queue_manager._set("hot_mover_log", log)
     queue_manager.set_last_post_time("square_global")
@@ -1047,6 +1052,39 @@ def _telegram_mover_poll(ticker: str, pct: float, minutes: int | None) -> None:
         logger.warning("Опрос про монету в Telegram не удался: %s", e)
         return
     queue_manager.set_last_post_time("telegram_mover_poll")
+
+
+def try_publish_mover_followup() -> None:
+    """Через 6-30 часов возвращаемся к монете из поста про скачок: что стало с показанными уровнями.
+    Публикуем итог независимо от того, сработала ли карта. Не чаще 2 раз в сутки."""
+    if not config.HOT_MOVER_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    now = time.time()
+    fl = queue_manager._get("mover_followups") or []
+    if not fl or not queue_manager.should_retry_now("mover_followup") or not _square_slot_available():
+        return
+    done_24h = [f for f in fl if f.get("done") and now - f.get("done_ts", 0) < 86400]
+    if len(done_24h) >= 2:
+        return
+    rec = next((f for f in fl if micro_moments.followup_due(f, now)), None)
+    if rec is None:
+        return
+    price = market_digest.fetch_price(rec["ticker"])
+    if price is None:
+        return
+    text = micro_moments.followup_text(rec, price, mover_setups._px)
+    chart = _coin_chart(rec["ticker"], 2, expected_price=price)
+    try:
+        result = _post("mover_followup", text, image_paths=[chart] if chart else None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации итога по монете: %s", e)
+        _record_publish_error("mover_followup", e)
+        queue_manager.set_retry_backoff("mover_followup", 1)
+        return
+    logger.info("Опубликован итог по %s: %s", rec["ticker"], result)
+    rec["done"], rec["done_ts"] = True, now
+    queue_manager._set("mover_followups", fl)
+    queue_manager.set_last_post_time("square_global")
 
 
 def try_publish_fng_post() -> None:
@@ -2409,6 +2447,7 @@ def tick() -> None:
         try_publish_fng_post()   # дневной слот: идёт раньше событийных форматов, иначе они забирают окно
         try_publish_square_question()
         try_publish_mover_result()
+        try_publish_mover_followup()
         try_publish_listing_announcement()
         try_publish_listing_report()
         try_publish_binance_alerts()
