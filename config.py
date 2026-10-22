@@ -803,10 +803,10 @@ SQUARE_PROFILE_URL = (os.environ.get("SQUARE_PROFILE_URL") or "").strip()
 # Публичная страница проекта (GitHub Pages). Ссылка идёт ТОЛЬКО в Bluesky и Telegram; в Binance Square ссылки не ставим.
 SITE_URL = (os.environ.get("SITE_URL") or "https://ifritian.github.io/Binance_Bot/").strip()
 # Доля кросспостов в Telegram, к которым добавляется строка со ссылкой на сайт.
-TELEGRAM_SITE_LINE_PROBABILITY = float(os.environ.get("TELEGRAM_SITE_LINE_PROBABILITY") or "0.35")
-# Реферальная ссылка Binance в Bluesky-кросспостах. Выключена: взамен - ссылка на сайт, а читатели, пришедшие по реферальной
-# ссылке, не приносят комиссию Write-to-Earn.
-BLUESKY_REFERRAL_ENABLED = (os.environ.get("BLUESKY_REFERRAL_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
+TELEGRAM_SITE_LINE_PROBABILITY = float(os.environ.get("TELEGRAM_SITE_LINE_PROBABILITY") or "0.5")
+# Доля Bluesky-кросспостов (и добавляемых ссылок в Telegram), где вместо ссылки на сайт стоит реферальная ссылка Binance:
+# они чередуются. 0 - только сайт, 1 - только Binance.
+REFERRAL_LINK_SHARE = float(os.environ.get("REFERRAL_LINK_SHARE") or "0.5")
 
 
 # Защита от дублей в Square: тот же формат не чаще, чем раз в N часов
