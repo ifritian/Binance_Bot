@@ -4,7 +4,7 @@ name: Project page
 # Один раз в Settings -> Pages выберите: Source = Deploy from a branch, Branch = gh-pages, / (root).
 on:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:

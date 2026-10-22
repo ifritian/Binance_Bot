@@ -154,6 +154,7 @@ a:focus-visible,button:focus-visible{outline:3px solid var(--cyan);outline-offse
 h1,h2,h3,.brand,.big{font-family:"Bricolage Grotesque","Public Sans",system-ui,sans-serif;letter-spacing:-.02em}
 header.top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px 16px;padding:22px 0}
 .brand{font-weight:700;font-size:20px;text-decoration:none;white-space:nowrap}
+.brand img{width:34px;height:34px;border-radius:50%;vertical-align:middle;margin-right:10px}
 .brand i{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--cyan);margin-right:10px;box-shadow:0 0 0 4px color-mix(in srgb,var(--cyan) 22%,transparent)}
 nav.follow{display:flex;gap:18px;flex-wrap:wrap;font-size:15px}
 nav.follow a{text-decoration:none;border-bottom:1px solid var(--line)}
@@ -167,6 +168,7 @@ h1{font-size:clamp(36px,6.4vw,62px);line-height:1.02;margin:0 0 18px;font-weight
 .btn:hover{transform:translateY(-1px)}
 .now{margin-top:26px;color:var(--muted);font-size:15px;display:flex;flex-wrap:wrap;gap:6px 22px}
 .now b{color:var(--ink);font-weight:600}
+.stamp{margin:14px 0 0;color:var(--muted);font-size:13px}
 .up{color:var(--cyan)}.down{color:var(--magenta)}
 .wire{border-left:2px solid var(--ink);padding-left:20px}
 .wire h2{font-size:15px;font-weight:600;margin:0 0 4px;display:flex;align-items:center;gap:8px;font-family:"Public Sans",sans-serif;letter-spacing:0}
@@ -246,15 +248,70 @@ def _clean_head(head: str, limit: int = 78) -> str:
     return cut + "…"
 
 
-def _wire(posts: list) -> str:
+def _ago(ts: float, now_ts: float) -> str:
+    m = max(int((now_ts - ts) / 60), 0)
+    if m < 2:
+        return "just now"
+    if m < 90:
+        return f"{m} min ago"
+    h = m // 60
+    if h < 36:
+        return f"{h} h ago"
+    return f"{h // 24} days ago"
+
+
+def _avatar_uri() -> str:
+    import base64
+    p = Path(__file__).parent / "assets" / "avatar.png"
+    try:
+        return "data:image/png;base64," + base64.b64encode(p.read_bytes()).decode()
+    except OSError:
+        return ""
+
+
+def _momentum_section() -> str:
+    """Бумажный недельный трекер импульса: честно как эксперимент, без обещаний."""
+    try:
+        import xs_momentum
+        st = xs_momentum._state()
+        s = xs_momentum.stats()
+    except Exception:
+        return ""
+    pos, closed = st.get("open"), st.get("closed", [])
+    if not pos and not closed:
+        return ""
+    tick = lambda syms: ", ".join("$" + _e(x["sym"].removesuffix("USDT")) for x in syms)
+    parts = []
+    if pos:
+        day = min(int((time.time() - pos["t0"]) / 86400) + 1, 7)
+        parts.append(f'<p class="sub">This week\'s paper basket (day {day} of 7). Strongest 28-day coins held long: '
+                     f'{tick(pos["long"])}. Weakest held short: {tick(pos["short"])}.</p>')
+    rows = [f"<tr><td>{_date(c['t0'])}</td><td class=\"{_cls(c['long_pct'])}\">{_pct(c['long_pct'])}</td>"
+            f"<td class=\"{_cls(c['short_pct'])}\">{_pct(c['short_pct'])}</td>"
+            f"<td class=\"{_cls(c['net'])}\">{_pct(c['net'])}</td></tr>" for c in reversed(closed[-12:])]
+    table = (_table(["Week of", "Long side", "Short side", "Net after costs"], rows) if rows else
+             '<p class="empty">No week has closed yet. The first result lands here when the first basket closes, win or lose.</p>')
+    line = ""
+    if s["n"]:
+        line = (f'<div class="statline"><div><span>Weeks closed</span><b class="big">{s["n"]}</b></div>'
+                f'<div><span>In profit</span><b class="big">{s["wins"]}</b></div>'
+                f'<div><span>Average per week</span><b class="big {_cls(s["avg"])}">{_pct(s["avg"])}</b></div></div>')
+    return ('<section><h2 class="s">Weekly momentum test</h2>'
+            '<p class="note">A paper experiment, no real money. Every week the strongest and weakest coins of the last 28 days are '
+            'tracked for seven days. Back-tests were mildly positive but statistically weak, so this is a live test, not a promise.</p>'
+            f'{"".join(parts)}{line}{table}</section>')
+
+
+def _wire(posts: list, now_ts: float | None = None) -> str:
     shown = [p for p in posts if p.get("fmt") in FMT_LABELS][-5:]
     if not shown:
         return '<p class="empty">The first posts will appear here as soon as they go out.</p>'
     rows = []
     for p in reversed(shown):
         head = _clean_head(p["head"])
-        when = datetime.fromtimestamp(p["ts"], timezone.utc).strftime("%b %d, %H:%M UTC")
-        rows.append(f'<li><div class="meta">{when} · {_e(FMT_LABELS[p["fmt"]])}</div>'
+        absolute = datetime.fromtimestamp(p["ts"], timezone.utc).strftime("%b %d, %H:%M UTC")
+        when = _ago(p["ts"], now_ts or time.time())
+        rows.append(f'<li><div class="meta" title="{absolute}">{when} · {_e(FMT_LABELS[p["fmt"]])}</div>'
                     f'<a href="{SQUARE_POST_URL.format(id=_e(p["id"]))}" rel="noopener">{_e(head)}</a></li>')
     return f'<ol>{"".join(rows)}</ol>'
 
@@ -334,8 +391,12 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
         word = "level with" if abs(gap) < 0.05 else (f"{abs(gap):.1f} points ahead of" if gap > 0 else f"{abs(gap):.1f} points behind")
         gap_txt = f'<p class="sub">Since tracking began, the basket is {word} Bitcoin.</p>'
 
+    upd_short = datetime.fromtimestamp(now_ts, timezone.utc).strftime("%b %d, %H:%M UTC")
     upd = datetime.fromtimestamp(now_ts, timezone.utc).strftime("%b %d, %Y, %H:%M UTC")
     faq = "".join(f"<details><summary>{_e(q)}</summary><p>{_e(a)}</p></details>" for q, a in FAQ)
+    av = _avatar_uri()
+    avatar_img = f'<img src="{av}" alt="" width="34" height="34">' if av else "<i></i>"
+    favicon = f'<link rel="icon" href="{av}">' if av else ""
     follow_nav = f'<nav class="follow" aria-label="Follow">{_links_html(ls)}</nav>' if ls else ""
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -343,9 +404,10 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
 <meta name="description" content="Daily crypto market snapshots, Binance announcements and trend ideas, with every result published, losses included.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+{favicon}<meta property="og:title" content="{_e(PROJECT)}"><meta property="og:description" content="Crypto market desk with a public record: wins and losses published.">
 <style>{CSS}</style></head><body>
 <div class="wrap">
-<header class="top"><a class="brand" href="#"><i></i>{_e(PROJECT)}</a>{follow_nav}</header>
+<header class="top"><a class="brand" href="#">{avatar_img}{_e(PROJECT)}</a>{follow_nav}</header>
 
 <div class="hero">
   <div>
@@ -353,8 +415,9 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
     <p class="lead">Market snapshots, Binance announcements and trend ideas, every day. Each call is logged below, losses included.</p>
     <div class="cta">{cta}</div>
     {_now_line(live)}
+    <p class="stamp">Updated {upd_short}</p>
   </div>
-  <aside class="wire" aria-label="Latest posts"><h2><span class="live" aria-hidden="true"></span>On the wire</h2>{_wire(d["posts"])}</aside>
+  <aside class="wire" aria-label="Latest posts"><h2><span class="live" aria-hidden="true"></span>On the wire</h2>{_wire(d["posts"], now_ts)}</aside>
 </div>
 
 <section><h2 class="s">What you get</h2>
@@ -367,6 +430,8 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
 <p class="note">In historical tests this method had only a small edge, and it was statistically weak. Treat it as unproven. This table is the live test.</p>
 <h3>Closed ideas</h3>{closed_html}
 <h3 style="margin-top:28px">Open now</h3>{open_html}</section>
+
+{_momentum_section()}
 
 <section><h2 class="s">Altcoin basket against Bitcoin and Ethereum</h2>
 {gap_txt}
