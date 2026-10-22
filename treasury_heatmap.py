@@ -46,13 +46,13 @@ _CHARTS_DIR = config.BASE_DIR / "charts"
 _OUT_PATH = _CHARTS_DIR / "treasury_heatmap.png"
 
 _BG_COLOR = "#0B0E11"
-_UP_COLOR = "#29ABE2"
-_DOWN_COLOR = "#E4007A"
+_UP_COLOR = "#F0B90B"
+_DOWN_COLOR = "#F6465D"
 _MISSING_COLOR = "#2B2F36"
 _TEXT_COLOR = "#FFFFFF"
 _MUTED_TEXT_COLOR = "#848E9C"
 
-_TIER_ACCENT = {"tier1": "#29ABE2", "tier2": "#F0B90B", "tier3": "#E4007A"}
+_TIER_ACCENT = {"tier1": "#F0B90B", "tier2": "#B7BDC6", "tier3": "#F6465D"}
 
 # Холст в условных единицах - ширина/высота выбраны под соотношение
 # сторон ~2:1 (близко к типичным крипто-хитмапам, удобно для ленты

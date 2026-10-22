@@ -235,7 +235,7 @@ SQUARE_TEMPLATE_LANG = "ru" if (os.environ.get("SQUARE_TEMPLATE_LANG") or "en").
 # по UTC (по умолчанию 06:00 и 17:00 UTC - утро и вечер в Европе).
 MARKET_DIGEST_ENABLED = (os.environ.get("MARKET_DIGEST_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 MARKET_DIGEST_HOURS_UTC = sorted({
-    int(h) for h in (os.environ.get("MARKET_DIGEST_HOURS_UTC") or "6,17").split(",")
+    int(h) for h in (os.environ.get("MARKET_DIGEST_HOURS_UTC") or "7,13").split(",")
     if h.strip().isdigit() and 0 <= int(h) <= 23
 }) or [6, 17]
 # Строка "подпишись, чтобы получать срезы" в части постов-срезов (про собственный контент, не реклама).
@@ -268,7 +268,7 @@ TREND_BREAKOUT_MAX_OPEN = int(os.environ.get("TREND_BREAKOUT_MAX_OPEN") or "8")
 TREND_BREAKOUT_UPDATE_HOURS = float(os.environ.get("TREND_BREAKOUT_UPDATE_HOURS") or "24")
 # "Индекс страха и жадности" (event_posts.py): раз в сутки в этот час UTC.
 FNG_ENABLED = (os.environ.get("FNG_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
-FNG_HOUR_UTC = int(os.environ.get("FNG_HOUR_UTC") or "11")
+FNG_HOUR_UTC = int(os.environ.get("FNG_HOUR_UTC") or "9")
 # "Анонсы Binance" (новые листинги): не чаще раза в N часов.
 ANNOUNCEMENTS_ENABLED = (os.environ.get("ANNOUNCEMENTS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 ANNOUNCEMENTS_MIN_INTERVAL_HOURS = float(os.environ.get("ANNOUNCEMENTS_MIN_INTERVAL_HOURS") or "6")

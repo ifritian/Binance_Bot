@@ -30,21 +30,22 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://data-api.binance.vision/api/v3"
 _CHARTS_DIR = config.BASE_DIR / "charts"
 
-# Неоновая палитра (по референсу пользователя - коктейль на тёмно-синем
-# фоне): циан для роста, маджента для падения - вместо стандартных
-# Binance-цветов (#0ECB81/#F6465D).
-_UP_COLOR = "#29ABE2"
-_DOWN_COLOR = "#E4007A"
+# Палитра в стиле Binance: чёрный фон и золото. Рост - золотой, падение у свечей -
+# светло-серый (читается на чёрном и не спорит с золотом), красный (_NEG_COLOR) - только
+# для чисел падения, стоп-линий и подписей убытка.
+_UP_COLOR = "#F0B90B"
+_DOWN_COLOR = "#8C93A1"
+_NEG_COLOR = "#F6465D"
 _BG_COLOR = "#0B0E11"
 _GRID_COLOR = "#1E2329"
 _AXIS_TEXT_COLOR = "#848E9C"
 _WATERMARK_COLOR = "#FFFFFF"
 
 # Цвета MA-линий. MA25 намеренно НЕ маджента/розовый (как раньше) -
-# на фоне такого же по тону down-цвета свечей (#E4007A) линия бы
+# на фоне такого же по тону down-цвета свечей (серых) линия бы
 # сливалась с телами свечей и переставала читаться. Светлый
 # нейтральный цвет держит контраст с обоими цветами свечей сразу.
-_MA_COLORS = {7: "#F0B90B", 25: "#E8E8E8", 99: "#7B61FF"}
+_MA_COLORS = {7: "#FFFFFF", 25: "#B7BDC6", 99: "#6B7280"}
 
 # Страховка на случай ошибок форматирования тикера и т.п. - на практике
 # не должна срабатывать, раз график и сигнал берут данные из одного и
@@ -301,7 +302,7 @@ def generate_cumulative_pnl_chart(records: list[dict], out_name: str = "weekly_d
 
     xs = list(range(len(cumulative)))
     final = cumulative[-1]
-    line_color = _UP_COLOR if final >= 0 else _DOWN_COLOR
+    line_color = _UP_COLOR if final >= 0 else _NEG_COLOR
 
     _CHARTS_DIR.mkdir(exist_ok=True)
     out_path = _CHARTS_DIR / f"{out_name}.png"
@@ -335,7 +336,7 @@ def generate_cumulative_pnl_chart(records: list[dict], out_name: str = "weekly_d
 # Цвет рукописных пометок - тёплый жёлтый (не совпадает ни с _UP_COLOR/
 # _DOWN_COLOR свечей, ни с MA-линиями), как маркер/выделение поверх
 # графика, а не часть самих данных.
-_ANNOTATION_COLOR = "#F0B90B"
+_ANNOTATION_COLOR = "#FFFFFF"
 
 
 def _wobbly_ellipse_points(cx: float, cy: float, rx: float, ry: float,
@@ -588,7 +589,7 @@ def generate_chart_image(ticker: str, days: int = 2, expected_price: float | Non
 
     first_open = candles[0]["open"]
     change_pct = (last_close - first_open) / first_open * 100 if first_open else 0.0
-    header_color = _UP_COLOR if change_pct >= 0 else _DOWN_COLOR
+    header_color = _UP_COLOR if change_pct >= 0 else _NEG_COLOR
     arrow = "▲" if change_pct >= 0 else "▼"
 
     _, _, time_fmt = _INTERVAL_BY_DAYS.get(days, ("1h", days * 24, "%H:%M"))
@@ -687,7 +688,7 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
         out_path = _CHARTS_DIR / f"{ticker}{suffix}_chart.png"
         last_close = candles[-1]["close"]
         closed_trade = exit_price is not None
-        result_color = _UP_COLOR if (not closed_trade or exit_price >= entry) else _DOWN_COLOR
+        result_color = _UP_COLOR if (not closed_trade or exit_price >= entry) else _NEG_COLOR
 
         fig = plt.figure(figsize=(8, 5), dpi=150)
         fig.patch.set_facecolor(_BG_COLOR)
@@ -714,7 +715,7 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
         for lv_price, lv_label, lv_color in (extra_levels or []):
             tag(lv_price, f"{lv_label} {_format_price(lv_price)}", lv_color)
         if stop:
-            tag(stop, f"Stop {_format_price(stop)}", _DOWN_COLOR)
+            tag(stop, f"Stop {_format_price(stop)}", _NEG_COLOR)
         if target:
             tag(target, f"Target {_format_price(target)}", _UP_COLOR)
         if closed_trade:

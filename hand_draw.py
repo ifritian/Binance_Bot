@@ -15,8 +15,8 @@ from matplotlib.font_manager import FontProperties
 logger = logging.getLogger(__name__)
 
 FONT_PATH = Path(__file__).resolve().parent / "fonts" / "Caveat-Bold.ttf"
-INK = "#FFD84A"        # жёлтый "маркер"
-INK2 = "#FFFFFF"
+INK = "#FFFFFF"        # белый "маркер" для линий и стрелок
+INK2 = "#FCD535"       # золотой для подписей
 
 
 def _font(size: float) -> FontProperties:

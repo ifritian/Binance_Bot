@@ -39,10 +39,10 @@ _AXIS_TEXT_COLOR = "#848E9C"
 # Порядок в этом словаре = порядок отрисовки (фоновые линии первыми,
 # индекс - последним, поверх остальных, чтобы визуально доминировать).
 _LINE_STYLE = {
-    "market_value": {"color": "#848E9C", "label": "Top-4 market", "width": 1.4, "alpha": 0.7},
-    "eth_value": {"color": "#7B61FF", "label": "ETH", "width": 1.4, "alpha": 0.8},
-    "btc_value": {"color": "#F0B90B", "label": "BTC", "width": 1.6, "alpha": 0.9},
-    "index_value": {"color": "#29ABE2", "label": "Altcoin basket", "width": 2.8, "alpha": 1.0},
+    "market_value": {"color": "#5E6673", "label": "Top-4 market", "width": 1.4, "alpha": 0.7},
+    "eth_value": {"color": "#8C93A1", "label": "ETH", "width": 1.4, "alpha": 0.8},
+    "btc_value": {"color": "#FFFFFF", "label": "BTC", "width": 1.6, "alpha": 0.9},
+    "index_value": {"color": "#F0B90B", "label": "Altcoin basket", "width": 2.8, "alpha": 1.0},
 }
 
 # Меньше точек - график ещё не несёт пользы (пара точек выглядит как

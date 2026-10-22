@@ -143,8 +143,8 @@ def _table(head: list, rows: list) -> str:
 
 
 CSS = """
-:root{--bg:#f4f6f8;--panel:#ffffff;--ink:#0f1c26;--muted:#566774;--line:#d9e0e5;--cyan:#0b86b5;--magenta:#c21b73;--amber:#d99a00;--btc:#b07d00;--eth:#5a49d6}
-@media (prefers-color-scheme: dark){:root{--bg:#0b1218;--panel:#121c25;--ink:#e8eef2;--muted:#93a4b0;--line:#22303b;--cyan:#35b9ec;--magenta:#f0529a;--amber:#f0b90b;--btc:#f0b90b;--eth:#9b8cff}}
+:root{--bg:#0b0e11;--panel:#12171d;--ink:#eaecef;--muted:#848e9c;--line:#1e2329;--cyan:#f0b90b;--magenta:#f6465d;--amber:#fcd535;--btc:#ffffff;--eth:#8c93a1}
+
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.62 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
