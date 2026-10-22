@@ -42,7 +42,8 @@ def test_hot_mover_and_fng_posts_get_images(monkeypatch):
     sent = []
     monkeypatch.setattr(main.binance_publisher, "publish_post",
                         lambda text, image_paths=None: sent.append((text, image_paths)) or {"id": "1"})
-    monkeypatch.setattr(market_digest, "pick_hot_mover", lambda *a, **k: ("SUI", 2.5, 12.0))
+    monkeypatch.setattr(market_digest, "fetch_ticker_rows", lambda: [])
+    monkeypatch.setattr(market_digest, "pick_hot_event", lambda *a, **k: {"ticker": "SUI", "price": 2.5, "pct24": 12.0, "fast_pct": None, "fast_min": None})
     fake_chart = Path("/tmp/fake_chart.png")
     monkeypatch.setattr(main, "_coin_chart", lambda ticker, days, expected_price=None: fake_chart)
     main.try_publish_hot_mover()
