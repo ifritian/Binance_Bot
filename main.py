@@ -352,8 +352,10 @@ def _crosspost_to_telegram(text: str, image_path=None) -> None:
     if not telegram_publisher.is_configured():
         return
     site = post_format.site_line()
-    if site and random.random() < config.TELEGRAM_SITE_LINE_PROBABILITY and site[1] not in text and len(text) + len(site[0]) < 950:
-        text = f"{text}\n\n📊 {site[0]}"
+    if site and random.random() < config.TELEGRAM_SITE_LINE_PROBABILITY:
+        line = (post_format.REFERRAL_LINE if random.random() < config.REFERRAL_LINK_SHARE else site[0])
+        if line.split(" ")[-1] not in text and len(text) + len(line) < 950:
+            text = f"{text}\n\n📊 {line}" if line == site[0] else f"{text}\n\n{line}"
     try:
         telegram_publisher.publish_post(text, image_path)
     except telegram_publisher.TelegramPublishError as e:

@@ -41,6 +41,7 @@ class _FakeResponse:
 
 
 def test_build_bluesky_post_includes_hashtag_and_links(monkeypatch):
+    monkeypatch.setattr(config, "REFERRAL_LINK_SHARE", 0.0)
     monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "@my_channel")
     text = "Короткий хук.\n\nВход: 1-2\nСтоп: 0.9\nТейк: 3\n\nНе финансовый совет."
 
@@ -55,6 +56,7 @@ def test_build_bluesky_post_includes_hashtag_and_links(monkeypatch):
 
 
 def test_build_bluesky_post_without_telegram_channel_still_has_binance_link(monkeypatch):
+    monkeypatch.setattr(config, "REFERRAL_LINK_SHARE", 0.0)
     monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "")
     result, facets = post_format.build_bluesky_post("Хук без канала.", ticker=None)
 
@@ -65,16 +67,19 @@ def test_build_bluesky_post_without_telegram_channel_still_has_binance_link(monk
 
 def test_referral_line_only_when_enabled_or_no_site(monkeypatch):
     monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "")
-    monkeypatch.setattr(config, "BLUESKY_REFERRAL_ENABLED", True)
+    monkeypatch.setattr(config, "REFERRAL_LINK_SHARE", 1.0)
     result, _ = post_format.build_bluesky_post("x", ticker=None)
-    assert post_format.REFERRAL_LINK in result and config.SITE_URL in result
-    monkeypatch.setattr(config, "BLUESKY_REFERRAL_ENABLED", False)
+    assert post_format.REFERRAL_LINK in result and config.SITE_URL not in result
+    monkeypatch.setattr(config, "REFERRAL_LINK_SHARE", 0.0)
+    result, _ = post_format.build_bluesky_post("x", ticker=None)
+    assert config.SITE_URL in result and post_format.REFERRAL_LINK not in result
     monkeypatch.setattr(config, "SITE_URL", "")
     result, _ = post_format.build_bluesky_post("x", ticker=None)
     assert post_format.REFERRAL_LINK in result
 
 
 def test_build_bluesky_post_truncates_long_body_but_keeps_links(monkeypatch):
+    monkeypatch.setattr(config, "REFERRAL_LINK_SHARE", 0.0)
     monkeypatch.setattr(config, "TELEGRAM_PUBLISH_CHANNEL", "@my_channel")
     long_text = "А" * 2000
 
@@ -463,6 +468,7 @@ def test_telegram_crosspost_adds_site_line_sometimes(monkeypatch):
     monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: True)
     monkeypatch.setattr(main.telegram_publisher, "publish_post", lambda text, img=None: sent.append(text) or {})
     monkeypatch.setattr(config, "TELEGRAM_SITE_LINE_PROBABILITY", 1.0)
+    monkeypatch.setattr(config, "REFERRAL_LINK_SHARE", 0.0)
     main._crosspost_to_telegram("hello")
     monkeypatch.setattr(config, "TELEGRAM_SITE_LINE_PROBABILITY", 0.0)
     main._crosspost_to_telegram("hello")

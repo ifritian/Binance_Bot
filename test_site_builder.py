@@ -18,7 +18,7 @@ def _data(**kw):
 
 def test_empty_state_renders_without_errors():
     out = sb.render(_data(), 1_792_300_000)
-    assert "Market Radar" in out and "No idea has closed yet" in out and "A crypto desk that shows its work" in out
+    assert "Market Radar" in out and "No idea has closed yet" in out and "See what is moving in crypto, at a glance" in out
 
 
 def test_losing_trades_are_listed_and_stats_are_honest():
@@ -70,3 +70,17 @@ def test_links_only_configured(monkeypatch):
 def test_empty_blocks_explain_what_will_appear():
     out = sb.render(_data(), 1_792_300_000, live={})
     assert "No listing has been followed through yet" in out and "could not be loaded" in out
+
+
+def test_heatmap_layout_fills_area_and_renders_two_blocks():
+    import site_heatmap as h
+    rows = [{"sym": s, "price": 1.5, "pct": p, "vol": v} for s, p, v in
+            [("BTC", 1.0, 9e9), ("ETH", -2.0, 5e9), ("SOL", 6.0, 2e9), ("XRP", 0.0, 1e9), ("ADA", -9.0, 5e8), ("DOGE", 3.0, 3e8), ("SUI", 2.0, 2e8)]]
+    lay = h.squarify([(r["sym"], r["vol"]) for r in rows], 0, 0, 100, 62)
+    assert abs(sum(w * hh for _, _, _, w, hh in lay) - 6200) < 1
+    out = h.heatmap_html(rows)
+    assert 'class="heat hd"' in out and 'class="heat hm"' in out and "▲" in out and "▼" in out
+    assert "could not be loaded" in h.heatmap_html(rows[:3])
+    top = h.top_rows([{"symbol": "BTCUSDT", "lastPrice": "1", "priceChangePercent": "2", "quoteVolume": "9"},
+                      {"symbol": "ETHBTC", "lastPrice": "1", "priceChangePercent": "2", "quoteVolume": "99"}])
+    assert [t["sym"] for t in top] == ["BTC"]

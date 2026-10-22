@@ -5,6 +5,8 @@
 """
 import re
 
+import random
+
 import config
 import signal_explainer
 import signal_parser
@@ -383,10 +385,11 @@ def build_bluesky_post(text: str, ticker: str | None = None) -> tuple[str, list]
     от текста, который реально уходит на Binance Square/Telegram."""
     links, link_facets = [], []
     site = site_line()
-    if config.BLUESKY_REFERRAL_ENABLED or not site:
+    use_ref = site is None or random.random() < config.REFERRAL_LINK_SHARE   # ссылки чередуются: Binance / сайт
+    if use_ref:
         links.append(REFERRAL_LINE)
         link_facets.append((REFERRAL_LINK, REFERRAL_LINK))
-    if site:
+    else:
         links.append(site[0])
         link_facets.append((site[1], site[1]))
 

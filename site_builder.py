@@ -30,7 +30,13 @@ FMT_LABELS = {"digest": "Market snapshot", "fear_greed": "Fear & Greed", "breako
 
 def collect_live(now_ts: float) -> dict:
     """Живые данные для витрины (сеть): любой сбой - просто пустой блок."""
-    out = {"binance": [], "fng": None, "moves": {}}
+    out = {"binance": [], "fng": None, "moves": {}, "heat": []}
+    try:
+        import coin_whitelist, market_digest, site_heatmap
+        rows = market_digest.fetch_ticker_rows()
+        out["heat"] = site_heatmap.top_rows(rows, coin_whitelist.allowed_tickers()) if rows else []
+    except Exception:
+        pass
     try:
         import news_radar
         items = news_radar.fetch_binance(now_ts, 120)
@@ -181,6 +187,50 @@ h1{font-size:clamp(36px,6.4vw,62px);line-height:1.02;margin:0 0 18px;font-weight
 .wire .meta{font-size:13px;color:var(--muted)}
 .wire a{text-decoration:none;display:block;overflow-wrap:anywhere}
 .wire a:hover{text-decoration:underline}
+.hero2{padding:22px 0 14px}
+.hero2 h1{max-width:20ch;margin:0 0 12px;font-size:clamp(32px,5vw,50px)}
+.hero2 .lead{max-width:52ch}
+.eyebrow{display:flex;align-items:center;gap:10px;margin:0 0 14px;color:var(--cyan);font-weight:600;font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+.radar{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--cyan);position:relative;overflow:hidden;display:inline-block}
+.radar::before{content:"";position:absolute;inset:0;background:conic-gradient(from 0deg,transparent 0 300deg,rgba(240,185,11,.75) 360deg);animation:sweep 3s linear infinite}
+.radar::after{content:"";position:absolute;left:50%;top:50%;width:3px;height:3px;margin:-1.5px;border-radius:50%;background:var(--cyan)}
+@keyframes sweep{to{transform:rotate(360deg)}}
+.board{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:22px;padding:6px 0 10px;align-items:start}
+.heathead{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 14px;margin-bottom:10px}
+.heathead h2{font-size:22px;margin:0;font-family:"Bricolage Grotesque","Public Sans",sans-serif}
+.muted2{color:var(--muted);font-size:13px}
+.heat{position:relative;width:100%;aspect-ratio:100/62;background:var(--panel);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.tile{position:absolute;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;text-decoration:none;border:1px solid var(--bg);overflow:hidden;line-height:1.15;transition:filter .15s}
+.tile:hover{filter:brightness(1.15)}
+.tile b{font-size:clamp(9px,1.5vw,13px);font-family:"Bricolage Grotesque","Public Sans",sans-serif}
+.tile .pc{font-size:clamp(8px,1.2vw,12px);font-weight:600}
+.tile .pc em{font-style:normal}.tile .ar{font-style:normal;font-size:.8em}
+.tile .px{display:none;font-size:11px;opacity:.75}
+.tile.xs .ar,.tile.xs .px{display:none}.tile.xs b{font-size:clamp(7px,1.1vw,10px)}.tile.xs .pc{font-size:clamp(7px,1vw,9px)}
+.tile.mid b{font-size:clamp(10px,1.8vw,15px)}
+.tile.big b{font-size:clamp(14px,3vw,26px)}.tile.big .pc{font-size:clamp(11px,1.9vw,17px)}.tile.big .px{display:block}
+.scale{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--muted);font-size:12px}
+.scale i{flex:1;height:6px;border-radius:3px;background:linear-gradient(90deg,#f6465d,#3b1218)}
+.scale i.g{background:linear-gradient(90deg,#3a2f08,#fcd535)}
+.side{display:flex;flex-direction:column;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.mood{display:grid;grid-template-columns:auto 1fr;align-items:baseline;gap:0 10px}
+.mood span{color:var(--muted);font-size:14px;grid-column:1/3}
+.mood .big{font-size:40px}.mood em{font-style:normal;color:var(--muted)}
+.mood .bar{grid-column:1/3;height:8px;border-radius:4px;margin-top:8px;position:relative;background:linear-gradient(90deg,#f6465d,#f0b90b 50%,#fcd535)}
+.mood .bar i{position:absolute;top:-4px;width:4px;height:16px;border-radius:2px;background:#fff;transform:translateX(-2px)}
+.barlab{grid-column:1/3;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:4px}
+.chips{display:flex;gap:28px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.chips span{display:block;color:var(--muted);font-size:13px}.chips b{font-size:18px}
+.movers{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.movers h3{font-size:13px;color:var(--muted);font-weight:500;margin:0 0 6px}
+.movers ul{list-style:none;margin:0;padding:0}.movers li{display:flex;justify-content:space-between;padding:3px 0}
+.movers a{text-decoration:none;font-weight:600}
+.wire{border-left:0;padding-left:0}
+.wire h3{font-size:14px;margin:0 0 4px;display:flex;align-items:center;gap:8px;font-family:"Public Sans",sans-serif}
+@media (max-width:860px){.board{grid-template-columns:1fr}}
+.heat.hm{display:none;aspect-ratio:100/95}
+@media (max-width:640px){.heat.hd{display:none}.heat.hm{display:block}.muted2{font-size:12px}}
 section{padding:46px 0 6px}
 h2.s{font-size:28px;line-height:1.15;margin:0 0 10px;font-weight:700}
 .sub{color:var(--muted);max-width:62ch;margin:0 0 22px}
@@ -216,7 +266,7 @@ ul.plain .kind{font-weight:600;margin-right:8px}
 footer{margin:60px 0 40px;padding-top:22px;border-top:1px solid var(--line);color:var(--muted);font-size:14px;max-width:70ch}
 @media (max-width:600px){.axis{font-size:22px}}
 @media (max-width:760px){.hero{grid-template-columns:1fr;gap:30px;padding-top:20px}.offer{grid-template-columns:1fr}.wire{border-left:0;padding-left:0;border-top:2px solid var(--ink);padding-top:14px}}
-@media (prefers-reduced-motion: reduce){.wire li{animation:none;opacity:1}.live{animation:none}.btn:hover{transform:none}}
+@media (prefers-reduced-motion: reduce){.radar::before{animation:none}.wire li{animation:none;opacity:1}.live{animation:none}.btn:hover{transform:none}}
 """
 
 OFFER = [
@@ -302,8 +352,8 @@ def _momentum_section() -> str:
             f'{"".join(parts)}{line}{table}</section>')
 
 
-def _wire(posts: list, now_ts: float | None = None) -> str:
-    shown = [p for p in posts if p.get("fmt") in FMT_LABELS][-5:]
+def _wire(posts: list, now_ts: float | None = None, n: int = 3) -> str:
+    shown = [p for p in posts if p.get("fmt") in FMT_LABELS][-n:]
     if not shown:
         return '<p class="empty">The first posts will appear here as soon as they go out.</p>'
     rows = []
@@ -353,6 +403,35 @@ def _binance_list(items: list) -> str:
     return f'<ul class="plain">{"".join(rows)}</ul>'
 
 
+def _mood_html(live: dict) -> str:
+    f = live.get("fng")
+    moves = live.get("moves") or {}
+    if not f and not moves:
+        return ""
+    chips = "".join(f'<div><span>{sym}</span><b class="{_cls(v)}">{_pct(v)}</b></div>' for sym, v in moves.items() if v is not None)
+    gauge = ""
+    if f:
+        gauge = (f'<div class="mood"><span>Fear &amp; Greed</span><b class="big">{f["value"]}</b><em>{_e(f["label"])}</em>'
+                 f'<div class="bar" role="img" aria-label="Index {f["value"]} out of 100"><i style="left:{f["value"]}%"></i></div>'
+                 f'<div class="barlab"><span>Fear</span><span>Greed</span></div></div>')
+    return f'<div class="card">{gauge}<div class="chips">{chips}</div></div>' if (gauge or chips) else ""
+
+
+def _movers_html(heat: list) -> str:
+    if not heat:
+        return ""
+    import site_heatmap
+    up, down = site_heatmap.movers(heat)
+    def lst(title, items, cls):
+        if not items:
+            return ""
+        li = "".join(f'<li><a href="https://www.binance.com/en/trade/{_e(r["sym"])}_USDT" rel="noopener">{_e(r["sym"])}</a>'
+                     f'<b class="{cls}">{_pct(r["pct"])}</b></li>' for r in items)
+        return f'<div><h3>{title}</h3><ul>{li}</ul></div>'
+    body = lst("Leading today", up, "up") + lst("Lagging today", down, "down")
+    return f'<div class="card movers">{body}</div>' if body else ""
+
+
 def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: list | None = None) -> str:
     now_ts = now_ts or time.time()
     live = live or {}
@@ -394,13 +473,18 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
     upd_short = datetime.fromtimestamp(now_ts, timezone.utc).strftime("%b %d, %H:%M UTC")
     upd = datetime.fromtimestamp(now_ts, timezone.utc).strftime("%b %d, %Y, %H:%M UTC")
     faq = "".join(f"<details><summary>{_e(q)}</summary><p>{_e(a)}</p></details>" for q, a in FAQ)
+    import site_heatmap
+    heat = live.get("heat") or []
+    heat_html = site_heatmap.heatmap_html(heat)
+    mood_html = _mood_html(live)
+    movers_html = _movers_html(heat)
     av = _avatar_uri()
     avatar_img = f'<img src="{av}" alt="" width="34" height="34">' if av else "<i></i>"
     favicon = f'<link rel="icon" href="{av}">' if av else ""
     follow_nav = f'<nav class="follow" aria-label="Follow">{_links_html(ls)}</nav>' if ls else ""
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_e(PROJECT)}: crypto market desk with a public record</title>
+<title>{_e(PROJECT)}: live crypto market map with a public record</title>
 <meta name="description" content="Daily crypto market snapshots, Binance announcements and trend ideas, with every result published, losses included.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -409,16 +493,25 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
 <div class="wrap">
 <header class="top"><a class="brand" href="#">{avatar_img}{_e(PROJECT)}</a>{follow_nav}</header>
 
-<div class="hero">
-  <div>
-    <h1>A crypto desk that shows its work.</h1>
-    <p class="lead">Market snapshots, Binance announcements and trend ideas, every day. Each call is logged below, losses included.</p>
-    <div class="cta">{cta}</div>
-    {_now_line(live)}
-    <p class="stamp">Updated {upd_short}</p>
-  </div>
-  <aside class="wire" aria-label="Latest posts"><h2><span class="live" aria-hidden="true"></span>On the wire</h2>{_wire(d["posts"], now_ts)}</aside>
+<div class="hero2">
+  <p class="eyebrow"><span class="radar" aria-hidden="true"></span>Live market radar</p>
+  <h1>See what is moving in crypto, at a glance.</h1>
+  <p class="lead">A live map of the most traded coins on Binance, the market mood, and a public record of every call we make, wins and losses.</p>
+  <div class="cta">{cta}</div>
 </div>
+
+<section class="board" aria-label="Live market">
+  <div class="heatwrap">
+    <div class="heathead"><h2>Market map</h2><span class="muted2">Top coins by trading volume. Colour shows the 24 hour change. <span id="heat-stamp">Updated {upd_short}</span></span></div>
+    {heat_html}
+    <div class="scale" aria-hidden="true"><span>−8%</span><i></i><span>0</span><i class="g"></i><span>+8%</span></div>
+  </div>
+  <aside class="side">
+    {mood_html}
+    {movers_html}
+    <div class="wire" aria-label="Latest posts"><h3><span class="live" aria-hidden="true"></span>Latest posts</h3>{_wire(d["posts"], now_ts)}</div>
+  </aside>
+</section>
 
 <section><h2 class="s">What you get</h2>
 <p class="sub">Four kinds of posts. Each one is built from Binance data and official announcements, not from rumors.</p>
@@ -448,7 +541,7 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
 <section class="faq"><h2 class="s">Questions</h2>{faq}</section>
 
 <footer>Not financial advice. Past results do not predict future results. Market data from Binance, sentiment index from alternative.me. Page rebuilt {upd}.</footer>
-</div></body></html>"""
+</div><script>{site_heatmap.SCRIPT}</script></body></html>"""
 
 
 
