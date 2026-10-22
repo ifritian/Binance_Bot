@@ -188,6 +188,15 @@ def square_general_hashtag_line() -> str:
     return random.choice(_SQUARE_GENERAL_HASHTAGS)
 
 
+def site_line() -> tuple[str, str] | None:
+    """(строка, url) со ссылкой на сайт проекта или None. Только для Bluesky/Telegram."""
+    url = (config.SITE_URL or "").strip()
+    if not url:
+        return None
+    lead = "Full record of every call:" if config.SQUARE_TEMPLATE_LANG != "ru" else "Все результаты:"
+    return f"{lead} {url}", url
+
+
 def telegram_channel_line() -> str | None:
     """Строка со ссылкой на наш Telegram-канал (config.TELEGRAM_PUBLISH_CHANNEL) -
     добавляется в посты на Binance Square, чтобы читатели могли перейти
@@ -372,8 +381,14 @@ def build_bluesky_post(text: str, ticker: str | None = None) -> tuple[str, list]
 
     Ничего не меняет в исходном text - используется только здесь, отдельно
     от текста, который реально уходит на Binance Square/Telegram."""
-    links = [REFERRAL_LINE]
-    link_facets = [(REFERRAL_LINK, REFERRAL_LINK)]
+    links, link_facets = [], []
+    site = site_line()
+    if config.BLUESKY_REFERRAL_ENABLED or not site:
+        links.append(REFERRAL_LINE)
+        link_facets.append((REFERRAL_LINK, REFERRAL_LINK))
+    if site:
+        links.append(site[0])
+        link_facets.append((site[1], site[1]))
 
     tg_line = telegram_channel_line()
     tg_url = None
