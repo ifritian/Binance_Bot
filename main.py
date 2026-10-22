@@ -1026,6 +1026,27 @@ def try_publish_hot_mover() -> None:
     log[ticker] = now
     queue_manager._set("hot_mover_log", log)
     queue_manager.set_last_post_time("square_global")
+    _telegram_mover_poll(ticker, fp if fp is not None else pct, fm)
+
+
+def _telegram_mover_poll(ticker: str, pct: float, minutes: int | None) -> None:
+    """Нативный опрос (кнопки) в Telegram про только что вышедшую монету - не чаще
+    TELEGRAM_MOVER_POLL_MIN_GAP_HOURS. Square API опросы не поддерживает, поэтому только Telegram."""
+    if not telegram_publisher.is_configured():
+        return
+    if queue_manager.seconds_since_last_post("telegram_mover_poll") < config.TELEGRAM_MOVER_POLL_MIN_GAP_HOURS * 3600:
+        return
+    window = "in the last hour" if minutes is None or 50 <= minutes <= 70 else f"in the last {minutes} min"
+    if minutes is None:
+        window = "in 24h"
+    q = f"{ticker} is {pct:+.1f}% {window}. Where will it be in 24 hours?"
+    options = ["Higher", "Lower", "About the same", "Just watching"]
+    try:
+        telegram_publisher.publish_poll(q, options)
+    except telegram_publisher.TelegramPublishError as e:
+        logger.warning("Опрос про монету в Telegram не удался: %s", e)
+        return
+    queue_manager.set_last_post_time("telegram_mover_poll")
 
 
 def try_publish_fng_post() -> None:
