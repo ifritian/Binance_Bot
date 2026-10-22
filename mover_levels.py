@@ -11,7 +11,8 @@ import random
 import mover_setups
 
 
-def build_levels(ticker: str, price: float, pct24: float, bars_1h: list) -> dict | None:
+def build_levels(ticker: str, price: float, pct24: float, bars_1h: list,
+                 fast_pct: float | None = None, fast_min: int | None = None) -> dict | None:
     last = bars_1h[-24:]
     if len(last) < 20 or price <= 0:
         return None
@@ -28,16 +29,25 @@ def build_levels(ticker: str, price: float, pct24: float, bars_1h: list) -> dict
     rng_h = hi - lo
     return {"ticker": ticker, "price": price, "pct24": pct24, "hi": hi, "lo": lo, "mid": (hi + lo) / 2,
             "up_ext": hi + 0.5 * rng_h, "dn_ext": max(lo - 0.5 * rng_h, lo * 0.5),
-            "pos": (price - lo) / rng_h, "vol_ratio": vol_ratio}
+            "pos": (price - lo) / rng_h, "vol_ratio": vol_ratio,
+            "fast_pct": fast_pct, "fast_min": fast_min}
 
 
 def build_text(lv: dict, rng=None) -> str:
     rng = rng or random
-    t, up = lv["ticker"], lv["pct24"] > 0
+    t = lv["ticker"]
+    up = (lv["fast_pct"] if lv.get("fast_pct") is not None else lv["pct24"]) > 0
     px = mover_setups._px
     lead = ("🚀" if up else "🔻") if rng.random() < 0.6 else ""
-    head = rng.choice([f"{lead} ${t} {lv['pct24']:+.1f}% in 24h", f"{lead} ${t} is {lv['pct24']:+.1f}% on the day",
-                       f"{lead} Big move in ${t}: {lv['pct24']:+.1f}% over 24h"]).strip()
+    fp = lv.get("fast_pct")
+    if fp is not None:
+        w = "the last hour" if 50 <= (lv.get("fast_min") or 60) <= 70 else f"the last {lv.get('fast_min')} min"
+        head = rng.choice([f"{lead} ${t} {fp:+.1f}% in {w}", f"{lead} ${t} is moving fast: {fp:+.1f}% in {w}",
+                           f"{lead} Sharp move in ${t}: {fp:+.1f}% in {w}"]).strip()
+        head += f"\n({lv['pct24']:+.1f}% over 24h)"
+    else:
+        head = rng.choice([f"{lead} ${t} {lv['pct24']:+.1f}% in 24h", f"{lead} ${t} is {lv['pct24']:+.1f}% on the day",
+                           f"{lead} Big move in ${t}: {lv['pct24']:+.1f}% over 24h"]).strip()
     pos = lv["pos"]
     where = ("right at the top of its 24h range" if pos > 0.9 else "in the upper part of its 24h range" if pos > 0.6
              else "in the middle of its 24h range" if pos > 0.4 else "in the lower part of its 24h range" if pos > 0.1

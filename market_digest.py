@@ -221,19 +221,80 @@ _HOT_TEMPLATES = [
 ]
 
 
-def pick_hot_mover(rows: list[dict] | None = None, recent: dict | None = None, now_ts: float = 0.0,
-                   cooldown_s: float = 86400.0, min_pct: float | None = None):
-    """Самая сильная монета (|изменение| >= HOT_MOVE_PCT, объём >= HOT_MIN_VOLUME_USD)
-    из белого списка, по которой не было поста за cooldown. -> (ticker, price, pct) | None"""
-    if rows is None:
+def _win(minutes: int | None) -> str:
+    m = int(minutes or 60)
+    return "hour" if 50 <= m <= 70 else f"{m} min"
+
+
+SNAP_KEEP_S = 5400          # храним снимки цен ~90 минут
+FAST_MIN_AGE_S = 25 * 60    # быстрое изменение считаем не по слишком свежему снимку
+
+
+def fetch_ticker_rows() -> list[dict] | None:
+    try:
+        resp = requests.get(f"{scanner._BASE_URL}/ticker/24hr", timeout=20)
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning("Горячая монета: нет данных Binance: %s", e)
+        return None
+
+
+def update_snapshots(rows: list[dict], now_ts: float, snaps: list | None) -> list:
+    """Добавляет снимок цен (белый список, объём >= HOT_MIN_VOLUME_USD), чистит старые.
+    Нужен для "быстрого" движения: рост/падение за последние ~час, а не за сутки."""
+    allowed = coin_whitelist.allowed_tickers()
+    cur = {}
+    for row in rows:
+        symbol = row.get("symbol", "")
+        if not symbol.endswith("USDT"):
+            continue
+        t = symbol.removesuffix("USDT")
         try:
-            resp = requests.get(f"{scanner._BASE_URL}/ticker/24hr", timeout=20)
-            resp.raise_for_status()
-            rows = resp.json()
-        except (requests.RequestException, ValueError) as e:
-            logger.warning("Горячая монета: нет данных Binance: %s", e)
-            return None
+            price = float(row["lastPrice"]); vol = float(row["quoteVolume"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if t in allowed and price > 0 and vol >= HOT_MIN_VOLUME_USD:
+            cur[t] = price
+    out = [s for s in (snaps or []) if now_ts - s[0] < SNAP_KEEP_S and s[0] <= now_ts]
+    out.append([now_ts, cur])
+    return out
+
+
+def fast_changes(rows: list[dict], snaps: list | None, now_ts: float) -> dict:
+    """{ticker: (pct, минут)} - изменение цены относительно снимка возрастом ~60 минут
+    (самого старого не старше 80 минут, но не моложе FAST_MIN_AGE_S)."""
+    ref = None
+    for ts, prices in snaps or []:
+        age = now_ts - ts
+        if FAST_MIN_AGE_S <= age <= 4800 and (ref is None or abs(age - 3600) < abs(now_ts - ref[0] - 3600)):
+            ref = (ts, prices)
+    if ref is None:
+        return {}
+    mins = round((now_ts - ref[0]) / 60)
+    out = {}
+    for row in rows:
+        symbol = row.get("symbol", "")
+        t = symbol.removesuffix("USDT") if symbol.endswith("USDT") else None
+        old = ref[1].get(t) if t else None
+        try:
+            price = float(row["lastPrice"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if old and price > 0:
+            out[t] = ((price / old - 1) * 100, mins)
+    return out
+
+
+def pick_hot_event(rows: list[dict], recent: dict | None = None, now_ts: float = 0.0,
+                   cooldown_s: float = 86400.0, min_pct: float | None = None,
+                   fast: dict | None = None, fast_pct: float | None = None):
+    """Самая сильная монета из белого списка (объём >= HOT_MIN_VOLUME_USD, не было поста за
+    cooldown): либо |24ч| >= min_pct, либо быстрое движение |за ~час| >= fast_pct.
+    -> {"ticker","price","pct24","fast_pct","fast_min"} | None"""
     recent = recent or {}
+    fast = fast or {}
+    thr24 = HOT_MOVE_PCT if min_pct is None else min_pct
     allowed = coin_whitelist.allowed_tickers()
     best = None
     for row in rows:
@@ -247,17 +308,39 @@ def pick_hot_mover(rows: list[dict] | None = None, recent: dict | None = None, n
             price = float(row["lastPrice"]); pct = float(row["priceChangePercent"]); vol = float(row["quoteVolume"])
         except (KeyError, ValueError, TypeError):
             continue
-        if price <= 0 or vol < HOT_MIN_VOLUME_USD or abs(pct) < (HOT_MOVE_PCT if min_pct is None else min_pct):
+        if price <= 0 or vol < HOT_MIN_VOLUME_USD:
             continue
-        if best is None or abs(pct) > abs(best[2]):
-            best = (t, price, pct)
-    return best
+        fp, fm = fast.get(t, (0.0, 0))
+        is_fast = fast_pct is not None and abs(fp) >= fast_pct
+        if abs(pct) < thr24 and not is_fast:
+            continue
+        score = max(abs(pct), 3 * abs(fp))
+        if best is None or score > best[0]:
+            best = (score, {"ticker": t, "price": price, "pct24": pct,
+                            "fast_pct": fp if is_fast else None, "fast_min": fm if is_fast else None})
+    return best[1] if best else None
 
 
-def build_hot_text(ticker: str, price: float, pct: float, rng: random.Random | None = None) -> str:
+def pick_hot_mover(rows: list[dict] | None = None, recent: dict | None = None, now_ts: float = 0.0,
+                   cooldown_s: float = 86400.0, min_pct: float | None = None):
+    """Самая сильная монета (|изменение 24ч| >= HOT_MOVE_PCT, объём >= HOT_MIN_VOLUME_USD)
+    из белого списка, по которой не было поста за cooldown. -> (ticker, price, pct) | None"""
+    if rows is None:
+        rows = fetch_ticker_rows()
+        if rows is None:
+            return None
+    ev = pick_hot_event(rows, recent, now_ts, cooldown_s, min_pct)
+    return (ev["ticker"], ev["price"], ev["pct24"]) if ev else None
+
+
+def build_hot_text(ticker: str, price: float, pct: float, rng: random.Random | None = None,
+                   fast_pct: float | None = None, fast_min: int | None = None) -> str:
     rng = rng or random
     en = config.SQUARE_TEMPLATE_LANG == "en"
     tpl = rng.choice(_EN_HOT_TEMPLATES if en else _HOT_TEMPLATES)
+    if fast_pct is not None:
+        pct = fast_pct
+        tpl = tpl.replace("in 24 hours", f"in the last {_win(fast_min)}").replace("за сутки", f"за {_win(fast_min)}").replace("за 24 часа", f"за {_win(fast_min)}")
     if pct < 0:
         tpl = tpl.replace("🔥", "🔻").replace("Это начало движения или уже поздно?", "Отскок близко или падение продолжится?")
         tpl = tpl.replace("The start of a move or already late?", "A bounce coming or more downside?")

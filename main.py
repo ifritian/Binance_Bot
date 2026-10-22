@@ -913,7 +913,7 @@ def _mover_levels_chart(lv: dict):
         candles = [{"open_time": b[0], "open": b[1], "high": b[2], "low": b[3], "close": b[4],
                     "volume": b[5] if len(b) > 5 else 0.0} for b in bars]
         return chart_generator.generate_trade_chart(
-            lv["ticker"], candles, entry=lv["price"], title=f"24h move {lv['pct24']:+.1f}%", suffix="_levels",
+            lv["ticker"], candles, entry=lv["price"], title=(f"{lv['fast_pct']:+.1f}% in {lv['fast_min']}m" if lv.get("fast_pct") is not None else f"24h move {lv['pct24']:+.1f}%"), suffix="_levels",
             tf_label="1h", entry_label="Now",
             extra_levels=[(lv["hi"], "Breakout", "#FCD535"), (lv["lo"], "Breakdown", "#F6465D"),
                           (lv["up_ext"], "Up area", "#FFF1B8"), (lv["dn_ext"], "Down area", "#FF9AA8")],
@@ -971,27 +971,39 @@ def try_publish_mover_result() -> None:
 
 
 def try_publish_hot_mover() -> None:
-    """Событийный пост (Square): монета из белого списка резко двинулась.
-    Не чаще HOT_MOVER_MAX_PER_DAY в сутки и не по одной монете чаще раза в сутки."""
+    """Событийный пост (Square): монета из белого списка резко двинулась - за сутки ИЛИ за
+    последний ~час (быстрый детектор: снимки цен каждый тик). Не чаще HOT_MOVER_MAX_PER_DAY в
+    сутки и не по одной монете чаще раза в сутки. Срочный пост не ждёт общего интервала между
+    постами (только HOT_MOVER_SPACING_MINUTES)."""
     if not config.HOT_MOVER_ENABLED:
         return
-    if not queue_manager.should_retry_now("hot_mover") or not _square_slot_available():
-        return
     now = time.time()
+    rows = market_digest.fetch_ticker_rows()
+    if rows is None:
+        return
+    snaps = queue_manager._get("price_snaps") or []
+    fast = market_digest.fast_changes(rows, snaps, now)
+    queue_manager._set("price_snaps", market_digest.update_snapshots(rows, now, snaps))
+    if not queue_manager.should_retry_now("hot_mover"):
+        return
+    if queue_manager.seconds_since_last_post("square_global") < config.HOT_MOVER_SPACING_MINUTES * 60:
+        return
     log = {t: ts for t, ts in (queue_manager._get("hot_mover_log") or {}).items() if now - ts < 86400}
     if len(log) >= config.HOT_MOVER_MAX_PER_DAY:
         return
-    hot = market_digest.pick_hot_mover(recent=log, now_ts=now, min_pct=config.HOT_MOVER_MIN_PCT)
-    if hot is None:
-        queue_manager.set_retry_backoff("hot_mover", 0.25)  # не опрашивать Binance каждые 10 минут
+    ev = market_digest.pick_hot_event(rows, recent=log, now_ts=now, min_pct=config.HOT_MOVER_MIN_PCT,
+                                      fast=fast, fast_pct=config.HOT_FAST_PCT)
+    if ev is None:
         return
-    ticker, price, pct = hot
+    ticker, price, pct = ev["ticker"], ev["price"], ev["pct24"]
+    fp, fm = ev["fast_pct"], ev["fast_min"]
     setup = levels = None
     if config.SQUARE_TEMPLATE_LANG == "en":
         if config.MOVER_SETUPS_ENABLED:
             setup = mover_setups.build_setup(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 60))
         else:
-            levels = mover_levels.build_levels(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 72))
+            levels = mover_levels.build_levels(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 72),
+                                               fast_pct=fp, fast_min=fm)
     if setup:
         text = mover_setups.build_text(setup)
         chart = _mover_setup_chart(setup)
@@ -999,7 +1011,7 @@ def try_publish_hot_mover() -> None:
         text = mover_levels.build_text(levels)
         chart = _mover_levels_chart(levels)
     else:
-        text = market_digest.build_hot_text(ticker, price, pct)
+        text = market_digest.build_hot_text(ticker, price, pct, fast_pct=fp, fast_min=fm)
         chart = _coin_chart(ticker, 2, expected_price=price)
     try:
         result = _post("hot_mover", text, image_paths=[chart] if chart else None)
@@ -1008,7 +1020,7 @@ def try_publish_hot_mover() -> None:
         _record_publish_error("hot_mover", e)
         queue_manager.set_retry_backoff("hot_mover", 1)
         return
-    logger.info("Опубликовано (Горячая монета %s %+.1f%%): %s", ticker, pct, result)
+    logger.info("Опубликовано (Горячая монета %s 24ч %+.1f%%, быстро %s): %s", ticker, pct, fp, result)
     if setup:
         mover_setups.register(setup, now)
     log[ticker] = now
@@ -2371,10 +2383,10 @@ def tick() -> None:
 
         try_publish_emergency_post()
         try_publish_trend_breakout()
+        try_publish_hot_mover()   # срочное: раньше плановых слотов, иначе их интервал задержит пост про скачок
         try_publish_market_digest()
         try_publish_fng_post()   # дневной слот: идёт раньше событийных форматов, иначе они забирают окно
         try_publish_square_question()
-        try_publish_hot_mover()
         try_publish_mover_result()
         try_publish_listing_announcement()
         try_publish_listing_report()

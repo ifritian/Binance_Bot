@@ -245,6 +245,10 @@ HOT_MOVER_ENABLED = (os.environ.get("HOT_MOVER_ENABLED") or "true").strip().lowe
 HOT_MOVER_MAX_PER_DAY = int(os.environ.get("HOT_MOVER_MAX_PER_DAY") or "4")
 # Порог движения за 24ч для "горячей монеты" и сетапа (вход/стоп/цель).
 HOT_MOVER_MIN_PCT = float(os.environ.get("HOT_MOVER_MIN_PCT") or "6")
+# "Быстрое" движение: |изменение за ~час| >= этого порога -> пост, даже если за сутки ещё меньше HOT_MOVER_MIN_PCT.
+HOT_FAST_PCT = float(os.environ.get("HOT_FAST_PCT") or "3")
+# Срочный пост про скачок не должен ждать общего интервала между постами (MIN_SQUARE_POST_SPACING_MINUTES).
+HOT_MOVER_SPACING_MINUTES = float(os.environ.get("HOT_MOVER_SPACING_MINUTES") or "20")
 MOVER_SETUPS_ENABLED = (os.environ.get("MOVER_SETUPS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 # Сигналы по корзине индекса (index_signal_scanner) и "Забрали профит!" строятся на тех
 # же стратегиях, что и старый сканер (отрицательное ожидание) - по умолчанию выключены.
