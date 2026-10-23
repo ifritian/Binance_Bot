@@ -3,7 +3,9 @@ import queue_manager
 
 
 def test_record_summary_and_goal(tmp_path, monkeypatch):
-    monkeypatch.setattr(queue_manager, "DB_PATH", str(tmp_path / "a.db"), raising=False)
+    store = {}
+    monkeypatch.setattr(queue_manager, "_get", lambda k, d=None: store.get(k, d))
+    monkeypatch.setattr(queue_manager, "_set", lambda k, v: store.__setitem__(k, v))
     import time
     now = time.time()
     audience.record(100, now - 6 * 86400)

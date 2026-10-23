@@ -13,7 +13,7 @@ NOW = 1_792_150_000.0
 
 @pytest.fixture(autouse=True)
 def _db(tmp_path, monkeypatch):
-    monkeypatch.setattr(queue_manager, "DB_PATH", str(tmp_path / "t.db"), raising=False)
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
     monkeypatch.setattr(coin_whitelist, "is_allowed", lambda t: True)
 
 
