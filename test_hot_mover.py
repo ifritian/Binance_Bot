@@ -102,7 +102,9 @@ def test_snapshots_pruned_and_text_mentions_window(monkeypatch):
 
 def test_mover_poll_limited_to_once_per_day(monkeypatch, tmp_path):
     import queue_manager
-    monkeypatch.setattr(queue_manager, "DB_PATH", str(tmp_path / "p.db"), raising=False)
+    store = {}
+    monkeypatch.setattr(queue_manager, "_get", lambda k, d=None: store.get(k, d))
+    monkeypatch.setattr(queue_manager, "_set", lambda k, v: store.__setitem__(k, v))
     polls = []
     monkeypatch.setattr(main.telegram_publisher, "is_configured", lambda: True)
     monkeypatch.setattr(main.telegram_publisher, "publish_poll", lambda q, o: polls.append((q, o)) or {})

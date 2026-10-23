@@ -43,7 +43,9 @@ def test_followup_text_verdicts():
 
 
 def test_followup_published_once(monkeypatch, tmp_path):
-    monkeypatch.setattr(queue_manager, "DB_PATH", str(tmp_path / "f.db"), raising=False)
+    store = {}
+    monkeypatch.setattr(queue_manager, "_get", lambda k, d=None: store.get(k, d))
+    monkeypatch.setattr(queue_manager, "_set", lambda k, v: store.__setitem__(k, v))
     monkeypatch.setattr(config, "SQUARE_TEMPLATE_LANG", "en")
     import time
     now = time.time()
