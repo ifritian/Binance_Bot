@@ -129,3 +129,12 @@ def test_coin_must_be_subject_of_headline():
     assert not nr.coin_is_subject("SkyAI launches its agent network on Solana", "SOL")
     news = [{"id": "1", "title": "SkyAI launches agents on Solana", "source": "x"}]
     assert nr.pick_news_move(news, {"SOL": 9.0}, set(), 1.0) is None
+
+
+def test_siren_only_for_big_moves():
+    import random
+    for i in range(40):
+        calm = nr.build_news_text({"title": "Ethereum settlement plan", "source": "X"}, "ETH", 1.2, None, random.Random(i))
+        assert "🚨" not in calm
+    big = {nr.build_news_text({"title": "Hack", "source": "X"}, "ETH", -8.0, None, random.Random(i))[:2] for i in range(40)}
+    assert "🚨" in "".join(big)
