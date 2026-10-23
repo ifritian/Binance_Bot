@@ -133,6 +133,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Install ffmpeg (only in the daily video window)
+        # Видео "Рынок за 15 секунд" собирается раз в сутки (VIDEO_HOUR_UTC .. +5ч); в остальные запуски ставить ffmpeg незачем.
+        continue-on-error: true
+        run: |
+          h=$(date -u +%H)
+          if [ "$h" -ge "${VIDEO_HOUR_UTC:-15}" ] && [ "$h" -le $(( ${VIDEO_HOUR_UTC:-15} + 5 )) ]; then
+            command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          fi
+
       - name: Run one bot check
         run: python main.py --once
 

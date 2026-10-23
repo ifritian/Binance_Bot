@@ -1059,6 +1059,47 @@ def _telegram_mover_poll(ticker: str, pct: float, minutes: int | None) -> None:
     queue_manager.set_last_post_time("telegram_mover_poll")
 
 
+def try_publish_video() -> None:
+    """Раз в сутки: 15-секундное видео с реальными данными рынка (эксперимент). Любая проблема (нет ffmpeg,
+    ошибка API видео) просто откладывает попытку: текстовые посты это не затрагивает."""
+    if not config.VIDEO_ENABLED:
+        return
+    now = event_posts.now_utc()
+    today = now.strftime("%Y-%m-%d")
+    if now.hour < config.VIDEO_HOUR_UTC or now.hour - config.VIDEO_HOUR_UTC > 5:
+        return
+    if queue_manager._get("video_done") == today:
+        return
+    if not queue_manager.should_retry_now("video") or not _square_slot_available():
+        return
+    data = market_digest.fetch_movers()
+    if data is None:
+        queue_manager.set_retry_backoff("video", 0.5)
+        return
+    fng = event_posts.fetch_fng()
+    import video_post
+    out = Path("charts") / "market_video.mp4"
+    try:
+        mp4, poster = video_post.render(data, fng, out, ts=now)
+    except Exception as e:
+        logger.error("Видео: не удалось собрать ролик: %s", e)
+        queue_manager.set_retry_backoff("video", 3)
+        return
+    text = video_post.build_caption(data, fng)
+    try:
+        binance_publisher.tag_format("video")
+        result = binance_publisher.publish_video(text, mp4, 15.0, poster)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации видео: %s", e)
+        _record_publish_error("video", e)
+        queue_manager.set_retry_backoff("video", 3)
+        return
+    logger.info("Опубликовано видео: %s", result)
+    if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
+        queue_manager.set_last_post_time("square_global")
+    queue_manager._set("video_done", today)
+
+
 def try_publish_mover_followup() -> None:
     """Через 6-30 часов возвращаемся к монете из поста про скачок: что стало с показанными уровнями.
     Публикуем итог независимо от того, сработала ли карта. Не чаще 2 раз в сутки."""
@@ -2453,6 +2494,7 @@ def tick() -> None:
         try_publish_square_question()
         try_publish_mover_result()
         try_publish_mover_followup()
+        try_publish_video()
         try_publish_listing_announcement()
         try_publish_listing_report()
         try_publish_binance_alerts()
