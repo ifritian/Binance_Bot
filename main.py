@@ -1345,7 +1345,6 @@ def try_publish_listing_announcement() -> None:
     fresh = [a for a in event_posts.fetch_listing_announcements(time.time()) if a["code"] not in seen]
     queue_manager._set("announcements_status", {"ts": int(time.time()), "status": event_posts.LAST_STATUS})
     if not fresh:
-        queue_manager.set_retry_backoff("announcement", 0.25)  # не опрашивать каждые 10 минут
         return
     item = fresh[0]
     try:
@@ -1360,6 +1359,24 @@ def try_publish_listing_announcement() -> None:
     queue_manager._set("announcements_seen", sorted(seen)[-100:])
     queue_manager.set_last_post_time("announcement")
     queue_manager.set_last_post_time("square_global")
+
+
+def fast_lane(seconds: float | None = None, interval: float | None = None) -> None:
+    """После обычного тика держим запуск ещё несколько минут и опрашиваем только самое срочное (объявления
+    Binance, быстрые скачки цены, срочные алерты) раз в ~45 секунд: задержка вместо 10 минут - около минуты.
+    Любая ошибка внутри не прерывает цикл."""
+    seconds = config.FAST_LANE_SECONDS if seconds is None else seconds
+    interval = config.FAST_LANE_INTERVAL_SECONDS if interval is None else interval
+    if seconds <= 0:
+        return
+    deadline = time.time() + seconds
+    while time.time() + interval < deadline:
+        time.sleep(interval)
+        for fn in (try_publish_listing_announcement, try_publish_hot_mover, try_publish_binance_alerts):
+            try:
+                fn()
+            except Exception:
+                logger.exception("Быстрая полоса: ошибка в %s", getattr(fn, "__name__", fn))
 
 
 def try_publish_currency_post() -> None:
@@ -2560,6 +2577,7 @@ def main() -> None:
         # никогда не возвращает управление).
         logger.info("Режим --once: запуск одного тика")
         tick()
+        fast_lane()
         logger.info("Тик завершён, выход")
         return
 

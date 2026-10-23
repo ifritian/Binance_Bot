@@ -279,7 +279,10 @@ FNG_ENABLED = (os.environ.get("FNG_ENABLED") or "true").strip().lower() in ("1",
 FNG_HOUR_UTC = int(os.environ.get("FNG_HOUR_UTC") or "9")
 # "Анонсы Binance" (новые листинги): не чаще раза в N часов.
 ANNOUNCEMENTS_ENABLED = (os.environ.get("ANNOUNCEMENTS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
-ANNOUNCEMENTS_MIN_INTERVAL_HOURS = float(os.environ.get("ANNOUNCEMENTS_MIN_INTERVAL_HOURS") or "6")
+ANNOUNCEMENTS_MIN_INTERVAL_HOURS = float(os.environ.get("ANNOUNCEMENTS_MIN_INTERVAL_HOURS") or "2")
+# Быстрая полоса (main.fast_lane): сколько секунд держать запуск после тика и как часто опрашивать срочное.
+FAST_LANE_SECONDS = float(os.environ.get("FAST_LANE_SECONDS") or "420")
+FAST_LANE_INTERVAL_SECONDS = float(os.environ.get("FAST_LANE_INTERVAL_SECONDS") or "45")
 # Вопрос аудитории на Square (см. square_question.py), раз в N часов.
 SQUARE_QUESTION_ENABLED = (os.environ.get("SQUARE_QUESTION_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 SQUARE_QUESTION_INTERVAL_HOURS = float(os.environ.get("SQUARE_QUESTION_INTERVAL_HOURS") or "30")

@@ -34,6 +34,7 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       FOLLOWUP_CHANNEL_USERNAME: ${{ secrets.FOLLOWUP_CHANNEL_USERNAME }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

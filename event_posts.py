@@ -143,6 +143,7 @@ def build_fng_text(data: dict, rng=None) -> str:
 # ---------------- Анонсы Binance ----------------
 
 _LISTING_RE = re.compile(r"will\s+list\s+(.+?)\s*\(([A-Z0-9]{2,12})\)", re.IGNORECASE)
+_AIRDROP_RE = re.compile(r"HODLer\s+Airdrops?\b.*?(?:Announces|Presents|Introduces|Features)?\s+([A-Za-z0-9][A-Za-z0-9 .'\-]{0,40}?)\s*\(([A-Z0-9]{2,12})\)", re.IGNORECASE)
 
 
 def parse_listing_title(title: str) -> tuple[str, str] | None:
@@ -151,6 +152,15 @@ def parse_listing_title(title: str) -> tuple[str, str] | None:
     if not m:
         return None
     return m.group(1).strip(), m.group(2).upper()
+
+
+def parse_airdrop_title(title: str) -> tuple[str, str] | None:
+    """'Binance HODLer Airdrops Announces Foo (FOO) ...' -> ('Foo', 'FOO')."""
+    m = _AIRDROP_RE.search(title or "")
+    if not m:
+        return None
+    name = re.sub(r"^(announces|presents|introduces|features)\s+", "", m.group(1).strip(), flags=re.IGNORECASE)
+    return name, m.group(2).upper()
 
 
 def fetch_listing_announcements(now_ts: float, max_age_hours: float = ANNOUNCEMENT_MAX_AGE_HOURS,
@@ -175,7 +185,11 @@ def fetch_listing_announcements(now_ts: float, max_age_hours: float = ANNOUNCEME
         return []
     out = []
     for a in articles:
+        kind = "listing"
         parsed = parse_listing_title(a.get("title", ""))
+        if not parsed:
+            parsed = parse_airdrop_title(a.get("title", ""))
+            kind = "airdrop"
         if not parsed:
             continue
         try:
@@ -185,7 +199,7 @@ def fetch_listing_announcements(now_ts: float, max_age_hours: float = ANNOUNCEME
         if now_ts - ts > max_age_hours * 3600 or ts > now_ts + 600:
             continue
         out.append({"code": str(a.get("code") or a.get("id") or a.get("title")), "name": parsed[0],
-                    "ticker": parsed[1], "ts": ts})
+                    "ticker": parsed[1], "ts": ts, "kind": kind})
     out.sort(key=lambda x: x["ts"], reverse=True)
     LAST_STATUS = f"ок: статей {len(articles)}, свежих листингов {len(out)}"
     return out
@@ -195,6 +209,12 @@ def build_announcement_text(item: dict, rng=None) -> str:
     rng = rng or random
     en = config.SQUARE_TEMPLATE_LANG == "en"
     name, t = item["name"], item["ticker"]
+    if item.get("kind") == "airdrop" and en:
+        head = rng.choice([f"🎁 Binance announced a HODLer Airdrops project: {name} (${t}).",
+                           f"Binance HODLer Airdrops is featuring {name} (${t})."])
+        q = rng.choice(["Eligibility depends on a BNB snapshot, so check the official announcement for the exact rules. Are you watching it? 👇",
+                        "Airdrop coins often swing hard on day one. Watching it or skipping? 🤔"])
+        return f"{head}\n\n{q}\n\nNot financial advice.\n\n#{t} #Binance"
     if en:
         head = f"🆕 Binance just announced it will list {name} (${t})."
         q = rng.choice([f"New listings move fast. Are you watching ${t} or skipping it? 👇",
