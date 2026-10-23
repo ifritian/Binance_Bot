@@ -217,7 +217,8 @@ def build_news_text(news: dict, ticker: str, pct: float, binance_item: dict | No
     import random as _r
     rng = rng or _r
     title, src, mv = news["title"], news["source"], _signed(pct)
-    lead = rng.choice(["🚨 ", "🚨 ", "📰 ", ""])
+    # 🚨 только при заметном движении цены: "тревога" у спокойной новости выглядит шаблонно и фальшиво
+    lead = rng.choice(["🚨 ", "🚨 ", "📰 "]) if abs(pct) >= 5 else rng.choice(["📰 ", "📰 ", "🗞 ", "", "", ""])
     layout = rng.choice(["a", "b", "c", "d"])
     if layout == "a":
         body = f"{lead}{title} ({src})\n\n${ticker} is {mv} over the last 24h."
