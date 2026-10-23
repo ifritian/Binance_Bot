@@ -233,6 +233,7 @@ def _win(minutes: int | None) -> str:
 
 
 SNAP_KEEP_S = 5400          # храним снимки цен ~90 минут
+SNAP_MIN_GAP_S = 5 * 60
 FAST_MIN_AGE_S = 25 * 60    # быстрое изменение считаем не по слишком свежему снимку
 
 
@@ -263,6 +264,8 @@ def update_snapshots(rows: list[dict], now_ts: float, snaps: list | None) -> lis
         if t in allowed and price > 0 and vol >= HOT_MIN_VOLUME_USD:
             cur[t] = price
     out = [s for s in (snaps or []) if now_ts - s[0] < SNAP_KEEP_S and s[0] <= now_ts]
+    if out and now_ts - out[-1][0] < SNAP_MIN_GAP_S:
+        return out            # быстрая полоса опрашивает часто, а снимки нужны раз в несколько минут
     out.append([now_ts, cur])
     return out
 
