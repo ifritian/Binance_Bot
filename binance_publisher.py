@@ -149,6 +149,40 @@ def publish_post(text: str, image_paths: Optional[list[Path]] = None) -> dict:
     return result
 
 
+def _poll_processing(file_ticket: str, retries: int = 40) -> dict:
+    """Ожидание обработки видео на сервере (дольше, чем у картинки)."""
+    for attempt in range(retries):
+        data = _api_v2("/image/imageStatus", {"fileTicket": file_ticket})
+        if data.get("status") == 1:
+            return data
+        if data.get("status") == 2:
+            raise PublishError(f"Обработка видео не удалась: {data.get('failedReason')}")
+        time.sleep(_POLL_INTERVAL_SECONDS)
+    raise PublishError("Превышено время ожидания обработки видео")
+
+
+def publish_video(text: str, video_path: Path, duration_s: float, cover_path: Path) -> dict:
+    """Видео-пост (contentType=3) по схеме официального скрипта Binance post-video: preSign -> загрузка в S3 ->
+    ожидание обработки -> загрузка обложки -> /content/add. Дубль-защита и журнал - как у publish_post."""
+    global _NEXT_FORMAT
+    dup = _recent_duplicate(text)
+    if dup:
+        logger.warning("Square: видео-пост пропущен как дубль (%s)", dup)
+        _NEXT_FORMAT = None
+        return {"id": None, "status": "duplicate_skipped"}
+    video_path = Path(video_path)
+    logger.info("Загружаю видео: %s (%.1f МБ)", video_path.name, video_path.stat().st_size / 1e6)
+    pre = _api_v2("/video/preSign", {"fileName": video_path.name, "size": video_path.stat().st_size})
+    _upload_to_s3(pre["presignedUrl"], video_path, "video/mp4")
+    _poll_processing(pre["fileTicket"])
+    cover = upload_image(cover_path)
+    body = {"contentType": 3, "fileTicket": pre["fileTicket"], "cover": cover,
+            "videoTimeSeconds": float(duration_s), "isPublish": True, "bodyTextOnly": text}
+    result = _send_content(body)
+    _log_post(text, result, True)
+    return result
+
+
 MAX_CASHTAGS_RETRY = 3
 _CASHTAG_RE = re.compile(r"\$([A-Za-z][A-Za-z0-9]{1,14})\b")
 

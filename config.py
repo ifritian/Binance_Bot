@@ -249,6 +249,9 @@ HOT_MOVER_MIN_PCT = float(os.environ.get("HOT_MOVER_MIN_PCT") or "6")
 HOT_FAST_PCT = float(os.environ.get("HOT_FAST_PCT") or "3")
 # Срочный пост про скачок не должен ждать общего интервала между постами (MIN_SQUARE_POST_SPACING_MINUTES).
 TELEGRAM_MOVER_POLL_MIN_GAP_HOURS = float(os.environ.get("TELEGRAM_MOVER_POLL_MIN_GAP_HOURS") or "24")
+# Видео "Рынок за 15 секунд" (video_post.py): раз в сутки в окне VIDEO_HOUR_UTC .. +5 часов. Эксперимент: сравниваем просмотры с картинками.
+VIDEO_ENABLED = (os.environ.get("VIDEO_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+VIDEO_HOUR_UTC = int(os.environ.get("VIDEO_HOUR_UTC") or "15")
 HOT_MOVER_SPACING_MINUTES = float(os.environ.get("HOT_MOVER_SPACING_MINUTES") or "20")
 MOVER_SETUPS_ENABLED = (os.environ.get("MOVER_SETUPS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 # Сигналы по корзине индекса (index_signal_scanner) и "Забрали профит!" строятся на тех
@@ -816,7 +819,7 @@ REFERRAL_LINK_SHARE = float(os.environ.get("REFERRAL_LINK_SHARE") or "0.5")
 # итоги идей), по этому правилу не ограничиваются.
 SAME_FORMAT_MIN_GAP_HOURS = {
     "digest": 4, "fear_greed": 12, "altcoin_basket": 6, "binance_radar": 6,
-    "weekly_brief": 48, "momentum": 72, "mover_followup": 4, "question": 3, "opinion": 6, "listing_report": 1,
+    "weekly_brief": 48, "momentum": 72, "mover_followup": 4, "video": 20, "question": 3, "opinion": 6, "listing_report": 1,
 }
 
 # Недельный бумажный моментум (xs_momentum.py).
