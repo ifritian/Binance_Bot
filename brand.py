@@ -10,7 +10,7 @@ import config
 TAG = "#" + config.PROJECT_NAME.replace(" ", "")
 BG, GOLD, MUTED = (11, 14, 17), (240, 185, 11), (132, 142, 156)
 LABELS = {"digest": "MARKET SNAPSHOT", "fear_greed": "FEAR & GREED", "breakout": "BREAKOUT WATCH", "hot_mover": "HOT MOVER",
-          "mover_result": "RESULT", "mover_followup": "FOLLOW-UP", "level_check": "LEVEL CHECK", "funding": "FUNDING RADAR", "binance_radar": "BINANCE RADAR",
+          "mover_result": "RESULT", "mover_followup": "FOLLOW-UP", "level_check": "LEVEL CHECK", "funding": "FUNDING RADAR", "anchor": "MACRO DAY", "binance_radar": "BINANCE RADAR",
           "news_move": "NEWS + PRICE", "listing": "NEW LISTING", "listing_report": "LISTING REPORT", "altcoin_basket": "ALT BASKET",
           "weekly_brief": "WEEKLY REVIEW", "momentum": "MOMENTUM LOG", "question": "COMMUNITY"}
 

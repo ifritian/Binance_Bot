@@ -41,6 +41,7 @@ import market_digest
 import micro_moments
 import level_check
 import numfmt
+import anchors
 import funding_radar
 import brand
 import crowd
@@ -1278,6 +1279,13 @@ def try_publish_news_radar() -> None:
             text, fmt, key, mark_news = news_radar.build_news_text(n, ticker, pct, related), "news_move", "news_move", n["id"]
             chart = _coin_chart(ticker, 7)
             images = [chart] if chart else []
+        elif config.MARKET_NEWS_ENABLED:
+            mn = news_radar.pick_market_news(news, seen_news)
+            btc = news_radar.fetch_changes(["BTC"]).get("BTC") if mn else None
+            if mn and btc is not None:
+                text, fmt, key, mark_news = news_radar.build_market_news_text(mn, btc), "news_move", "news_move", mn["id"]
+                chart = _coin_chart("BTC", 2)
+                images = [chart] if chart else []
     if text is None and radar_due:
         picked = news_radar.pick_radar_items(binance, seen_codes)
         if news_radar.radar_worth_posting(picked):
@@ -2186,6 +2194,46 @@ def try_publish_funding_radar() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def try_publish_anchor() -> None:
+    """Якорные дни: пост за сутки до события (ФРС, CPI, занятость, экспирация) и итог через 2-8 часов."""
+    if not config.ANCHORS_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    now = event_posts.now_utc()
+    done = queue_manager._get("anchor_done") or []
+    hit = anchors.due(now, done)
+    if hit is None or not queue_manager.should_retry_now("anchor") or not _square_slot_available():
+        return
+    phase, e = hit
+    fk = mover_setups.fetch_klines
+
+    def react(t):
+        return anchors.reaction(fk("BTC", "15m", 8, start_ms=int(t.timestamp() * 1000)))
+    px = mover_setups._px
+    if phase == "pre":
+        hist = anchors.history_summary([react(t) for t in anchors.PAST_FOMC]) if e["kind"] == "fomc" else None
+        text = anchors.pre_text(e, market_digest.fetch_price("BTC"), hist, px)
+    else:
+        r = react(e["t"])
+        if r is None:
+            queue_manager.set_retry_backoff("anchor", 0.5)
+            return
+        hist = anchors.history_summary([react(t) for t in anchors.PAST_FOMC]) if e["kind"] == "fomc" else None
+        first = fk("BTC", "15m", 1, start_ms=int(e["t"].timestamp() * 1000))
+        now_p = market_digest.fetch_price("BTC")
+        now_move = (now_p / first[0][1] - 1) * 100 if first and now_p else None
+        text = anchors.post_text(e, r, now_move, hist)
+    chart = _coin_chart("BTC", 2)
+    try:
+        _post("anchor", text, image_paths=[chart] if chart else None)
+    except binance_publisher.PublishError as ex:
+        logger.error("Ошибка публикации якорного поста: %s", ex)
+        _record_publish_error("anchor", ex)
+        queue_manager.set_retry_backoff("anchor", 1)
+        return
+    queue_manager._set("anchor_done", (done + [f"{phase}:{e['id']}"])[-40:])
+    queue_manager.set_last_post_time("square_global")
+
+
 def try_publish_telegram_poll() -> None:
     """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
     вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
@@ -2721,6 +2769,7 @@ def tick() -> None:
         try_publish_video()
         try_publish_video_map()
         try_publish_video_replay()
+        try_publish_anchor()
         try_publish_level_check()
         try_publish_funding_radar()
         try_publish_crowd_result()
