@@ -46,7 +46,7 @@ def _text(d, xy, s, font, fill, anchor="la", alpha=1.0):
 
 
 def _header(d, ts: datetime, a=1.0):
-    _text(d, (48, 60), "MARKET RADAR", _font(30), GOLD, alpha=a)
+    _text(d, (48, 60), __import__("config").PROJECT_NAME.upper(), _font(30), GOLD, alpha=a)
     _text(d, (W - 48, 66), ts.strftime("%b %d, %H:%M UTC"), _font(24, False), MUTED, "ra", a)
     d.line([(48, 112), (W - 48, 112)], fill=GRID, width=2)
 

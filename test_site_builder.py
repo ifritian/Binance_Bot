@@ -18,7 +18,7 @@ def _data(**kw):
 
 def test_empty_state_renders_without_errors():
     out = sb.render(_data(), 1_792_300_000)
-    assert "Market Radar" in out and "No idea has closed yet" in out and "See what is moving in crypto, at a glance" in out
+    assert "Vektor Daily" in out and "No idea has closed yet" in out and "See what is moving in crypto, at a glance" in out
 
 
 def test_losing_trades_are_listed_and_stats_are_honest():

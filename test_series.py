@@ -46,7 +46,7 @@ def test_brand_stamp_and_tag(tmp_path):
     out = brand.stamp(p, "hot_mover")
     assert out != p and Image.open(out).size[1] > 750
     assert brand.stamp(tmp_path / "missing.png", "x") == tmp_path / "missing.png"
-    assert brand.tag_text("hi") == "hi #MarketRadar" and brand.tag_text("x #marketradar") == "x #marketradar"
+    assert brand.tag_text("hi") == "hi #VektorDaily" and brand.tag_text("x #vektordaily") == "x #vektordaily"
 
 
 def test_question_enrich_keeps_tags():

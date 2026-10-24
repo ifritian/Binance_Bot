@@ -804,7 +804,7 @@ LISTING_TRACKER_ENABLED = (os.environ.get("LISTING_TRACKER_ENABLED") or "true").
 BINANCE_ALERTS_ENABLED = (os.environ.get("BINANCE_ALERTS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 
 # Название проекта: на карточках, на публичной странице.
-PROJECT_NAME = (os.environ.get("PROJECT_NAME") or "Market Radar").strip()
+PROJECT_NAME = (os.environ.get("PROJECT_NAME") or "Vektor Daily").strip()
 # Недельный обзор (weekly_brief.py): воскресенье вечером UTC.
 WEEKLY_BRIEF_ENABLED = (os.environ.get("WEEKLY_BRIEF_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 WEEKLY_BRIEF_HOUR_UTC = int(os.environ.get("WEEKLY_BRIEF_HOUR_UTC") or 17)

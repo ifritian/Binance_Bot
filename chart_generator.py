@@ -207,11 +207,13 @@ def _draw_volume(ax, candles: list[dict]) -> None:
         ax.axhline(max_vol * frac, color=_GRID_COLOR, linewidth=0.5, zorder=0)
 
 
-def _draw_watermark(ax, text: str | None = "MARKET RADAR") -> None:
+def _draw_watermark(ax, text: str | None = None) -> None:
     """Полупрозрачный ромб + надпись по центру графика, как водяной
     знак на скриншотах с самой площадки. text=None - не рисовать
     вообще (используется для графиков под чужие площадки, где
     водяной знак BINANCE неуместен)."""
+    if text == "__brand__":
+        text = config.PROJECT_NAME.upper()
     if text is None:
         return
     ax.text(
@@ -542,7 +544,7 @@ def draw_signal_annotations(ax, candles: list[dict], entry_price: float, directi
 
 
 def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None,
-                          watermark_text: str | None = "MARKET RADAR", filename_suffix: str = "",
+                          watermark_text: str | None = "__brand__", filename_suffix: str = "",
                           win_annotation: dict | None = None,
                           signal_annotation: dict | None = None) -> Path | None:
     """
@@ -697,7 +699,7 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
         ax = fig.add_subplot(gs[0])
         ax_vol = fig.add_subplot(gs[1], sharex=ax)
 
-        _draw_watermark(ax, "MARKET RADAR")
+        _draw_watermark(ax, "__brand__")
         _draw_candles(ax, candles)
         _style_axis(ax, show_xticks=False)
         ax.set_xlim(-1, len(candles) + 1)
