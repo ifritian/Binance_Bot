@@ -68,7 +68,7 @@ def digest_card(data: dict, slot_hour_utc: int) -> Path | None:
 
         ax.text(5, 7, title, color=_TEXT, fontsize=17, fontweight="bold", va="center")
         ax.text(5, 12.5, "last 24h", color=_MUTED, fontsize=10, va="center")
-        ax.text(95, 7, "BINANCE", color=_TEXT, alpha=0.18, fontsize=13, fontweight="bold",
+        ax.text(95, 7, "MARKET RADAR", color=_TEXT, alpha=0.18, fontsize=13, fontweight="bold",
                 family="monospace", ha="right", va="center")
 
         x = 5
@@ -77,7 +77,7 @@ def digest_card(data: dict, slot_hour_utc: int) -> Path | None:
             ax.add_patch(Rectangle((x, 17), 43, 11, facecolor="#12171D", edgecolor=_GRID, linewidth=1))
             ax.text(x + 2.5, 20.5, f"${t}", color=_TEXT, fontsize=12, fontweight="bold", va="center")
             ax.text(x + 2.5, 25, _price(price), color=_MUTED, fontsize=10, va="center")
-            ax.text(x + 40.5, 22.5, f"{pct:+.1f}%", color=color, fontsize=14, fontweight="bold", ha="right", va="center")
+            ax.text(x + 40.5, 22.5, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=14, fontweight="bold", ha="right", va="center")
             x += 47
 
         y = 34
@@ -89,7 +89,7 @@ def digest_card(data: dict, slot_hour_utc: int) -> Path | None:
                 ax.text(5, y, f"${t}", color=_TEXT, fontsize=11, va="center")
                 w = max(abs(pct) / max_abs * bar_w_max, 1.5)
                 ax.add_patch(Rectangle((bar_x0, y - 1.5), w, 3, facecolor=color, alpha=0.85, linewidth=0))
-                ax.text(95, y, f"{pct:+.1f}%", color=color, fontsize=11, fontweight="bold", ha="right", va="center")
+                ax.text(95, y, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=11, fontweight="bold", ha="right", va="center")
                 y += 4.6
             y += 1.8
 
@@ -249,7 +249,7 @@ def weekly_card(data: dict) -> Path | None:
             color = _UP if pct >= 0 else _DOWN
             ax.add_patch(Rectangle((x, 17), w, 14, facecolor="#12171D", edgecolor=_GRID, linewidth=1))
             ax.text(x + 2.5, 21.5, name, color=_MUTED, fontsize=10, va="center")
-            ax.text(x + 2.5, 27, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=15, fontweight="bold", va="center")
+            ax.text(x + 2.5, 27, f"{pct:+.1f}%".replace("-", "−").replace("-", "−"), color=color, fontsize=15, fontweight="bold", va="center")
             x += w + 3
         y = 38
         for name, color, items in sections:
@@ -259,7 +259,7 @@ def weekly_card(data: dict) -> Path | None:
                 ax.text(5, y, f"${t}", color=_TEXT, fontsize=11, va="center")
                 bw = max(abs(pct) / max_abs * 52, 1.5)
                 ax.add_patch(Rectangle((30, y - 1.5), bw, 3, facecolor=color, alpha=0.85, linewidth=0))
-                ax.text(95, y, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=11, fontweight="bold", ha="right", va="center")
+                ax.text(95, y, f"{pct:+.1f}%".replace("-", "−").replace("-", "−"), color=color, fontsize=11, fontweight="bold", ha="right", va="center")
                 y += 4.6
             y += 1.8
         path = _out("weekly_card.png")

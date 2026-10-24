@@ -40,6 +40,7 @@ import event_posts
 import market_digest
 import micro_moments
 import level_check
+import numfmt
 import crowd
 import mover_levels
 import mover_setups
@@ -766,6 +767,10 @@ def _record_publish_error(fmt: str, error) -> None:
 def _post(fmt: str, *args, **kwargs):
     """binance_publisher.publish_post + метка формата для журнала публикаций."""
     binance_publisher.tag_format(fmt)
+    if args and isinstance(args[0], str):
+        args = (numfmt.fix_minus(args[0]),) + tuple(args[1:])
+    elif isinstance(kwargs.get("text"), str):
+        kwargs["text"] = numfmt.fix_minus(kwargs["text"])
     result = binance_publisher.publish_post(*args, **kwargs)
     if isinstance(result, dict) and result.get("status") == "duplicate_skipped":
         return result   # дубль не публикуем и не кросспостим

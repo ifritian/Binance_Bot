@@ -141,7 +141,8 @@ def _format_price(price: float) -> str:
         return f"{price:,.2f}"
     if price >= 1:
         return f"{price:.4f}"
-    return f"{price:.6f}".rstrip("0").rstrip(".")
+    import numfmt
+    return numfmt.small_price(price) if price < 0.01 else f"{price:.6f}".rstrip("0").rstrip(".")
 
 
 def _moving_average(closes: list[float], period: int) -> list[float | None]:
@@ -206,7 +207,7 @@ def _draw_volume(ax, candles: list[dict]) -> None:
         ax.axhline(max_vol * frac, color=_GRID_COLOR, linewidth=0.5, zorder=0)
 
 
-def _draw_watermark(ax, text: str | None = "BINANCE") -> None:
+def _draw_watermark(ax, text: str | None = "MARKET RADAR") -> None:
     """Полупрозрачный ромб + надпись по центру графика, как водяной
     знак на скриншотах с самой площадки. text=None - не рисовать
     вообще (используется для графиков под чужие площадки, где
@@ -541,7 +542,7 @@ def draw_signal_annotations(ax, candles: list[dict], entry_price: float, directi
 
 
 def generate_chart_image(ticker: str, days: int = 2, expected_price: float | None = None,
-                          watermark_text: str | None = "BINANCE", filename_suffix: str = "",
+                          watermark_text: str | None = "MARKET RADAR", filename_suffix: str = "",
                           win_annotation: dict | None = None,
                           signal_annotation: dict | None = None) -> Path | None:
     """
@@ -696,7 +697,7 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
         ax = fig.add_subplot(gs[0])
         ax_vol = fig.add_subplot(gs[1], sharex=ax)
 
-        _draw_watermark(ax, "BINANCE")
+        _draw_watermark(ax, "MARKET RADAR")
         _draw_candles(ax, candles)
         _style_axis(ax, show_xticks=False)
         ax.set_xlim(-1, len(candles) + 1)
