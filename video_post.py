@@ -56,12 +56,29 @@ def _progress(d, t: float, duration: float):
     d.rectangle([0, H - 8, int(W * min(t / duration, 1.0)), H], fill=GOLD)
 
 
+STING_S = 1.2
+
+
+def _sting(img: Image.Image, t: float) -> Image.Image:
+    """Заставка ~1.2 с: имя канала на тёмном фоне, быстро растворяется в первую сцену."""
+    if t >= STING_S:
+        return img
+    a = 1.0 if t < 0.7 else max(0.0, (STING_S - t) / (STING_S - 0.7))
+    cover = Image.new("RGB", img.size, BG)
+    d = ImageDraw.Draw(cover)
+    import config
+    k = 0.92 + 0.08 * ease(t / 0.5)
+    _text(d, (W // 2, H // 2 - 20), config.PROJECT_NAME.upper(), _font(int(58 * k)), GOLD, "mm", min(1.0, t / 0.25))
+    d.rectangle([W // 2 - int(150 * ease(t / 0.6)), H // 2 + 40, W // 2 + int(150 * ease(t / 0.6)), H // 2 + 44], fill=GOLD)
+    return Image.blend(img, cover, a)
+
+
 def scenes(duration: float = 15.0) -> dict:
     k = duration / 15.0
     return {"majors": (0, 4.0 * k), "gainers": (4.0 * k, 8.5 * k), "losers": (8.5 * k, 12.0 * k), "mood": (12.0 * k, duration)}
 
 
-def frame(t: float, data: dict, fng: dict | None, ts: datetime, duration: float = 15.0) -> Image.Image:
+def _frame(t: float, data: dict, fng: dict | None, ts: datetime, duration: float = 15.0) -> Image.Image:
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     sc = scenes(duration)
@@ -154,7 +171,7 @@ def _tile_color(pct: float) -> tuple[int, int, int]:
     return tuple(round(lo[i] + (hi[i] - lo[i]) * t) for i in range(3))
 
 
-def map_frame(t: float, tiles: list, ts: datetime, duration: float = 12.0) -> Image.Image:
+def _map_frame(t: float, tiles: list, ts: datetime, duration: float = 12.0) -> Image.Image:
     """Анимированная карта рынка: плитки (размер - объём, цвет - 24ч) по очереди вырастают."""
     import site_heatmap
     img = Image.new("RGB", (W, H), BG)
@@ -187,7 +204,7 @@ def render_map(tiles: list, out: Path, duration: float = 12.0, fps: int = FPS, t
     return _encode(lambda t: map_frame(t, tiles, ts, duration), duration - 0.5, out, duration, fps)
 
 
-def replay_frame(t: float, ticker: str, bars: list, ts: datetime, duration: float = 12.0) -> Image.Image:
+def _replay_frame(t: float, ticker: str, bars: list, ts: datetime, duration: float = 12.0) -> Image.Image:
     """Свечи 1ч "проигрываются" слева направо; цена и изменение считаются вживую."""
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
@@ -241,6 +258,18 @@ def replay_caption(ticker: str, bars: list, rng: random.Random | None = None) ->
                       f"{_pct(chg)} from {_price(bars[0][1])} to {_price(bars[-1][4])}.", "",
                       rng.choice(["Where does it go from here?", "What would you have done at the start?"]),
                       "", voice_variety.disclaimer(rng), "", f"#{ticker}"])
+
+
+def frame(t, data, fng, ts, duration=15.0):
+    return _sting(_frame(t, data, fng, ts, duration), t)
+
+
+def map_frame(t, tiles, ts, duration=12.0):
+    return _sting(_map_frame(t, tiles, ts, duration), t)
+
+
+def replay_frame(t, ticker, bars, ts, duration=12.0):
+    return _sting(_replay_frame(t, ticker, bars, ts, duration), t)
 
 
 def render(data: dict, fng: dict | None, out: Path, duration: float = 15.0, fps: int = FPS,
