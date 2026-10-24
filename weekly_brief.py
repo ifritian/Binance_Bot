@@ -90,6 +90,8 @@ def collect(now_ts: float, symbols: list | None = None, fetch_changes=fetch_week
         "fng": fetch_fng(),
         "ideas": ideas_week(tb.get("closed", []), tb.get("positions", {}), now_ts),
         "binance": binance_week(fetch_binance(now_ts, 7 * 24)),
+        "levels": [h for h in (queue_manager._get("level_check") or {}).get("hist", []) if now_ts - h.get("ts", 0) <= 7 * DAY],
+        "crowd": queue_manager._get("crowd_record") or {"right": 0, "total": 0},
         "listings": [h for h in lt.get("history", []) if now_ts - h["listing_t"] <= 14 * DAY and h.get("pct_d1") is not None],
     }
     d["basket"] = (d["basket_info"] or {}).get("basket")
@@ -132,6 +134,12 @@ def build_text(d: dict) -> str:
         lines.append(f"Trend ideas: {ide['closed']} closed this week, {ide['wins']} in profit, average {_s(ide['avg'])} after fees; {ide['open']} open.")
     else:
         lines.append(f"Trend ideas: none closed this week, {ide['open']} open.")
+    lv = d.get("levels") or []
+    if len(lv) >= 2:
+        lines.append(f"Level Check: the daily range held {sum(1 for h in lv if h['res'] == 'held')} of {len(lv)} days.")
+    cr = d.get("crowd") or {}
+    if cr.get("total"):
+        lines.append(f"Telegram crowd vs market, all time: right {cr['right']} of {cr['total']} calls.")
     bn = d["binance"]
     parts = []
     if bn["counts"].get("delist"):

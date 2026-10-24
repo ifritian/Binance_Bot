@@ -77,6 +77,9 @@ def collect() -> dict:
         "listings": lt.get("history", []),
         "listings_waiting": [e for e in (lt.get("tracked") or {}).values() if e.get("stage") in ("d1", "d7")],
         "posts": g("square_post_log") or [],
+        "levels": (g("level_check") or {}).get("hist", []),
+        "crowd": g("crowd_record") or {"right": 0, "total": 0},
+        "followups": g("mover_followups") or [],
     }
 
 
@@ -446,6 +449,7 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
     cta = (f'<a class="btn main" href="{_e(primary[1])}" rel="noopener">Follow on {_e(primary[0])}</a>' if primary else "")
     cta += "".join(f'<a class="btn" href="{_e(u)}" rel="noopener">{_e(n)}</a>' for n, u in ls[1:])
     import post_format
+    cta += '<a class="btn" href="receipts.html">Receipts</a>'
     cta += f'<a class="btn ref" href="{_e(post_format.REFERRAL_LINK)}" rel="noopener sponsored">Open a Binance account</a>'
 
     idea_stats = (
@@ -550,10 +554,53 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
 
 
 
+def render_receipts(d: dict, now_ts: float | None = None, ls: list | None = None) -> str:
+    """Страница "Receipts": все проверяемые результаты в одном месте, убытки тоже."""
+    now_ts = now_ts or time.time()
+    ls = links() if ls is None else ls
+    ideas = stats_ideas(d["closed"])
+    held = sum(1 for h in d.get("levels", []) if h.get("res") == "held")
+    lv_n = len(d.get("levels", []))
+    cr = d.get("crowd") or {"right": 0, "total": 0}
+    summary = (
+        f'<div class="statline"><div><span>Trend ideas closed</span><b class="big">{ideas["n"]}</b></div>'
+        f'<div><span>Ideas in profit</span><b class="big">{ideas["wins"]}</b></div>'
+        f'<div><span>Level Check: range held</span><b class="big">{held}/{lv_n}</b></div>'
+        f'<div><span>Telegram crowd right</span><b class="big">{cr["right"]}/{cr["total"]}</b></div></div>')
+    idea_rows = [f"<tr><td>${_e(c['ticker'])}</td><td>{_date(c['entry_t'] / 1000)}</td><td class=\"{_cls(c['pnl'])}\">{_pct(c['pnl'])}</td>"
+                 f"<td>{'Stop hit' if c['reason'] == 'stop' else 'Time limit'}</td></tr>" for c in reversed(d["closed"])]
+    words = {"held": "Stayed inside", "above": "Broke above", "below": "Broke below", "both": "Broke both sides"}
+    lv_rows = [f"<tr><td>{_e(h['ticker'])}</td><td>{_date(h['ts'])}</td><td>{h['lo']:.6g} to {h['hi']:.6g}</td><td>{words.get(h['res'], '')}</td></tr>"
+               for h in reversed(d.get("levels", [])[-40:])]
+    fu_rows = [f"<tr><td>${_e(f['ticker'])}</td><td>{_date(f['ts'])}</td><td>{f['price']:.6g}</td><td>{'checked' if f.get('done') else 'waiting'}</td></tr>"
+               for f in reversed(d.get("followups", []))]
+    ls_html = f'<nav class="follow">{_links_html(ls)}</nav>' if ls else ""
+    upd = datetime.fromtimestamp(now_ts, timezone.utc).strftime("%b %d, %Y, %H:%M UTC")
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Receipts · {_e(PROJECT)}</title>
+<meta name="description" content="Every checkable call from {_e(PROJECT)}, wins and losses, in one place.">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>{CSS}</style></head><body><div class="wrap">
+<header class="top"><a class="brand" href="./">{_e(PROJECT)}</a>{ls_html}</header>
+<h1 style="margin-top:20px">Receipts</h1>
+<p class="lead" style="max-width:52ch">Every call that can be checked later, with the result. Wins, losses and misses all stay on this page.</p>
+{summary}
+<section><h2 class="s">Trend ideas</h2><p class="sub">Breakouts with a trailing stop, results after fees.</p>
+{_table(["Coin", "Entered", "Result", "Exit"], idea_rows)}</section>
+<section><h2 class="s">Level Check</h2><p class="sub">Each day's 24-hour range, checked against what happened next. Not a forecast, a log.</p>
+{_table(["Coin", "Date", "Range", "What happened"], lv_rows)}</section>
+<section><h2 class="s">Hot mover follow-ups</h2><p class="sub">Coins we posted about after a sharp move, and whether we went back to check.</p>
+{_table(["Coin", "Date", "Price then", "Status"], fu_rows)}</section>
+<footer>Not financial advice. Past results do not predict future results. Rebuilt {upd}.</footer>
+</div></body></html>"""
+
+
 def build(out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     d = collect()
     (out_dir / "index.html").write_text(render(d, live=collect_live(time.time())), encoding="utf-8")
+    (out_dir / "receipts.html").write_text(render_receipts(d), encoding="utf-8")
     (out_dir / "data.json").write_text(json.dumps({k: d[k] for k in ("closed", "listings", "snapshots")}, ensure_ascii=False), encoding="utf-8")
     (out_dir / ".nojekyll").write_text("")
     return out_dir / "index.html"

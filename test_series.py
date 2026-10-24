@@ -54,3 +54,12 @@ def test_question_enrich_keeps_tags():
     bars = [(i, 1, 2, 1, 1.5, 1) for i in range(24)]
     t = sq.enrich("$AVAX is down 2.5% in 24h. Dip?\n\n#AVAX", "AVAX", bars, str)
     assert "One word is enough: BUY" in t and t.endswith("#AVAX")
+
+
+def test_receipts_page_renders():
+    import site_builder as sb
+    d = {"closed": [{"ticker": "PEPE", "entry_t": 1e12, "pnl": -11.0, "reason": "stop", "held": 3}], "open": {}, "listings": [],
+         "snapshots": [], "posts": [], "levels": [{"ticker": "BTC", "ts": 1.7e9, "lo": 1.0, "hi": 2.0, "res": "held"}],
+         "crowd": {"right": 1, "total": 2}, "followups": [{"ticker": "ZEC", "ts": 1.7e9, "price": 5.0, "done": True}]}
+    html = sb.render_receipts(d, ls=[])
+    assert "Receipts" in html and "PEPE" in html and "1/2" in html and "Stayed inside" in html
