@@ -113,6 +113,123 @@ def frame(t: float, data: dict, fng: dict | None, ts: datetime, duration: float 
     return img
 
 
+def _encode(frame_fn, poster_t: float, out: Path, duration: float, fps: int) -> tuple[Path, Path]:
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("ffmpeg не найден")
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    poster = out.with_suffix(".png")
+    frame_fn(poster_t).save(poster)
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
+           "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
+           "-crf", "24", "-c:a", "aac", "-b:a", "32k", "-shortest", "-movflags", "+faststart", str(out)]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        for i in range(int(duration * fps)):
+            proc.stdin.write(frame_fn(i / fps).tobytes())
+        proc.stdin.close()
+        err = proc.stderr.read().decode(errors="ignore")
+        if proc.wait() != 0:
+            raise RuntimeError(f"ffmpeg завершился с ошибкой: {err[:300]}")
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    return out, poster
+
+
+def _tile_color(pct: float) -> tuple[int, int, int]:
+    t = min(abs(pct) / 8.0, 1.0)
+    lo, hi = ((58, 47, 8), (252, 213, 53)) if pct >= 0 else ((59, 18, 24), (246, 70, 93))
+    return tuple(round(lo[i] + (hi[i] - lo[i]) * t) for i in range(3))
+
+
+def map_frame(t: float, tiles: list, ts: datetime, duration: float = 12.0) -> Image.Image:
+    """Анимированная карта рынка: плитки (размер - объём, цвет - 24ч) по очереди вырастают."""
+    import site_heatmap
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    _header(d, ts)
+    _text(d, (48, 160), "Market map, 24h", _font(44), WHITE)
+    _text(d, (48, 222), "size = volume, color = change", _font(24, False), MUTED)
+    items = [(s, max(v, 1.0) ** 0.6) for s, _p, v in tiles]
+    lay = site_heatmap.squarify(items, 48, 290, W - 96, 860)
+    pct = {s: p for s, p, _v in tiles}
+    for i, (s, x, y, w, h) in enumerate(lay):
+        p = ease((t - 0.3 - i * 0.18) / 0.9)
+        if p <= 0:
+            continue
+        cx, cy = x + w / 2, y + h / 2
+        w2, h2 = (w - 4) * p, (h - 4) * p
+        col = _tile_color(pct[s])
+        d.rectangle([cx - w2 / 2, cy - h2 / 2, cx + w2 / 2, cy + h2 / 2], fill=col)
+        if p > 0.9 and w > 90 and h > 70:
+            dark = sum(col) > 330
+            tc = BG if dark else WHITE
+            _text(d, (cx, cy - 4), s, _font(max(18, min(40, int(w / 4.2)))), tc, "ms")
+            _text(d, (cx, cy + 6), _pct(pct[s]), _font(max(15, min(28, int(w / 6)))), tc, "ma")
+    return img
+
+
+def render_map(tiles: list, out: Path, duration: float = 12.0, fps: int = FPS, ts: datetime | None = None):
+    ts = ts or datetime.now(timezone.utc)
+    return _encode(lambda t: map_frame(t, tiles, ts, duration), duration - 0.5, out, duration, fps)
+
+
+def replay_frame(t: float, ticker: str, bars: list, ts: datetime, duration: float = 12.0) -> Image.Image:
+    """Свечи 1ч "проигрываются" слева направо; цена и изменение считаются вживую."""
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    _header(d, ts)
+    n = len(bars)
+    shown = max(1, min(n, int(1 + (n - 1) * ease(t / (duration * 0.8)))))
+    cur = bars[shown - 1][4]
+    first = bars[0][1]
+    chg = (cur / first - 1) * 100
+    _text(d, (48, 160), f"${ticker}", _font(64), WHITE)
+    _text(d, (48, 245), _price(cur), _font(58), GOLD2 if chg >= 0 else RED)
+    _text(d, (W - 48, 262), _pct(chg), _font(48), GOLD2 if chg >= 0 else RED, "ra")
+    _text(d, (48, 340), f"replay of the last {n} hours", _font(24, False), MUTED)
+    hi, lo = max(b[2] for b in bars), min(b[3] for b in bars)
+    x0, x1, y0, y1 = 48, W - 48, 420, 1100
+    sy = lambda p: y1 - (p - lo) / max(hi - lo, 1e-12) * (y1 - y0)
+    for k in range(5):
+        d.line([(x0, y0 + k * (y1 - y0) / 4), (x1, y0 + k * (y1 - y0) / 4)], fill=GRID, width=1)
+    cw = (x1 - x0) / n
+    for i, (_t, o, h, l, c, _v) in enumerate(bars[:shown]):
+        col = GOLD if c >= o else RED
+        cx = x0 + cw * (i + 0.5)
+        d.line([(cx, sy(h)), (cx, sy(l))], fill=col, width=2)
+        d.rectangle([cx - cw * 0.32, min(sy(o), sy(c)), cx + cw * 0.32, max(sy(o), sy(c)) + 2], fill=col)
+    _text(d, (W // 2, 1180), "Not financial advice", _font(26, False), MUTED, "ma")
+    return img
+
+
+def render_replay(ticker: str, bars: list, out: Path, duration: float = 12.0, fps: int = FPS, ts: datetime | None = None):
+    ts = ts or datetime.now(timezone.utc)
+    return _encode(lambda t: replay_frame(t, ticker, bars, ts, duration), duration - 0.5, out, duration, fps)
+
+
+def map_caption(tiles: list, rng: random.Random | None = None) -> str:
+    import voice_variety
+    rng = rng or random
+    up = sum(1 for _s, p, _v in tiles if p > 0)
+    best = max(tiles, key=lambda x: x[1]); worst = min(tiles, key=lambda x: x[1])
+    return "\n".join([rng.choice(["The whole market on one map", "Crypto heat map, last 24h", "Who is green and who is red"]), "",
+                      f"{up} of {len(tiles)} biggest coins are up.", f"Strongest: ${best[0]} {_pct(best[1])}",
+                      f"Weakest: ${worst[0]} {_pct(worst[1])}", "", rng.choice(["Anything on the map surprise you?", "Which tile would you look at first?"]),
+                      "", voice_variety.disclaimer(rng), "", "#Crypto"])
+
+
+def replay_caption(ticker: str, bars: list, rng: random.Random | None = None) -> str:
+    import voice_variety
+    rng = rng or random
+    chg = (bars[-1][4] / bars[0][1] - 1) * 100
+    return "\n".join([rng.choice([f"Replay: how ${ticker} moved", f"${ticker} over the last {len(bars)} hours, replayed"]), "",
+                      f"{_pct(chg)} from {_price(bars[0][1])} to {_price(bars[-1][4])}.", "",
+                      rng.choice(["Where does it go from here?", "What would you have done at the start?"]),
+                      "", voice_variety.disclaimer(rng), "", f"#{ticker}"])
+
+
 def render(data: dict, fng: dict | None, out: Path, duration: float = 15.0, fps: int = FPS,
            ts: datetime | None = None) -> tuple[Path, Path]:
     """-> (mp4, poster.png). Бросает RuntimeError, если нет ffmpeg или кодирование не удалось."""
