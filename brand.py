@@ -6,7 +6,8 @@ from PIL import Image, ImageDraw, ImageFont
 import matplotlib
 
 logger = logging.getLogger(__name__)
-TAG = "#MarketRadar"
+import config
+TAG = "#" + config.PROJECT_NAME.replace(" ", "")
 BG, GOLD, MUTED = (11, 14, 17), (240, 185, 11), (132, 142, 156)
 LABELS = {"digest": "MARKET SNAPSHOT", "fear_greed": "FEAR & GREED", "breakout": "BREAKOUT WATCH", "hot_mover": "HOT MOVER",
           "mover_result": "RESULT", "mover_followup": "FOLLOW-UP", "level_check": "LEVEL CHECK", "binance_radar": "BINANCE RADAR",
@@ -32,7 +33,7 @@ def stamp(path, fmt: str):
         d.rectangle([0, h, w, h + 2], fill=GOLD)
         fs = round(bar * 0.42)
         d.ellipse([bar * 0.45, h + bar * 0.34, bar * 0.45 + bar * 0.32, h + bar * 0.66], fill=GOLD)
-        d.text((bar * 0.45 + bar * 0.5, h + bar / 2 + 1), "MARKET RADAR", font=_font(fs, True), fill=GOLD, anchor="lm")
+        d.text((bar * 0.45 + bar * 0.5, h + bar / 2 + 1), config.PROJECT_NAME.upper(), font=_font(fs, True), fill=GOLD, anchor="lm")
         label = LABELS.get(fmt)
         if label:
             d.text((w - bar * 0.45, h + bar / 2 + 1), label, font=_font(round(fs * 0.9), False), fill=MUTED, anchor="rm")

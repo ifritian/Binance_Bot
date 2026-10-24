@@ -68,7 +68,7 @@ def digest_card(data: dict, slot_hour_utc: int) -> Path | None:
 
         ax.text(5, 7, title, color=_TEXT, fontsize=17, fontweight="bold", va="center")
         ax.text(5, 12.5, "last 24h", color=_MUTED, fontsize=10, va="center")
-        ax.text(95, 7, "MARKET RADAR", color=_TEXT, alpha=0.18, fontsize=13, fontweight="bold",
+        ax.text(95, 7, config.PROJECT_NAME.upper(), color=_TEXT, alpha=0.18, fontsize=13, fontweight="bold",
                 family="monospace", ha="right", va="center")
 
         x = 5
