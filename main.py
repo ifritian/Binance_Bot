@@ -39,6 +39,8 @@ import coin_whitelist
 import event_posts
 import market_digest
 import micro_moments
+import level_check
+import crowd
 import mover_levels
 import mover_setups
 import xs_momentum
@@ -1036,10 +1038,10 @@ def try_publish_hot_mover() -> None:
     log[ticker] = now
     queue_manager._set("hot_mover_log", log)
     queue_manager.set_last_post_time("square_global")
-    _telegram_mover_poll(ticker, fp if fp is not None else pct, fm)
+    _telegram_mover_poll(ticker, fp if fp is not None else pct, fm, price)
 
 
-def _telegram_mover_poll(ticker: str, pct: float, minutes: int | None) -> None:
+def _telegram_mover_poll(ticker: str, pct: float, minutes: int | None, price: float | None = None) -> None:
     """Нативный опрос (кнопки) в Telegram про только что вышедшую монету - не чаще
     TELEGRAM_MOVER_POLL_MIN_GAP_HOURS. Square API опросы не поддерживает, поэтому только Telegram."""
     if not telegram_publisher.is_configured():
@@ -1052,11 +1054,15 @@ def _telegram_mover_poll(ticker: str, pct: float, minutes: int | None) -> None:
     q = f"{ticker} is {pct:+.1f}% {window}. Where will it be in 24 hours?"
     options = ["Higher", "Lower", "About the same", "Just watching"]
     try:
-        telegram_publisher.publish_poll(q, options)
+        res = telegram_publisher.publish_poll(q, options)
     except telegram_publisher.TelegramPublishError as e:
         logger.warning("Опрос про монету в Telegram не удался: %s", e)
         return
     queue_manager.set_last_post_time("telegram_mover_poll")
+    if price and isinstance(res, dict) and res.get("message_id"):
+        polls = [p for p in (queue_manager._get(crowd.KEY_POLLS) or []) if time.time() - p["ts"] < 72 * 3600]
+        polls.append({"mid": res["message_id"], "ticker": ticker, "price": price, "ts": time.time(), "done": False})
+        queue_manager._set(crowd.KEY_POLLS, polls[-10:])
 
 
 def try_publish_video() -> None:
@@ -1098,6 +1104,71 @@ def try_publish_video() -> None:
     if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
         queue_manager.set_last_post_time("square_global")
     queue_manager._set("video_done", today)
+
+
+def _publish_video_kind(fmt: str, hour: int, parity: int, build) -> None:
+    """Общий каркас дополнительных видео: свой слот-час, чётные/нечётные сутки, откат при любой ошибке.
+    build(now) -> (mp4, poster, caption) или None, если данных нет."""
+    if not config.VIDEO_ENABLED:
+        return
+    now = event_posts.now_utc()
+    today = now.strftime("%Y-%m-%d")
+    if now.toordinal() % 2 != parity or not (hour <= now.hour <= hour + 4):
+        return
+    if queue_manager._get(f"{fmt}_done") == today or not queue_manager.should_retry_now(fmt) or not _square_slot_available():
+        return
+    try:
+        built = build(now)
+    except Exception as e:
+        logger.error("Видео %s: не удалось собрать: %s", fmt, e)
+        queue_manager.set_retry_backoff(fmt, 3)
+        return
+    if built is None:
+        queue_manager.set_retry_backoff(fmt, 0.5)
+        return
+    mp4, poster, caption = built
+    try:
+        binance_publisher.tag_format(fmt)
+        result = binance_publisher.publish_video(caption, mp4, 12.0, poster)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации видео %s: %s", fmt, e)
+        _record_publish_error(fmt, e)
+        queue_manager.set_retry_backoff(fmt, 3)
+        return
+    logger.info("Опубликовано видео %s: %s", fmt, result)
+    if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
+        queue_manager.set_last_post_time("square_global")
+    queue_manager._set(f"{fmt}_done", today)
+
+
+def try_publish_video_map() -> None:
+    def build(now):
+        import video_post, site_heatmap
+        rows = market_digest.fetch_ticker_rows()
+        if not rows:
+            return None
+        tiles = [(r["sym"], r["pct"], r["vol"]) for r in site_heatmap.top_rows(rows, coin_whitelist.allowed_tickers(), 12)]
+        if len(tiles) < 6:
+            return None
+        mp4, poster = video_post.render_map(tiles, Path("charts") / "map_video.mp4", ts=now)
+        return mp4, poster, video_post.map_caption(tiles)
+    _publish_video_kind("video_map", config.VIDEO_MAP_HOUR_UTC, 0, build)
+
+
+def try_publish_video_replay() -> None:
+    def build(now):
+        import video_post
+        data = market_digest.fetch_movers()
+        if not data or not (data.get("gainers") or data.get("losers")):
+            return None
+        cands = (data.get("gainers") or [])[:1] + (data.get("losers") or [])[:1]
+        ticker = max(cands, key=lambda c: abs(c[2]))[0]
+        bars = mover_setups.fetch_klines(ticker, "1h", 24)
+        if len(bars) < 20:
+            return None
+        mp4, poster = video_post.render_replay(ticker, bars, Path("charts") / "replay_video.mp4", ts=now)
+        return mp4, poster, video_post.replay_caption(ticker, bars)
+    _publish_video_kind("video_replay", config.VIDEO_REPLAY_HOUR_UTC, 1, build)
 
 
 def try_publish_mover_followup() -> None:
@@ -1979,6 +2050,83 @@ def try_publish_telegram_glossary() -> None:
 # Форматы "Опрос" и "AMA" - ТОЛЬКО Telegram (см. telegram_engagement.py)
 # ============================================================
 
+def try_publish_crowd_result() -> None:
+    """Через 24ч закрываем Telegram-опрос про монету (stopPoll) и сверяем выбор толпы с рынком."""
+    if not telegram_publisher.is_configured():
+        return
+    polls = queue_manager._get(crowd.KEY_POLLS) or []
+    now = time.time()
+    rec = next((p for p in polls if not p["done"] and 24 * 3600 <= now - p["ts"] <= 72 * 3600), None)
+    if rec is None or not queue_manager.should_retry_now("crowd_result"):
+        return
+    price = market_digest.fetch_price(rec["ticker"])
+    if price is None:
+        return
+    try:
+        poll = telegram_publisher._post("stopPoll", data={"chat_id": config.TELEGRAM_PUBLISH_CHANNEL, "message_id": rec["mid"]})
+    except telegram_publisher.TelegramPublishError as e:
+        logger.warning("stopPoll не удался: %s", e)
+        queue_manager.set_retry_backoff("crowd_result", 1)
+        return
+    votes = crowd.tally(poll)
+    pick, n = crowd.crowd_pick(votes)
+    rec["done"] = True
+    queue_manager._set(crowd.KEY_POLLS, polls)
+    if n < crowd.MIN_VOTES:
+        logger.info("Опрос %s: мало голосов (%d), итог не публикуем", rec["ticker"], n)
+        return
+    r = queue_manager._get(crowd.KEY_RECORD) or {"right": 0, "total": 0}
+    if pick is not None:
+        r["total"] += 1
+        r["right"] += int(pick == crowd.outcome((price / rec["price"] - 1) * 100))
+        queue_manager._set(crowd.KEY_RECORD, r)
+    text = crowd.build_text(rec["ticker"], rec["price"], price, votes, r, mover_setups._px)
+    try:
+        telegram_publisher.publish_post(text)
+    except telegram_publisher.TelegramPublishError as e:
+        logger.warning("Итог опроса не опубликован: %s", e)
+
+
+def try_publish_level_check() -> None:
+    """Серия Level Check #N раз в сутки: границы за 24ч + итог вчерашнего диапазона."""
+    if not config.LEVEL_CHECK_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    now = event_posts.now_utc()
+    today = now.strftime("%Y-%m-%d")
+    if not (config.LEVEL_CHECK_HOUR_UTC <= now.hour <= config.LEVEL_CHECK_HOUR_UTC + 5):
+        return
+    st = queue_manager._get(level_check.KEY) or {"n": 0, "hist": [], "open": None, "done": ""}
+    if st["done"] == today or not queue_manager.should_retry_now("level_check") or not _square_slot_available():
+        return
+    n = st["n"] + 1
+    ticker = level_check.pick_ticker(n)
+    bars = mover_setups.fetch_klines(ticker, "1h", 30)
+    lv = level_check.compute(bars)
+    if lv is None:
+        queue_manager.set_retry_backoff("level_check", 0.5)
+        return
+    prev = None
+    hist = st["hist"]
+    if st["open"]:
+        pb = mover_setups.fetch_klines(st["open"]["ticker"], "1h", 40)
+        if pb:
+            prev = dict(st["open"], res=level_check.evaluate(st["open"], pb))
+    text = level_check.build_text(n, ticker, lv, mover_setups._px, prev, hist + ([prev] if prev else []))
+    chart = _coin_chart(ticker, 2, expected_price=lv["price"])
+    try:
+        _post("level_check", text, image_paths=[chart] if chart else None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации Level Check: %s", e)
+        _record_publish_error("level_check", e)
+        queue_manager.set_retry_backoff("level_check", 1)
+        return
+    if prev:
+        hist = (hist + [prev])[-60:]
+    queue_manager._set(level_check.KEY, {"n": n, "hist": hist, "done": today,
+                                         "open": {"ticker": ticker, "hi": lv["hi"], "lo": lv["lo"], "ts": time.time()}})
+    queue_manager.set_last_post_time("square_global")
+
+
 def try_publish_telegram_poll() -> None:
     """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
     вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
@@ -2512,6 +2660,10 @@ def tick() -> None:
         try_publish_mover_result()
         try_publish_mover_followup()
         try_publish_video()
+        try_publish_video_map()
+        try_publish_video_replay()
+        try_publish_level_check()
+        try_publish_crowd_result()
         try_publish_listing_announcement()
         try_publish_listing_report()
         try_publish_binance_alerts()
