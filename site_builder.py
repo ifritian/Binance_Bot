@@ -23,7 +23,7 @@ import queue_manager
 PROJECT = config.PROJECT_NAME
 SQUARE_POST_URL = "https://www.binance.com/en/square/post/{id}"
 FMT_LABELS = {"digest": "Market snapshot", "fear_greed": "Fear & Greed", "breakout": "Trend idea",
-              "hot_mover": "Hot mover", "mover_followup": "Follow-up", "level_check": "Level Check", "funding": "Funding radar", "video": "Video", "video_map": "Video", "video_replay": "Video", "binance_radar": "Binance Radar", "news_move": "News + price",
+              "hot_mover": "Hot mover", "mover_followup": "Follow-up", "level_check": "Level Check", "funding": "Funding radar", "anchor": "Macro day", "video": "Video", "video_map": "Video", "video_replay": "Video", "binance_radar": "Binance Radar", "news_move": "News + price",
               "listing": "New listing", "listing_report": "Listing report", "altcoin_basket": "Altcoin basket", "weekly_brief": "Weekly review",
               "question": "Question", "opinion": "Opinion"}
 

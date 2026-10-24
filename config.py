@@ -257,6 +257,7 @@ VIDEO_REPLAY_HOUR_UTC = int(os.environ.get("VIDEO_REPLAY_HOUR_UTC") or "19")  # 
 BRAND_ENABLED = (os.environ.get("BRAND_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 FUNDING_RADAR_ENABLED = (os.environ.get("FUNDING_RADAR_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 FUNDING_HOUR_UTC = int(os.environ.get("FUNDING_HOUR_UTC") or "9")
+ANCHORS_ENABLED = (os.environ.get("ANCHORS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 LEVEL_CHECK_ENABLED = (os.environ.get("LEVEL_CHECK_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 LEVEL_CHECK_HOUR_UTC = int(os.environ.get("LEVEL_CHECK_HOUR_UTC") or "11")
 HOT_MOVER_SPACING_MINUTES = float(os.environ.get("HOT_MOVER_SPACING_MINUTES") or "20")
@@ -789,13 +790,14 @@ def validate_config() -> list[str]:
     return [name for name, value in required.items() if not value]
 # Новости + события Binance (news_radar.py): сводка объявлений и заголовок с ценой за 24ч.
 NEWS_RADAR_ENABLED = (os.environ.get("NEWS_RADAR_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+MARKET_NEWS_ENABLED = (os.environ.get("MARKET_NEWS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 NEWS_MOVE_MIN_PCT = float(os.environ.get("NEWS_MOVE_MIN_PCT") or 1.0)
 NEWS_MOVE_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_MOVE_MIN_INTERVAL_HOURS") or 3)
 NEWS_RADAR_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_RADAR_MIN_INTERVAL_HOURS") or 20)
 
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
 CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
-                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
+                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,anchor,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
 # Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
 LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 

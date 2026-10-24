@@ -190,6 +190,27 @@ def pick_news_move(news: list[dict], changes: dict[str, float], seen: set[str],
     return best
 
 
+_MARKET_RE = re.compile(r"\b(hack(?:ed|s)?|exploit(?:ed)?|stolen|ETF|SEC|CFTC|lawsuit|sues?|ban(?:s|ned)?|approv(?:es|ed|al)|bankrupt\w*|"
+                        r"liquidat\w+|Fed|rate (?:cut|hike)|tariffs?|stablecoin|regulat\w+|halt(?:s|ed)?|outage|reserve)\b", re.IGNORECASE)
+
+
+def pick_market_news(news: list[dict], seen: set[str]) -> dict | None:
+    """Свежий заголовок про рынок в целом (хак, ETF, регулятор, ФРС) без конкретной монеты-героя."""
+    for n in news:   # news уже отсортированы от свежих к старым
+        if n["id"] not in seen and _MARKET_RE.search(n["title"]):
+            return n
+    return None
+
+
+def build_market_news_text(news: dict, btc_pct: float, rng=None) -> str:
+    import random as _r
+    rng = rng or _r
+    lead = rng.choice(["🚨 ", "📰 ", "🗞 "]) if abs(btc_pct) >= 2 else rng.choice(["📰 ", "🗞 ", ""])
+    return (f"{lead}{news['title']} ({news['source']})\n\n$BTC is {_signed(btc_pct)} over the last 24h.\n\n"
+            f"{rng.choice(['How do you read this one?', 'Does this change anything for you?', 'Noise or something that matters?'])}"
+            "\n\nNot financial advice.\n\n#CryptoNews")
+
+
 # ---------------- Тексты ----------------
 
 def _signed(p: float) -> str:
