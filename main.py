@@ -41,6 +41,7 @@ import market_digest
 import micro_moments
 import level_check
 import numfmt
+import funding_radar
 import brand
 import crowd
 import mover_levels
@@ -2142,6 +2143,49 @@ def try_publish_level_check() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def try_publish_funding_radar() -> None:
+    """Радар перегретых позиций (Square): раз в сутки, только если ставки финансирования реально экстремальны."""
+    if not config.FUNDING_RADAR_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    now = event_posts.now_utc()
+    today = now.strftime("%Y-%m-%d")
+    if not (config.FUNDING_HOUR_UTC <= now.hour <= config.FUNDING_HOUR_UTC + 10):
+        return
+    st = queue_manager._get(funding_radar.KEY) or {}
+    if st.get("done") == today or not queue_manager.should_retry_now("funding") or not _square_slot_available():
+        return
+    rates = funding_radar.fetch()
+    st["status"] = funding_radar.LAST_STATUS
+    if not rates:
+        queue_manager._set(funding_radar.KEY, st)
+        queue_manager.set_retry_backoff("funding", 2)
+        return
+    rows = market_digest.fetch_ticker_rows() or []
+    pct24 = {r["symbol"][:-4]: float(r["priceChangePercent"]) for r in rows if r.get("symbol", "").endswith("USDT")
+             and r["symbol"][:-4] in rates}
+    sel = funding_radar.pick(rates, pct24)
+    if sel is None:
+        st["done"] = today          # перегрева нет - молчим, это нормально
+        queue_manager._set(funding_radar.KEY, st)
+        return
+    prev = st.get("prev")
+    price_prev = market_digest.fetch_price(prev["ticker"]) if prev else None
+    text = funding_radar.build_text(sel, funding_radar.previous_line(prev, price_prev))
+    card = funding_radar.card(sel, Path("charts") / "funding_card.png")
+    try:
+        _post("funding", text, image_paths=[card] if card else None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации Funding radar: %s", e)
+        _record_publish_error("funding", e)
+        queue_manager.set_retry_backoff("funding", 1)
+        return
+    top = max(sel["longs"] + sel["shorts"], key=lambda x: abs(x[1]))
+    px = market_digest.fetch_price(top[0])
+    st.update({"done": today, "prev": {"ticker": top[0], "funding": top[1], "price": px, "ts": time.time()} if px else None})
+    queue_manager._set(funding_radar.KEY, st)
+    queue_manager.set_last_post_time("square_global")
+
+
 def try_publish_telegram_poll() -> None:
     """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
     вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
@@ -2678,6 +2722,7 @@ def tick() -> None:
         try_publish_video_map()
         try_publish_video_replay()
         try_publish_level_check()
+        try_publish_funding_radar()
         try_publish_crowd_result()
         try_publish_listing_announcement()
         try_publish_listing_report()

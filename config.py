@@ -255,6 +255,8 @@ VIDEO_HOUR_UTC = int(os.environ.get("VIDEO_HOUR_UTC") or "15")
 VIDEO_MAP_HOUR_UTC = int(os.environ.get("VIDEO_MAP_HOUR_UTC") or "19")      # чётные сутки
 VIDEO_REPLAY_HOUR_UTC = int(os.environ.get("VIDEO_REPLAY_HOUR_UTC") or "19")  # нечётные сутки
 BRAND_ENABLED = (os.environ.get("BRAND_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+FUNDING_RADAR_ENABLED = (os.environ.get("FUNDING_RADAR_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+FUNDING_HOUR_UTC = int(os.environ.get("FUNDING_HOUR_UTC") or "9")
 LEVEL_CHECK_ENABLED = (os.environ.get("LEVEL_CHECK_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 LEVEL_CHECK_HOUR_UTC = int(os.environ.get("LEVEL_CHECK_HOUR_UTC") or "11")
 HOT_MOVER_SPACING_MINUTES = float(os.environ.get("HOT_MOVER_SPACING_MINUTES") or "20")
@@ -793,7 +795,7 @@ NEWS_RADAR_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_RADAR_MIN_INTERVAL_HO
 
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
 CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
-                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
+                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
 # Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
 LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 
@@ -827,7 +829,7 @@ REFERRAL_LINK_SHARE = float(os.environ.get("REFERRAL_LINK_SHARE") or "0.5")
 # итоги идей), по этому правилу не ограничиваются.
 SAME_FORMAT_MIN_GAP_HOURS = {
     "digest": 4, "fear_greed": 12, "altcoin_basket": 6, "binance_radar": 6,
-    "weekly_brief": 48, "momentum": 72, "mover_followup": 4, "video": 20, "video_map": 40, "video_replay": 40, "level_check": 20, "question": 3, "opinion": 6, "listing_report": 1,
+    "weekly_brief": 48, "momentum": 72, "mover_followup": 4, "video": 20, "video_map": 40, "video_replay": 40, "level_check": 20, "funding": 20, "question": 3, "opinion": 6, "listing_report": 1,
 }
 
 # Недельный бумажный моментум (xs_momentum.py).
