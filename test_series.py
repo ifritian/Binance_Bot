@@ -37,3 +37,20 @@ def test_new_video_formats_render(tmp_path):
     if shutil.which("ffmpeg"):
         mp4, poster = vp.render_replay("ZEC", bars, tmp_path / "r.mp4", duration=2, fps=5, ts=ts)
         assert mp4.stat().st_size > 1000 and poster.exists()
+
+
+def test_brand_stamp_and_tag(tmp_path):
+    import brand
+    from PIL import Image
+    p = tmp_path / "a.png"; Image.new("RGB", (1200, 750), (0, 0, 0)).save(p)
+    out = brand.stamp(p, "hot_mover")
+    assert out != p and Image.open(out).size[1] > 750
+    assert brand.stamp(tmp_path / "missing.png", "x") == tmp_path / "missing.png"
+    assert brand.tag_text("hi") == "hi #MarketRadar" and brand.tag_text("x #marketradar") == "x #marketradar"
+
+
+def test_question_enrich_keeps_tags():
+    import square_question as sq
+    bars = [(i, 1, 2, 1, 1.5, 1) for i in range(24)]
+    t = sq.enrich("$AVAX is down 2.5% in 24h. Dip?\n\n#AVAX", "AVAX", bars, str)
+    assert "One word is enough: BUY" in t and t.endswith("#AVAX")

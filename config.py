@@ -254,6 +254,7 @@ VIDEO_ENABLED = (os.environ.get("VIDEO_ENABLED") or "true").strip().lower() in (
 VIDEO_HOUR_UTC = int(os.environ.get("VIDEO_HOUR_UTC") or "15")
 VIDEO_MAP_HOUR_UTC = int(os.environ.get("VIDEO_MAP_HOUR_UTC") or "19")      # чётные сутки
 VIDEO_REPLAY_HOUR_UTC = int(os.environ.get("VIDEO_REPLAY_HOUR_UTC") or "19")  # нечётные сутки
+BRAND_ENABLED = (os.environ.get("BRAND_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 LEVEL_CHECK_ENABLED = (os.environ.get("LEVEL_CHECK_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 LEVEL_CHECK_HOUR_UTC = int(os.environ.get("LEVEL_CHECK_HOUR_UTC") or "11")
 HOT_MOVER_SPACING_MINUTES = float(os.environ.get("HOT_MOVER_SPACING_MINUTES") or "20")

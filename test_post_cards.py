@@ -53,7 +53,7 @@ def test_hot_mover_and_fng_posts_get_images(monkeypatch):
     monkeypatch.setattr(main.event_posts, "now_utc", lambda: __import__("datetime").datetime(2026, 10, 17, 12, tzinfo=__import__("datetime").timezone.utc))
     monkeypatch.setattr(main.event_posts, "fetch_fng", lambda: {"value": 55, "label": "Greed", "prev": 63})
     main.try_publish_fng_post()
-    assert sent and sent[0][1] and sent[0][1][0].name == "fng_card.png"
+    assert sent and sent[0][1] and sent[0][1][0].name == "fng_card_brand.png"
 
 
 def test_digest_post_gets_card_and_survives_card_failure(monkeypatch):
@@ -63,7 +63,7 @@ def test_digest_post_gets_card_and_survives_card_failure(monkeypatch):
     monkeypatch.setattr(market_digest, "fetch_movers", lambda: DATA)
     monkeypatch.setattr(market_digest, "due_slot", lambda *a, **k: 6)
     main.try_publish_market_digest()
-    assert sent[0] and sent[0][0].name == "digest_card.png"
+    assert sent[0] and sent[0][0].name == "digest_card_brand.png"
 
     sent.clear()
     config_slot = main.queue_manager._set("market_digest_done", None)
