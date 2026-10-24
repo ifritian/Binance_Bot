@@ -174,7 +174,7 @@ def _money(v: float) -> str:
 
 
 def _price(p: float) -> str:
-    return f"{p:,.2f}" if p >= 1 else f"{p:.6g}"
+    return f"{p:,.2f}" if p >= 1 else __import__("numfmt").small_price(p)
 
 
 def build_text(ev: dict, summ: dict | None) -> str:

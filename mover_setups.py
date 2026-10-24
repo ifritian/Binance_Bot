@@ -167,7 +167,8 @@ def _px(x: float) -> str:
         return f"{x:.2f}"
     if x >= 0.01:
         return f"{x:.4f}"
-    return f"{x:.6f}"
+    import numfmt
+    return numfmt.small_price(x)
 
 
 def record_line(s: dict | None = None) -> str:

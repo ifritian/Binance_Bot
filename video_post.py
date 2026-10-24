@@ -36,7 +36,7 @@ def _pct(p: float) -> str:
 def _price(p: float) -> str:
     if p >= 1000:
         return f"{p:,.0f}".replace(",", " ")
-    return f"{p:,.2f}" if p >= 1 else f"{p:.4g}"
+    return f"{p:,.2f}" if p >= 1 else __import__("numfmt").small_price(p)
 
 
 def _text(d, xy, s, font, fill, anchor="la", alpha=1.0):
@@ -49,6 +49,11 @@ def _header(d, ts: datetime, a=1.0):
     _text(d, (48, 60), "MARKET RADAR", _font(30), GOLD, alpha=a)
     _text(d, (W - 48, 66), ts.strftime("%b %d, %H:%M UTC"), _font(24, False), MUTED, "ra", a)
     d.line([(48, 112), (W - 48, 112)], fill=GRID, width=2)
+
+
+def _progress(d, t: float, duration: float):
+    d.rectangle([0, H - 8, W, H], fill=GRID)
+    d.rectangle([0, H - 8, int(W * min(t / duration, 1.0)), H], fill=GOLD)
 
 
 def scenes(duration: float = 15.0) -> dict:
@@ -66,8 +71,13 @@ def frame(t: float, data: dict, fng: dict | None, ts: datetime, duration: float 
     lt = t - a0                                   # время внутри сцены
     fade = ease(min(lt / 0.4, 1.0)) * (1.0 if b0 - t > 0.3 else max((b0 - t) / 0.3, 0.0))
     if name == "majors":
-        _text(d, (48, 190), "Crypto market,", _font(46), WHITE, alpha=fade)
-        _text(d, (48, 250), "last 24 hours", _font(46), GOLD2, alpha=fade)
+        btc = next((p for tk, _pr, p in (data.get("majors") or []) if tk == "BTC"), None)
+        if btc is not None:
+            _text(d, (48, 190), f"Bitcoin is {'up' if btc >= 0 else 'down'}", _font(46), WHITE, alpha=fade)
+            _text(d, (48, 250), f"{abs(btc):.1f}% in 24 hours", _font(46), GOLD2 if btc >= 0 else RED, alpha=fade)
+        else:
+            _text(d, (48, 190), "Crypto market,", _font(46), WHITE, alpha=fade)
+            _text(d, (48, 250), "last 24 hours", _font(46), GOLD2, alpha=fade)
         y = 400
         for i, (tk, price, pct) in enumerate((data.get("majors") or [])[:2]):
             p = ease((lt - 0.3 - i * 0.5) / 1.2)
@@ -110,6 +120,7 @@ def frame(t: float, data: dict, fng: dict | None, ts: datetime, duration: float 
             _text(d, (x1, y + 56), "Greed", _font(26, False), MUTED, "ra")
         _text(d, (W // 2, 1100), "Not financial advice", _font(28, False), MUTED, "ma", fade)
         _text(d, (W // 2, 1160), "Full numbers in the post", _font(28, False), GOLD, "ma", fade)
+    _progress(d, t, duration)
     return img
 
 
@@ -167,6 +178,7 @@ def map_frame(t: float, tiles: list, ts: datetime, duration: float = 12.0) -> Im
             tc = BG if dark else WHITE
             _text(d, (cx, cy - 4), s, _font(max(18, min(40, int(w / 4.2)))), tc, "ms")
             _text(d, (cx, cy + 6), _pct(pct[s]), _font(max(15, min(28, int(w / 6)))), tc, "ma")
+    _progress(d, t, duration)
     return img
 
 
@@ -201,6 +213,7 @@ def replay_frame(t: float, ticker: str, bars: list, ts: datetime, duration: floa
         d.line([(cx, sy(h)), (cx, sy(l))], fill=col, width=2)
         d.rectangle([cx - cw * 0.32, min(sy(o), sy(c)), cx + cw * 0.32, max(sy(o), sy(c)) + 2], fill=col)
     _text(d, (W // 2, 1180), "Not financial advice", _font(26, False), MUTED, "ma")
+    _progress(d, t, duration)
     return img
 
 

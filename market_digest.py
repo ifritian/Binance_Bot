@@ -105,7 +105,8 @@ def _fmt_price(price: float) -> str:
         return f"{price:.2f}"
     if price >= 0.01:
         return f"{price:.4f}"
-    return f"{price:.6f}"
+    import numfmt
+    return numfmt.small_price(price)
 
 
 def _fmt_pct(pct: float) -> str:
