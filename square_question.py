@@ -125,3 +125,14 @@ def pick_question(last: str | None = None, rng: random.Random | None = None) -> 
     tags = post_format.square_hashtags_line(ticker)
     text = f"{body}\n\n{tags}" if tags else body
     return text, ticker
+
+
+def enrich(text: str, ticker: str, bars: list, px) -> str:
+    """Добавляет контекст (цена, диапазон 24ч) и просьбу ответить одним словом: так проще оставить комментарий."""
+    if len(bars) < 12:
+        return text
+    hi, lo, now = max(b[2] for b in bars), min(b[3] for b in bars), bars[-1][4]
+    parts = text.split("\n\n")
+    first, tail = parts[0], parts[1:]
+    words = "CHASE, WAIT or SKIP" if " up " in first or "climbing" in first else "BUY, WAIT or SKIP"
+    return "\n\n".join([first, f"Now {px(now)}, 24h range {px(lo)} to {px(hi)}.", f"One word is enough: {words}."] + tail)

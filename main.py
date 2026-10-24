@@ -41,6 +41,7 @@ import market_digest
 import micro_moments
 import level_check
 import numfmt
+import brand
 import crowd
 import mover_levels
 import mover_setups
@@ -771,6 +772,14 @@ def _post(fmt: str, *args, **kwargs):
         args = (numfmt.fix_minus(args[0]),) + tuple(args[1:])
     elif isinstance(kwargs.get("text"), str):
         kwargs["text"] = numfmt.fix_minus(kwargs["text"])
+    if config.BRAND_ENABLED:
+        if args and isinstance(args[0], str):
+            args = (brand.tag_text(args[0]),) + tuple(args[1:])
+        elif isinstance(kwargs.get("text"), str):
+            kwargs["text"] = brand.tag_text(kwargs["text"])
+        imgs = kwargs.get("image_paths")
+        if imgs:
+            kwargs["image_paths"] = [brand.stamp(p, fmt) for p in imgs]
     result = binance_publisher.publish_post(*args, **kwargs)
     if isinstance(result, dict) and result.get("status") == "duplicate_skipped":
         return result   # дубль не публикуем и не кросспостим
@@ -854,6 +863,7 @@ def try_publish_square_question() -> None:
     if not _square_slot_available():
         return
     text, ticker = square_question.pick_question(queue_manager._get("square_question_last"))
+    text = square_question.enrich(text, ticker, mover_setups.fetch_klines(ticker, "1h", 24), mover_setups._px)
     chart = _coin_chart(ticker, 7)
     try:
         result = _post("question", text, image_paths=[chart] if chart else None)
