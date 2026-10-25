@@ -362,6 +362,11 @@ def _crosspost_to_telegram(text: str, image_path=None) -> None:
         line = (post_format.REFERRAL_LINE if random.random() < config.REFERRAL_LINK_SHARE else site[0])
         if line.split(" ")[-1] not in text and len(text) + len(line) < 950:
             text = f"{text}\n\n📊 {line}" if line == site[0] else f"{text}\n\n{line}"
+    if config.TELEGRAM_BOT_ENABLED and random.random() < config.TELEGRAM_BOT_PROMO_PROBABILITY and len(text) < 900 and "t.me/" not in text:
+        import telegram_bot
+        bot = telegram_bot.username()
+        if bot:
+            text = f"{text}\n\n🤖 Ask the bot: /levels BTC, /alert BTC 90000 → t.me/{bot}"
     try:
         telegram_publisher.publish_post(text, image_path)
     except telegram_publisher.TelegramPublishError as e:
@@ -1456,6 +1461,21 @@ def try_publish_listing_announcement() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def run_telegram_bot() -> None:
+    """Команды и ценовые оповещения Telegram-бота (личные чаты)."""
+    if not config.TELEGRAM_BOT_ENABLED or not config.TELEGRAM_BOT_TOKEN:
+        return
+    import telegram_bot
+    fetch = {
+        "klines": lambda t: mover_setups.fetch_klines(t, "1h", 30),
+        "price": market_digest.fetch_price,
+        "funding": lambda: funding_radar.pick(funding_radar.fetch(), {}),
+        "fng": event_posts.fetch_fng,
+    }
+    telegram_bot.poll(fetch)
+    telegram_bot.check_alerts(market_digest.fetch_price)
+
+
 def fast_lane(seconds: float | None = None, interval: float | None = None) -> None:
     """После обычного тика держим запуск ещё несколько минут и опрашиваем только самое срочное (объявления
     Binance, быстрые скачки цены, срочные алерты) раз в ~45 секунд: задержка вместо 10 минут - около минуты.
@@ -1467,7 +1487,7 @@ def fast_lane(seconds: float | None = None, interval: float | None = None) -> No
     deadline = time.time() + seconds
     while time.time() + interval < deadline:
         time.sleep(interval)
-        for fn in (try_publish_listing_announcement, try_publish_hot_mover, try_publish_binance_alerts):
+        for fn in (try_publish_listing_announcement, try_publish_hot_mover, try_publish_binance_alerts, run_telegram_bot):
             try:
                 fn()
             except Exception:
@@ -2772,6 +2792,10 @@ def tick() -> None:
         try_publish_anchor()
         try_publish_level_check()
         try_publish_funding_radar()
+        try:
+            run_telegram_bot()
+        except Exception:
+            logger.exception("Telegram-бот: ошибка")
         try_publish_crowd_result()
         try_publish_listing_announcement()
         try_publish_listing_report()
