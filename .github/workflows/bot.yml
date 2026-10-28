@@ -124,7 +124,11 @@ jobs:
       SQUARE_GENERAL_HASHTAGS: ${{ secrets.SQUARE_GENERAL_HASHTAGS || '#Crypto,#Trading,#Altcoins,#CryptoTrading' }}
     steps:
       - name: Checkout repository
+        # ВАЖНО: ref: main. Без этого запуск, который стоял в очереди за предыдущим, берёт коммит на момент постановки
+        # в очередь, то есть СТАРУЮ bot_state.db без результатов предыдущего запуска: отсюда повторные посты и потерянное состояние.
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Set up Python
         uses: actions/setup-python@v5
