@@ -107,18 +107,26 @@ def _frame(t: float, data: dict, fng: dict | None, ts: datetime, duration: float
             y += 270
     elif name in ("gainers", "losers"):
         up = name == "gainers"
-        items = (data.get("gainers" if up else "losers") or [])[:5]
-        _text(d, (48, 190), "Leading" if up else "Lagging", _font(56), GOLD2 if up else RED, alpha=fade)
-        _text(d, (48, 262), "biggest moves among liquid coins" if up else "weakest among liquid coins", _font(26, False), MUTED, alpha=fade)
+        items = (data.get("gainers" if up else "losers") or [])[:4]
+        col, dim = (GOLD2, (58, 47, 8)) if up else (RED, (59, 18, 24))
+        _text(d, (48, 180), "Top gainers" if up else "Top losers", _font(54), WHITE, alpha=fade)
+        _text(d, (48, 252), "liquid coins, last 24 hours", _font(26, False), MUTED, alpha=fade)
         top = max([abs(c) for _, _, c in items] + [1.0])
-        y = 360
+        y = 340
         for i, (tk, price, pct) in enumerate(items):
-            p = ease((lt - 0.3 - i * 0.25) / 1.0)
-            _text(d, (48, y), f"${tk}", _font(40), WHITE, alpha=p)
-            bw = int((W - 96 - 20) * abs(pct) / top * p)
-            d.rounded_rectangle([48, y + 62, 48 + max(bw, 6), y + 100], 10, fill=GOLD if up else RED)
-            _text(d, (W - 48, y + 4), _pct(pct * p), _font(40), GOLD2 if up else RED, "ra", p)
-            y += 150
+            p = ease((lt - 0.3 - i * 0.22) / 0.8)
+            if p <= 0:
+                y += 200
+                continue
+            dx = int((1 - p) * 90)
+            d.rounded_rectangle([48 + dx, y, W - 48 + dx, y + 176], 24, fill=PANEL)
+            _text(d, (84 + dx, y + 30), tk, _font(52), WHITE, alpha=p)
+            _text(d, (84 + dx, y + 100), _price(price), _font(28, False), MUTED, alpha=p)
+            _text(d, (W - 84 + dx, y + 36), _pct(pct * p), _font(58), col, "ra", p)
+            bw = int((W - 96 - 72) * abs(pct) / top * p)
+            d.rounded_rectangle([84 + dx, y + 148, W - 84 + dx, y + 156], 4, fill=GRID)
+            d.rounded_rectangle([84 + dx, y + 148, 84 + dx + max(bw, 8), y + 156], 4, fill=GOLD if up else RED)
+            y += 200
     else:
         f = fng or {}
         _text(d, (48, 190), "Market mood", _font(56), WHITE, alpha=fade)
