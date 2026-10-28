@@ -469,6 +469,7 @@ def test_telegram_crosspost_adds_site_line_sometimes(monkeypatch):
     monkeypatch.setattr(main.telegram_publisher, "publish_post", lambda text, img=None: sent.append(text) or {})
     monkeypatch.setattr(config, "TELEGRAM_SITE_LINE_PROBABILITY", 1.0)
     monkeypatch.setattr(config, "REFERRAL_LINK_SHARE", 0.0)
+    monkeypatch.setattr(config, "TELEGRAM_BOT_PROMO_PROBABILITY", 0.0)
     main._crosspost_to_telegram("hello")
     monkeypatch.setattr(config, "TELEGRAM_SITE_LINE_PROBABILITY", 0.0)
     main._crosspost_to_telegram("hello")
