@@ -63,3 +63,32 @@ def test_receipts_page_renders():
          "crowd": {"right": 1, "total": 2}, "followups": [{"ticker": "ZEC", "ts": 1.7e9, "price": 5.0, "done": True}]}
     html = sb.render_receipts(d, ls=[])
     assert "Receipts" in html and "PEPE" in html and "1/2" in html and "Stayed inside" in html
+
+
+def test_futures_ledger():
+    import futures_ledger as fl
+    rec = {"side": "BUY", "original_quantity": 100.0, "quantity": 100.0, "entry_price": 1.0, "stop_price": 0.98, "take_profit_price": 1.05,
+           "realized_pnl": -2.0, "close_reason": "неизвестно (оба условных ордера уже неактивны)", "closed_at": 5}
+    assert abs(fl.implied_exit(rec) - 0.98) < 1e-9 and fl.reason(rec) == "Stop (derived)"
+    s = fl.summary([rec, dict(rec, realized_pnl=3.0)], since_ts=0)
+    assert s["n"] == 2 and s["wins"] == 1 and s["total"] == 1.0
+    import site_builder as sb
+    d = {"closed": [], "open": {}, "listings": [], "snapshots": [], "posts": [], "levels": [], "crowd": {}, "followups": [],
+         "futures": [rec], "futures_since": 1}
+    assert "Demo futures account" in sb.render_receipts(d, ls=[])
+
+
+def test_rsi_detect_and_text():
+    import rsi_alert as ra, random
+    flat = [(i, 100, 101, 99, 100 + (i % 2), 1) for i in range(150)]
+    assert ra.detect(flat) is None
+    p, up = 100.0, []
+    for i in range(150):
+        p *= 1.012 if i > 120 else 1.0 + (0.002 if i % 2 else -0.002)
+        up.append((i, p, p, p, p, 1))
+    d = ra.detect(up)
+    assert d and d["kind"] == "high" and d["rsi"] > 82
+    down = [(i, 1, 1, 1, 200 - i, 1) for i in range(150)]
+    assert ra.detect(down)["kind"] == "low"
+    t = ra.build_text("WLD", d, 1.5, 12.0, str)
+    assert t.count("$") == 1 and "RSI" in t

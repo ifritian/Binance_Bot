@@ -23,7 +23,7 @@ import queue_manager
 PROJECT = config.PROJECT_NAME
 SQUARE_POST_URL = "https://www.binance.com/en/square/post/{id}"
 FMT_LABELS = {"digest": "Market snapshot", "fear_greed": "Fear & Greed", "breakout": "Trend idea",
-              "hot_mover": "Hot mover", "mover_followup": "Follow-up", "level_check": "Level Check", "funding": "Funding radar", "anchor": "Macro day", "video": "Video", "video_map": "Video", "video_replay": "Video", "binance_radar": "Binance Radar", "news_move": "News + price",
+              "hot_mover": "Hot mover", "mover_followup": "Follow-up", "level_check": "Level Check", "funding": "Funding radar", "anchor": "Macro day", "rsi_extreme": "RSI extreme", "video": "Video", "video_map": "Video", "video_replay": "Video", "binance_radar": "Binance Radar", "news_move": "News + price",
               "listing": "New listing", "listing_report": "Listing report", "altcoin_basket": "Altcoin basket", "weekly_brief": "Weekly review",
               "question": "Question", "opinion": "Opinion"}
 
@@ -80,6 +80,8 @@ def collect() -> dict:
         "levels": (g("level_check") or {}).get("hist", []),
         "crowd": g("crowd_record") or {"right": 0, "total": 0},
         "followups": g("mover_followups") or [],
+        "futures": g("closed_futures_positions") or [],
+        "futures_since": g("futures_enabled_since"),
     }
 
 
@@ -574,6 +576,23 @@ def render_receipts(d: dict, now_ts: float | None = None, ls: list | None = None
                for h in reversed(d.get("levels", [])[-40:])]
     fu_rows = [f"<tr><td>${_e(f['ticker'])}</td><td>{_date(f['ts'])}</td><td>{f['price']:.6g}</td><td>{'checked' if f.get('done') else 'waiting'}</td></tr>"
                for f in reversed(d.get("followups", []))]
+    import futures_ledger as fl
+    fut = d.get("futures") or []
+    since = d.get("futures_since")
+    fs_all, fs_new = fl.summary(fut), fl.summary(fut, since) if since else None
+    def _fut_stats(label, st):
+        return (f'<div class="statline"><div><span>{_e(label)} closed</span><b class="big">{st["n"]}</b></div>'
+                f'<div><span>In profit</span><b class="big">{st["wins"]}</b></div>'
+                f'<div><span>Net, USDT</span><b class="big {_cls(st["total"])}">{st["total"]:+.0f}</b></div>'
+                f'<div><span>Worst trade</span><b class="big">{st["worst"]:+.0f}</b></div></div>')
+    fut_rows = [f"<tr><td>{_e(c.get('ticker') or c.get('symbol'))}</td><td>{_date(c.get('closed_at') or 0)}</td>"
+                f"<td>{'Long' if str(c.get('side')).upper() == 'BUY' else 'Short'}</td>"
+                f"<td class=\"{_cls(c.get('realized_pnl'))}\">{(c.get('realized_pnl') or 0):+.0f}</td><td>{_e(fl.reason(c))}</td></tr>"
+                for c in reversed(fut[-40:])]
+    fut_html = (f'<section><h2 class="s">Demo futures account</h2><p class="sub">An automated test on Binance Futures testnet: play money and simulated fills, '
+                f'not real trading. Every closed trade is listed, losses included. A back-test of this method was negative, so this is an experiment, not a track record to copy.</p>'
+                + (_fut_stats("Since restart:", fs_new) if fs_new else "") + _fut_stats("All time:", fs_all)
+                + _table(["Coin", "Closed", "Side", "Result, USDT", "Exit"], fut_rows) + "</section>") if fut else ""
     ls_html = f'<nav class="follow">{_links_html(ls)}</nav>' if ls else ""
     upd = datetime.fromtimestamp(now_ts, timezone.utc).strftime("%b %d, %Y, %H:%M UTC")
     return f"""<!doctype html>
@@ -592,6 +611,7 @@ def render_receipts(d: dict, now_ts: float | None = None, ls: list | None = None
 {_table(["Coin", "Date", "Range", "What happened"], lv_rows)}</section>
 <section><h2 class="s">Hot mover follow-ups</h2><p class="sub">Coins we posted about after a sharp move, and whether we went back to check.</p>
 {_table(["Coin", "Date", "Price then", "Status"], fu_rows)}</section>
+{fut_html}
 <footer>Not financial advice. Past results do not predict future results. Rebuilt {upd}.</footer>
 </div></body></html>"""
 
