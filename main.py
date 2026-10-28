@@ -41,6 +41,7 @@ import market_digest
 import micro_moments
 import level_check
 import numfmt
+import rsi_alert
 import anchors
 import funding_radar
 import brand
@@ -1487,7 +1488,7 @@ def fast_lane(seconds: float | None = None, interval: float | None = None) -> No
     deadline = time.time() + seconds
     while time.time() + interval < deadline:
         time.sleep(interval)
-        for fn in (try_publish_listing_announcement, try_publish_hot_mover, try_publish_binance_alerts, run_telegram_bot):
+        for fn in (try_publish_listing_announcement, try_publish_hot_mover, try_publish_rsi_alert, try_publish_binance_alerts, run_telegram_bot):
             try:
                 fn()
             except Exception:
@@ -2257,6 +2258,62 @@ def try_publish_anchor() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def try_publish_rsi_alert() -> None:
+    """Экстремальный RSI(14) на часовом графике у ликвидной монеты: пост с графиком (свечи + RSI)."""
+    if not config.RSI_ALERT_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    if queue_manager.seconds_since_last_post("rsi_scan") < config.RSI_SCAN_MIN_GAP_SECONDS:
+        return
+    if not queue_manager.should_retry_now("rsi_alert") or not _square_slot_available():
+        return
+    now = time.time()
+    log = {t: ts for t, ts in (queue_manager._get(rsi_alert.KEY) or {}).items() if now - ts < 86400}
+    if len([1 for ts in log.values() if now - ts < 86400]) >= config.RSI_ALERT_MAX_PER_DAY:
+        return
+    queue_manager.set_last_post_time("rsi_scan")
+    rows = market_digest.fetch_ticker_rows()
+    if not rows:
+        return
+    allowed = coin_whitelist.allowed_tickers()
+    cands = []
+    for r in rows:
+        s = r.get("symbol", "")
+        try:
+            vol, pct, px_ = float(r["quoteVolume"]), float(r["priceChangePercent"]), float(r["lastPrice"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        t = s[:-4]
+        if s.endswith("USDT") and t in allowed and vol >= market_digest.HOT_MIN_VOLUME_USD and t not in log and abs(pct) >= config.RSI_MIN_MOVE_PCT:
+            cands.append((abs(pct), t, pct, px_))
+    cands.sort(reverse=True)
+    hit = None
+    for _a, t, pct, price in cands[:12]:
+        bars = mover_setups.fetch_klines(t, "1h", 150)
+        d = rsi_alert.detect(bars) if len(bars) >= 60 else None
+        if d:
+            hit = (t, pct, price, bars, d)
+            break
+    if hit is None:
+        return
+    t, pct, price, bars, d = hit
+    text = rsi_alert.build_text(t, d, price, pct, mover_setups._px)
+    img = rsi_alert.chart(t, bars, d, Path("charts") / f"{t}_rsi.png")
+    try:
+        _post("rsi_extreme", text, image_paths=[img] if img else None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации RSI-алерта: %s", e)
+        _record_publish_error("rsi_extreme", e)
+        queue_manager.set_retry_backoff("rsi_alert", 1)
+        return
+    logger.info("Опубликован RSI-алерт %s (RSI %.0f)", t, d["rsi"])
+    log[t] = now
+    queue_manager._set(rsi_alert.KEY, log)
+    fl = [f for f in (queue_manager._get("mover_followups") or []) if now - f["ts"] < 48 * 3600]
+    fl.append(micro_moments.followup_record({"ticker": t, "price": price}, None, now))
+    queue_manager._set("mover_followups", fl[-10:])
+    queue_manager.set_last_post_time("square_global")
+
+
 def try_publish_telegram_poll() -> None:
     """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
     вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
@@ -2714,6 +2771,8 @@ def _check_dead_mans_switch() -> None:
 
 def tick() -> None:
     try:
+        if config.FUTURES_SCANNER_TRADING_ENABLED:
+            __import__("futures_ledger").mark_enabled()
         queue_manager.prune_expired_entries(config.SIGNAL_MAX_AGE_HOURS)
 
         try:
@@ -2783,6 +2842,7 @@ def tick() -> None:
 
         try_publish_emergency_post()
         try_publish_trend_breakout()
+        try_publish_rsi_alert()
         try_publish_hot_mover()   # срочное: раньше плановых слотов, иначе их интервал задержит пост про скачок
         try_publish_level_check()   # раньше обычных слотов: иначе плотный график постов отодвигает серию
         try_publish_market_digest()

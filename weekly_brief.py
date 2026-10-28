@@ -92,6 +92,7 @@ def collect(now_ts: float, symbols: list | None = None, fetch_changes=fetch_week
         "binance": binance_week(fetch_binance(now_ts, 7 * 24)),
         "levels": [h for h in (queue_manager._get("level_check") or {}).get("hist", []) if now_ts - h.get("ts", 0) <= 7 * DAY],
         "crowd": queue_manager._get("crowd_record") or {"right": 0, "total": 0},
+        "futures_line": __import__("futures_ledger").week_line(queue_manager._get("closed_futures_positions") or [], now_ts),
         "listings": [h for h in lt.get("history", []) if now_ts - h["listing_t"] <= 14 * DAY and h.get("pct_d1") is not None],
     }
     d["basket"] = (d["basket_info"] or {}).get("basket")
@@ -140,6 +141,8 @@ def build_text(d: dict) -> str:
     cr = d.get("crowd") or {}
     if cr.get("total"):
         lines.append(f"Telegram crowd vs market, all time: right {cr['right']} of {cr['total']} calls.")
+    if d.get("futures_line"):
+        lines.append(d["futures_line"])
     bn = d["binance"]
     parts = []
     if bn["counts"].get("delist"):
