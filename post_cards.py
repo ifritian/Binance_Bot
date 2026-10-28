@@ -12,7 +12,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Wedge
+from matplotlib.patches import FancyBboxPatch, Rectangle, Wedge
 
 import config
 import chart_generator as cg
@@ -42,57 +42,47 @@ def _price(p: float) -> str:
     return f"{p:,.0f}" if p >= 1000 else cg._format_price(p)
 
 
+def _chip(ax, x, y, w, h, text, fg, bg="#161B22", fs=11):
+    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0,rounding_size=1.2", facecolor=bg, edgecolor="none"))
+    ax.text(x + w / 2, y + h / 2, text, color=fg, fontsize=fs, fontweight="bold", ha="center", va="center")
+
+
 def digest_card(data: dict, slot_hour_utc: int) -> Path | None:
-    """Карточка среза: мейджоры сверху, ниже лидеры роста и падения с полосами."""
+    """Карточка среза: два крупных блока (BTC, ETH), ниже две колонки - лидеры роста и падения."""
     try:
         title = "Morning market snapshot" if slot_hour_utc < 12 else "Evening market snapshot"
         majors = data["majors"][:2]
-        sections = []
-        if data["gainers"]:
-            sections.append(("Top gainers", _UP, data["gainers"]))
-        if data["losers"]:
-            sections.append(("Top losers", _DOWN, data["losers"]))
-        rows = sum(len(s[2]) for s in sections)
-        max_abs = max([abs(c) for _t, _p, c in sum([s[2] for s in sections], [])] or [1.0])
-
-        # Высота по содержимому: 1 условная единица = 0.08 дюйма (как по X).
-        height_units = 34 + len(sections) * 6.0 + rows * 4.6 + 3
-        fig = plt.figure(figsize=(8, height_units * 0.08), dpi=150)
+        up, dn = data["gainers"][:4], data["losers"][:4]
+        cols = [c for c in (("Gainers", _UP, up), ("Losers", _DOWN, dn)) if c[2]]
+        max_abs = max([abs(c) for _t, _p, c in up + dn] or [1.0])
+        rows = max((len(c[2]) for c in cols), default=0)
+        H = 48 + rows * 9.5 + 3
+        fig = plt.figure(figsize=(8, H * 0.0802), dpi=150)
         fig.patch.set_facecolor(_BG)
-        ax = fig.add_axes([0, 0, 1, 1])
-        ax.set_xlim(0, 100)
-        ax.set_ylim(0, height_units)
-        ax.invert_yaxis()
-        ax.axis("off")
-        ax.set_facecolor(_BG)
-
-        ax.text(5, 7, title, color=_TEXT, fontsize=17, fontweight="bold", va="center")
-        ax.text(5, 12.5, "last 24h", color=_MUTED, fontsize=10, va="center")
-        ax.text(95, 7, config.PROJECT_NAME.upper(), color=_TEXT, alpha=0.18, fontsize=13, fontweight="bold",
-                family="monospace", ha="right", va="center")
-
+        ax = fig.add_axes([0, 0, 1, 1]); ax.set_xlim(0, 100); ax.set_ylim(0, H); ax.invert_yaxis(); ax.axis("off")
+        ax.text(5, 8, title, color=_TEXT, fontsize=20, fontweight="bold", va="center")
+        _chip(ax, 80, 5, 15, 6, "LAST 24H", _MUTED, fs=9)
         x = 5
         for t, price, pct in majors:
             color = _UP if pct >= 0 else _DOWN
-            ax.add_patch(Rectangle((x, 17), 43, 11, facecolor="#12171D", edgecolor=_GRID, linewidth=1))
-            ax.text(x + 2.5, 20.5, f"${t}", color=_TEXT, fontsize=12, fontweight="bold", va="center")
-            ax.text(x + 2.5, 25, _price(price), color=_MUTED, fontsize=10, va="center")
-            ax.text(x + 40.5, 22.5, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=14, fontweight="bold", ha="right", va="center")
-            x += 47
-
-        y = 34
-        bar_x0, bar_w_max = 30, 52
-        for name, color, items in sections:
-            ax.text(5, y, name, color=color, fontsize=11, fontweight="bold", va="center")
-            y += 4.2
+            ax.add_patch(FancyBboxPatch((x, 15), 43.5, 18, boxstyle="round,pad=0,rounding_size=1.6", facecolor="#12171D", edgecolor="none"))
+            ax.text(x + 3, 20.5, t, color=_MUTED, fontsize=12, fontweight="bold", va="center")
+            ax.text(x + 3, 28, _price(price), color=_TEXT, fontsize=19, fontweight="bold", va="center")
+            ax.text(x + 40.5, 24, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=19, fontweight="bold", ha="right", va="center")
+            x += 46.5
+        colw = 43.5 if len(cols) == 2 else 90
+        x = 5
+        for name, color, items in cols:
+            ax.text(x, 40, name.upper(), color=color, fontsize=11, fontweight="bold", va="center")
+            ax.plot([x, x + colw], [43, 43], color=_GRID, linewidth=1)
+            y = 48
             for t, _p, pct in items:
-                ax.text(5, y, f"${t}", color=_TEXT, fontsize=11, va="center")
-                w = max(abs(pct) / max_abs * bar_w_max, 1.5)
-                ax.add_patch(Rectangle((bar_x0, y - 1.5), w, 3, facecolor=color, alpha=0.85, linewidth=0))
-                ax.text(95, y, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=11, fontweight="bold", ha="right", va="center")
-                y += 4.6
-            y += 1.8
-
+                ax.text(x, y, t, color=_TEXT, fontsize=15, fontweight="bold", va="center")
+                ax.text(x + colw, y, f"{pct:+.1f}%".replace("-", "−"), color=color, fontsize=15, fontweight="bold", ha="right", va="center")
+                ax.add_patch(Rectangle((x, y + 3.2), colw, 0.9, facecolor=_GRID, linewidth=0))
+                ax.add_patch(Rectangle((x, y + 3.2), max(abs(pct) / max_abs * colw, 1.0), 0.9, facecolor=color, linewidth=0))
+                y += 9.5
+            x += 46.5
         path = _out("digest_card.png")
         _save(fig, path)
         plt.close(fig)
@@ -113,33 +103,35 @@ def _fng_color(v: float) -> str:
     return stops[-1][1]
 
 
+_FNG_ZONES = [(0, 25, "Extreme fear"), (25, 45, "Fear"), (45, 55, "Neutral"), (55, 75, "Greed"), (75, 100, "Extreme greed")]
+
+
 def fng_card(data: dict) -> Path | None:
-    """Шкала страха и жадности 0..100 со стрелкой, значением и вчерашним числом."""
+    """Индекс страха и жадности: крупное число, подпись и цветная шкала с маркером (без стрелки)."""
     try:
         v = max(0, min(100, int(data["value"])))
-        fig = plt.figure(figsize=(8, 5), dpi=150)
+        fig = plt.figure(figsize=(8, 4.5), dpi=150)
         fig.patch.set_facecolor(_BG)
-        ax = fig.add_axes([0.05, 0.16, 0.9, 0.66])
-        ax.set_xlim(-1.25, 1.25)
-        ax.set_ylim(-0.25, 1.1)
-        ax.set_aspect("equal")
-        ax.axis("off")
-        n = 50
-        for i in range(n):
-            a0, a1 = 180 - 180 * i / n, 180 - 180 * (i + 1) / n
-            ax.add_patch(Wedge((0, 0), 1.0, a1, a0, width=0.28, facecolor=_fng_color(100 * (i + 0.5) / n), linewidth=0))
-        ang = math.radians(180 - 180 * v / 100)
-        ax.plot([0, 0.72 * math.cos(ang)], [0, 0.72 * math.sin(ang)], color=_TEXT, linewidth=4, solid_capstyle="round", zorder=5)
-        ax.add_patch(plt.Circle((0, 0), 0.06, color=_TEXT, zorder=6))
-        for val, lab, ha in ((0, "Extreme fear", "left"), (100, "Extreme greed", "right")):
-            a = math.radians(180 - 180 * val / 100)
-            ax.text(0.86 * math.cos(a), -0.08, lab, color=_MUTED, fontsize=9, ha="center", va="top")
-        fig.text(0.5, 0.075, str(v), color=_fng_color(v), fontsize=44, fontweight="bold", ha="center", va="center")
-        fig.text(0.5, 0.93, "Crypto Fear & Greed Index", color=_TEXT, fontsize=17, fontweight="bold", ha="center", va="center")
-        sub = str(data.get("label", ""))
+        ax = fig.add_axes([0, 0, 1, 1]); ax.set_xlim(0, 100); ax.set_ylim(0, 56.25); ax.invert_yaxis(); ax.axis("off")
+        ax.text(5, 8, "Fear & Greed Index", color=_TEXT, fontsize=20, fontweight="bold", va="center")
+        ax.text(5, 14, "Crypto market mood", color=_MUTED, fontsize=11, va="center")
+        col = _fng_color(v)
+        ax.text(5, 31, str(v), color=col, fontsize=76, fontweight="bold", va="center")
+        label = str(data.get("label", "")) or next(n for a, b, n in _FNG_ZONES if v <= b)
+        ax.text(41, 28, label, color=_TEXT, fontsize=24, fontweight="bold", va="center")
         if data.get("prev") is not None:
-            sub += f"   |   yesterday {data['prev']} ({v - data['prev']:+d})"
-        fig.text(0.5, 0.86, sub, color=_MUTED, fontsize=11, ha="center", va="center")
+            d = v - int(data["prev"])
+            ax.text(41, 35.5, f"Yesterday {data['prev']}   {d:+d}".replace("-", "−"), color=_MUTED, fontsize=13, va="center")
+        x0, x1, y = 5, 95, 43
+        n = 90
+        for i in range(n):
+            ax.add_patch(Rectangle((x0 + (x1 - x0) * i / n, y), (x1 - x0) / n + 0.05, 2.4, facecolor=_fng_color(100 * (i + 0.5) / n), linewidth=0))
+        mx = x0 + (x1 - x0) * v / 100
+        ax.add_patch(plt.Circle((mx, y + 1.2), 1.9, facecolor=_TEXT, edgecolor=_BG, linewidth=3, zorder=5))
+        for a, b, name in _FNG_ZONES:
+            active = a <= v <= b and not (v == a and a != 0 and any(z[1] == a and z[0] < a for z in _FNG_ZONES) and v != a)
+            ax.text(x0 + (x1 - x0) * (a + b) / 200, y + 6.5, name, color=_TEXT if (a <= v < b or (v == 100 and b == 100)) else _MUTED,
+                    fontsize=8.5, ha="center", va="center", fontweight="bold" if (a <= v < b or (v == 100 and b == 100)) else "normal")
         path = _out("fng_card.png")
         _save(fig, path)
         plt.close(fig)
