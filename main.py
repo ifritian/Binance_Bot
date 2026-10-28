@@ -2137,7 +2137,7 @@ def try_publish_level_check() -> None:
         return
     now = event_posts.now_utc()
     today = now.strftime("%Y-%m-%d")
-    if not (config.LEVEL_CHECK_HOUR_UTC <= now.hour <= config.LEVEL_CHECK_HOUR_UTC + 5):
+    if not (config.LEVEL_CHECK_HOUR_UTC <= now.hour <= config.LEVEL_CHECK_HOUR_UTC + 11):
         return
     st = queue_manager._get(level_check.KEY) or {"n": 0, "hist": [], "open": None, "done": ""}
     if st["done"] == today or not queue_manager.should_retry_now("level_check") or not _square_slot_available():
@@ -2158,7 +2158,10 @@ def try_publish_level_check() -> None:
     text = level_check.build_text(n, ticker, lv, mover_setups._px, prev, hist + ([prev] if prev else []))
     chart = _coin_chart(ticker, 2, expected_price=lv["price"])
     try:
-        _post("level_check", text, image_paths=[chart] if chart else None)
+        res = _post("level_check", text, image_paths=[chart] if chart else None)
+        if isinstance(res, dict) and res.get("status") == "duplicate_skipped":
+            queue_manager.set_retry_backoff("level_check", 3)
+            return
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации Level Check: %s", e)
         _record_publish_error("level_check", e)
@@ -2781,6 +2784,7 @@ def tick() -> None:
         try_publish_emergency_post()
         try_publish_trend_breakout()
         try_publish_hot_mover()   # срочное: раньше плановых слотов, иначе их интервал задержит пост про скачок
+        try_publish_level_check()   # раньше обычных слотов: иначе плотный график постов отодвигает серию
         try_publish_market_digest()
         try_publish_fng_post()   # дневной слот: идёт раньше событийных форматов, иначе они забирают окно
         try_publish_square_question()
@@ -2790,7 +2794,6 @@ def tick() -> None:
         try_publish_video_map()
         try_publish_video_replay()
         try_publish_anchor()
-        try_publish_level_check()
         try_publish_funding_radar()
         try:
             run_telegram_bot()
