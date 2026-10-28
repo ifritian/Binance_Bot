@@ -9,7 +9,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 PERIOD = 14
-HIGH, LOW = 82.0, 18.0
+HIGH, LOW = 80.0, 20.0
 KEY = "rsi_alert_log"
 GOLD, RED, BG, GRID, MUTED, WHITE = "#F0B90B", "#F6465D", "#0B0E11", "#1E2329", "#848E9C", "#EAECEF"
 

@@ -1274,10 +1274,19 @@ def try_publish_news_radar() -> None:
     queue_manager._set("news_radar_status", {"ts": int(now), "status": news_radar.LAST_STATUS})
     text = fmt = key = None
     images, mark_news, mark_codes = [], None, []
+    log = [p for p in (queue_manager._get("square_post_log") or []) if now - p["ts"] < 36 * 3600]
+    news_posts = [p for p in log if p.get("fmt") == "news_move"]
+    if len([p for p in news_posts if now - p["ts"] < 86400]) >= config.NEWS_MOVE_MAX_PER_DAY:
+        news_due = False
+    recent_texts = [p.get("head", "") for p in news_posts]
+    cooled = {t for p in news_posts if now - p["ts"] < config.NEWS_COIN_COOLDOWN_HOURS * 3600
+              for t in re.findall(r"\$([A-Z0-9]{2,10})", p.get("head", ""))}
+    if not (news_due or radar_due):
+        return
     if news_due:
-        news = [n for n in news_radar.fetch_news(now) if n["id"] not in seen_news]
+        news = [n for n in news_radar.fetch_news(now) if n["id"] not in seen_news and not news_radar.is_repeat(n["title"], recent_texts)]
         coins = [c for c in dict.fromkeys(filter(None, (news_radar.coin_in_headline(n["title"]) for n in news)))
-                 if coin_whitelist.is_allowed(c)]
+                 if coin_whitelist.is_allowed(c) and c not in cooled]
         pick = news_radar.pick_news_move(news, news_radar.fetch_changes(coins), seen_news, config.NEWS_MOVE_MIN_PCT) if coins else None
         if pick:
             n, ticker, pct = pick

@@ -211,6 +211,28 @@ def build_market_news_text(news: dict, btc_pct: float, rng=None) -> str:
             "\n\nNot financial advice.\n\n#CryptoNews")
 
 
+_STOP = {"with", "from", "that", "this", "their", "after", "into", "over", "will", "have", "says", "said", "amid", "more", "than",
+         "about", "crypto", "bitcoin", "market", "price", "news", "what", "could", "year", "week", "today", "gains", "falls"}
+
+
+def _tokens(text: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", re.sub(r"[’']s\b", "", text.lower()))
+    return {w for w in words if len(w) >= 4 and w not in _STOP}
+
+
+def is_repeat(title: str, recent_texts: list[str]) -> bool:
+    """Та же история уже была в наших постах (другой источник, другие слова): >=3 общих значимых слов или половина слов заголовка."""
+    a = _tokens(title)
+    if not a:
+        return False
+    for r in recent_texts:
+        b = _tokens(r)
+        common = a & b
+        if len(common) >= 3 or (len(a) >= 4 and len(common) / len(a) >= 0.5):
+            return True
+    return False
+
+
 # ---------------- Тексты ----------------
 
 def _signed(p: float) -> str:

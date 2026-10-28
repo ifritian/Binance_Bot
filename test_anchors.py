@@ -30,3 +30,11 @@ def test_market_news_pick():
     assert nr.pick_market_news(news, {"2"}) is None
     t = nr.build_market_news_text(news[1], -2.5)
     assert t.count("$") == 1 and "−2.5%" in t
+
+
+def test_news_story_dedupe():
+    import news_radar as nr
+    posted = ["🗞 Robinhood taps Ripple’s $2.5 billion RLUSD stablecoin desp", "$XRP: Ripple wins final US approval for national trust bank"]
+    assert nr.is_repeat("Robinhood Taps Ripple's Stablecoin, Treasury Software and Tr", posted)
+    assert nr.is_repeat("Ripple gains final OCC approval to launch national trust bank", posted)
+    assert not nr.is_repeat("Solana bug reports now cost 1 SOL as AI floods security", posted)
