@@ -759,7 +759,16 @@ def _square_slot_available() -> bool:
     тоже НЕ трогаем - иначе полноценное окно этого формата "сгорело" бы
     впустую только из-за неудачного совпадения по времени с другим
     форматом; на следующем тике try_publish_* просто попробует снова."""
-    return queue_manager.seconds_since_last_post("square_global") >= config.MIN_SQUARE_POST_SPACING_MINUTES * 60
+    if queue_manager.seconds_since_last_post("square_global") < config.MIN_SQUARE_POST_SPACING_MINUTES * 60:
+        return False
+    hour = time.gmtime().tm_hour
+    if not (config.SQUARE_ACTIVE_HOUR_START_UTC <= hour < config.SQUARE_ACTIVE_HOUR_END_UTC):
+        return False
+    now = time.time()
+    log = queue_manager._get("square_post_log") or []
+    if sum(1 for p in log if now - p.get("ts", 0) < 24 * 3600) >= config.SQUARE_MAX_POSTS_PER_DAY:
+        return False
+    return True
 
 
 def _record_publish_error(fmt: str, error) -> None:
