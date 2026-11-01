@@ -146,6 +146,11 @@ MIN_POST_INTERVAL_HOURS = float(os.environ.get("MIN_POST_INTERVAL_HOURS", "2"))
 # пул подписчиков при кластеризации постов), настраивается по факту
 # реальных данных просмотров.
 MIN_SQUARE_POST_SPACING_MINUTES = float(os.environ.get("MIN_SQUARE_POST_SPACING_MINUTES", "45"))
+# Режим "меньше, но лучше": суточный потолок постов в Square и дневное окно (UTC).
+# Ночью и сверх потолка публикуются только срочные форматы (URGENT_SQUARE_FORMATS не проверяют это).
+SQUARE_MAX_POSTS_PER_DAY = int(os.environ.get("SQUARE_MAX_POSTS_PER_DAY", "6"))
+SQUARE_ACTIVE_HOUR_START_UTC = int(os.environ.get("SQUARE_ACTIVE_HOUR_START_UTC", "6"))
+SQUARE_ACTIVE_HOUR_END_UTC = int(os.environ.get("SQUARE_ACTIVE_HOUR_END_UTC", "21"))
 # Публикуем (и кладём в очередь сканера - см. scanner.py) только сигналы
 # со score СТРОГО БОЛЬШЕ этого значения. Если в очереди нет ни одного
 # такого - просто не публикуем в это окно и ждём следующего тика. На
