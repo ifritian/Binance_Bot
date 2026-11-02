@@ -42,6 +42,7 @@ import micro_moments
 import level_check
 import numfmt
 import rsi_alert
+import market_shock
 import anchors
 import funding_radar
 import brand
@@ -1506,7 +1507,7 @@ def fast_lane(seconds: float | None = None, interval: float | None = None) -> No
     deadline = time.time() + seconds
     while time.time() + interval < deadline:
         time.sleep(interval)
-        for fn in (try_publish_listing_announcement, try_publish_hot_mover, try_publish_rsi_alert, try_publish_binance_alerts, run_telegram_bot):
+        for fn in (try_publish_listing_announcement, try_publish_market_shock, try_publish_hot_mover, try_publish_rsi_alert, try_publish_binance_alerts, run_telegram_bot):
             try:
                 fn()
             except Exception:
@@ -2332,6 +2333,47 @@ def try_publish_rsi_alert() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def try_publish_market_shock() -> None:
+    """Резкий обвал/рывок всего рынка: пост сразу, вне расписания и вне дневного окна/суточного потолка
+    обычных форматов (свои лимиты: MARKET_SHOCK_*)."""
+    if not config.MARKET_SHOCK_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    if not queue_manager.should_retry_now("market_shock"):
+        return
+    if queue_manager.seconds_since_last_post("square_global") < config.MARKET_SHOCK_SPACING_MINUTES * 60:
+        return
+    now = time.time()
+    log = [x for x in (queue_manager._get(market_shock.KEY) or []) if now - x["ts"] < 86400]
+    if len(log) >= config.MARKET_SHOCK_MAX_PER_DAY:
+        return
+    rows = market_digest.fetch_ticker_rows()
+    if not rows:
+        return
+    coins = market_shock.collect(rows, coin_whitelist.allowed_tickers(), market_digest.HOT_MIN_VOLUME_USD)
+    fast = market_digest.fast_changes(rows, queue_manager._get("price_snaps") or [], now).get("BTC")
+    ev = market_shock.detect(coins, fast[0] if fast else None)
+    if ev is None:
+        return
+    if any(x["kind"] == ev["kind"] and now - x["ts"] < config.MARKET_SHOCK_SAME_KIND_COOLDOWN_HOURS * 3600 for x in log):
+        return
+    text = market_shock.build_text(ev, mover_setups._px)
+    img = market_shock.chart(ev, coins, Path("charts") / "market_shock.png")
+    try:
+        _post("market_shock", text, image_paths=[img] if img else None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации Market Shock: %s", e)
+        _record_publish_error("market_shock", e)
+        queue_manager.set_retry_backoff("market_shock", 1)
+        return
+    logger.info("Опубликован Market Shock (%s, BTC 24ч %+.1f%%)", ev["kind"], ev["btc24"])
+    log.append({"ts": now, "kind": ev["kind"]})
+    queue_manager._set(market_shock.KEY, log)
+    fl = [f for f in (queue_manager._get("mover_followups") or []) if now - f["ts"] < 48 * 3600]
+    fl.append(micro_moments.followup_record({"ticker": "BTC", "price": ev["btc_price"]}, None, now))
+    queue_manager._set("mover_followups", fl[-10:])
+    queue_manager.set_last_post_time("square_global")
+
+
 def try_publish_telegram_poll() -> None:
     """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
     вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
@@ -2861,6 +2903,7 @@ def tick() -> None:
         try_publish_emergency_post()
         try_publish_trend_breakout()
         try_publish_rsi_alert()
+        try_publish_market_shock()
         try_publish_hot_mover()   # срочное: раньше плановых слотов, иначе их интервал задержит пост про скачок
         try_publish_level_check()   # раньше обычных слотов: иначе плотный график постов отодвигает серию
         try_publish_market_digest()
