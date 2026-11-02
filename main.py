@@ -44,6 +44,8 @@ import numfmt
 import rsi_alert
 import market_shock
 import binance_breaking
+import emoji_accent
+import wry
 import anchors
 import funding_radar
 import brand
@@ -787,6 +789,21 @@ def _record_publish_error(fmt: str, error) -> None:
 def _post(fmt: str, *args, **kwargs):
     """binance_publisher.publish_post + метка формата для журнала публикаций."""
     binance_publisher.tag_format(fmt)
+    if config.EMOJI_ACCENT_ENABLED:
+        try:
+            hist = list(queue_manager._get("accent_log") or [])
+            txt = args[0] if args and isinstance(args[0], str) else kwargs.get("text")
+            use = isinstance(txt, str) and emoji_accent.should_apply(fmt, hist)
+            if use:
+                new_txt = emoji_accent.apply(fmt, txt)
+                if args and isinstance(args[0], str):
+                    args = (new_txt,) + tuple(args[1:])
+                else:
+                    kwargs["text"] = new_txt
+            if isinstance(txt, str) and fmt not in emoji_accent.NEVER:
+                queue_manager._set("accent_log", (hist + [bool(use)])[-8:])
+        except Exception:
+            logger.exception("Эмодзи-акцент не применён")
     if args and isinstance(args[0], str):
         args = (numfmt.fix_minus(args[0]),) + tuple(args[1:])
     elif isinstance(kwargs.get("text"), str):
@@ -2450,6 +2467,69 @@ def try_publish_breaking_news() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def _wry_context(now: float, rows: list) -> dict:
+    btc = next((float(r["priceChangePercent"]) for r in rows if r.get("symbol") == "BTCUSDT"), None)
+    ctx = {"b24": btc, "fng": event_posts.fetch_fng(), "weekend": time.gmtime(now).tm_wday >= 5, "loss_streak": 0, "level": None}
+    since = queue_manager._get("futures_enabled_since") or 0
+    closed = [x for x in (queue_manager._get("closed_futures_positions") or []) if x.get("closed_at", 0) >= since]
+    closed.sort(key=lambda x: x["closed_at"])
+    streak = 0
+    for x in reversed(closed):
+        if x.get("realized_pnl", 0) < 0:
+            streak += 1
+        else:
+            break
+    last_used = (queue_manager._get(wry.KEY) or {}).get("streak_end", 0)
+    if streak >= 3 and closed and now - closed[-1]["closed_at"] < 36 * 3600 and closed[-1]["closed_at"] > last_used:
+        ctx["loss_streak"] = streak
+        ctx["streak_end"] = closed[-1]["closed_at"]
+    lc = queue_manager._get("level_check") or {}
+    hist = (lc.get("hist") or [])[-7:]
+    log = queue_manager._get("square_post_log") or []
+    if hist:
+        ctx["level"] = {"held": sum(1 for h in hist if h.get("res") == "held"), "total": len(hist),
+                        "fresh": any(p.get("fmt") == "level_check" and now - p["ts"] < 24 * 3600 for p in log)}
+    return ctx
+
+
+def try_publish_wry() -> None:
+    """Редкая сухая шутка по реальному поводу (см. wry.py): не чаще раза в ~2 дня, 3 в неделю, не рядом с паникой."""
+    if not config.WRY_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    if not queue_manager.should_retry_now("wry") or not _square_slot_available():
+        return
+    now = time.time()
+    st = queue_manager._get(wry.KEY) or {}
+    times = [t for t in st.get("times", []) if now - t < 7 * 86400]
+    if len(times) >= config.WRY_MAX_PER_WEEK or (times and now - max(times) < config.WRY_MIN_GAP_HOURS * 3600):
+        return
+    if queue_manager.seconds_since_last_post("wry_scan") < 1800:
+        return
+    queue_manager.set_last_post_time("wry_scan")
+    log = queue_manager._get("square_post_log") or []
+    if any(p.get("fmt") in ("market_shock", "breaking_news", "binance_breaking") and now - p["ts"] < 6 * 3600 for p in log):
+        return
+    rows = market_digest.fetch_ticker_rows()
+    if not rows:
+        return
+    ctx = _wry_context(now, rows)
+    recent = [p.get("head", "") for p in log if p.get("fmt") == "wry"]
+    text = wry.build(ctx, recent)
+    if not text:
+        return
+    try:
+        _post("wry", text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации Wry: %s", e)
+        _record_publish_error("wry", e)
+        queue_manager.set_retry_backoff("wry", 1)
+        return
+    logger.info("Опубликован Wry")
+    st = {"times": times + [now], "streak_end": ctx.get("streak_end", st.get("streak_end", 0))}
+    queue_manager._set(wry.KEY, st)
+    queue_manager.set_last_post_time("square_global")
+
+
 def try_publish_telegram_poll() -> None:
     """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
     вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
@@ -2987,6 +3067,7 @@ def tick() -> None:
         try_publish_market_digest()
         try_publish_fng_post()   # дневной слот: идёт раньше событийных форматов, иначе они забирают окно
         try_publish_square_question()
+        try_publish_wry()
         try_publish_mover_result()
         try_publish_mover_followup()
         try_publish_video()
