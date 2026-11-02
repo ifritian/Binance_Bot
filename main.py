@@ -43,6 +43,7 @@ import level_check
 import numfmt
 import rsi_alert
 import market_shock
+import binance_breaking
 import anchors
 import funding_radar
 import brand
@@ -1507,7 +1508,7 @@ def fast_lane(seconds: float | None = None, interval: float | None = None) -> No
     deadline = time.time() + seconds
     while time.time() + interval < deadline:
         time.sleep(interval)
-        for fn in (try_publish_listing_announcement, try_publish_market_shock, try_publish_hot_mover, try_publish_rsi_alert, try_publish_binance_alerts, run_telegram_bot):
+        for fn in (try_publish_listing_announcement, try_publish_market_shock, try_publish_binance_breaking, try_publish_hot_mover, try_publish_rsi_alert, try_publish_binance_alerts, run_telegram_bot):
             try:
                 fn()
             except Exception:
@@ -2356,7 +2357,9 @@ def try_publish_market_shock() -> None:
         return
     if any(x["kind"] == ev["kind"] and now - x["ts"] < config.MARKET_SHOCK_SAME_KIND_COOLDOWN_HOURS * 3600 for x in log):
         return
-    text = market_shock.build_text(ev, mover_setups._px)
+    fng = event_posts.fetch_fng()
+    ctx = market_shock.context_line(mover_setups.fetch_klines("BTC", "1d", 120), ev)
+    text = market_shock.build_text(ev, mover_setups._px, fng=fng, context=ctx)
     img = market_shock.chart(ev, coins, Path("charts") / "market_shock.png")
     try:
         _post("market_shock", text, image_paths=[img] if img else None)
@@ -2371,6 +2374,36 @@ def try_publish_market_shock() -> None:
     fl = [f for f in (queue_manager._get("mover_followups") or []) if now - f["ts"] < 48 * 3600]
     fl.append(micro_moments.followup_record({"ticker": "BTC", "price": ev["btc_price"]}, None, now))
     queue_manager._set("mover_followups", fl[-10:])
+    queue_manager.set_last_post_time("square_global")
+
+
+def try_publish_binance_breaking() -> None:
+    """Срочный пост про значимое официальное объявление Binance (делистинг ликвидной монеты, экстренные новости)."""
+    if not config.BINANCE_BREAKING_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    if not queue_manager.should_retry_now("binance_breaking"):
+        return
+    if queue_manager.seconds_since_last_post("binance_breaking_scan") < 240:
+        return
+    queue_manager.set_last_post_time("binance_breaking_scan")
+    now = time.time()
+    if binance_breaking.posts_last_day(now) >= config.BINANCE_BREAKING_MAX_PER_DAY:
+        return
+    if queue_manager.seconds_since_last_post("square_global") < config.MARKET_SHOCK_SPACING_MINUTES * 60:
+        return
+    picked = binance_breaking.run_once(now, coin_whitelist.allowed_tickers())
+    if not picked:
+        return
+    code, text = picked[0]
+    try:
+        _post("binance_breaking", text)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации Binance Breaking: %s", e)
+        _record_publish_error("binance_breaking", e)
+        queue_manager.set_retry_backoff("binance_breaking", 0.25)
+        return
+    logger.info("Опубликован Binance Breaking: %s", code)
+    binance_breaking.mark_sent(code, now)
     queue_manager.set_last_post_time("square_global")
 
 
@@ -2904,6 +2937,7 @@ def tick() -> None:
         try_publish_trend_breakout()
         try_publish_rsi_alert()
         try_publish_market_shock()
+        try_publish_binance_breaking()
         try_publish_hot_mover()   # срочное: раньше плановых слотов, иначе их интервал задержит пост про скачок
         try_publish_level_check()   # раньше обычных слотов: иначе плотный график постов отодвигает серию
         try_publish_market_digest()
