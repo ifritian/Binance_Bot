@@ -1302,14 +1302,14 @@ def try_publish_news_radar() -> None:
         if pick:
             n, ticker, pct = pick
             related = next((b for b in binance if ticker in b["tickers"]), None)
-            text, fmt, key, mark_news = news_radar.build_news_text(n, ticker, pct, related), "news_move", "news_move", n["id"]
+            text, fmt, key, mark_news = news_radar.build_news_text(n, ticker, pct, related, recent_heads=recent_texts), "news_move", "news_move", n["id"]
             chart = _coin_chart(ticker, 7)
             images = [chart] if chart else []
         elif config.MARKET_NEWS_ENABLED:
             mn = news_radar.pick_market_news(news, seen_news)
             btc = news_radar.fetch_changes(["BTC"]).get("BTC") if mn else None
             if mn and btc is not None:
-                text, fmt, key, mark_news = news_radar.build_market_news_text(mn, btc), "news_move", "news_move", mn["id"]
+                text, fmt, key, mark_news = news_radar.build_market_news_text(mn, btc, recent_heads=recent_texts), "news_move", "news_move", mn["id"]
                 chart = _coin_chart("BTC", 2)
                 images = [chart] if chart else []
     if text is None and radar_due:
@@ -1508,7 +1508,7 @@ def fast_lane(seconds: float | None = None, interval: float | None = None) -> No
     deadline = time.time() + seconds
     while time.time() + interval < deadline:
         time.sleep(interval)
-        for fn in (try_publish_listing_announcement, try_publish_market_shock, try_publish_binance_breaking, try_publish_hot_mover, try_publish_rsi_alert, try_publish_binance_alerts, run_telegram_bot):
+        for fn in (try_publish_listing_announcement, try_publish_market_shock, try_publish_binance_breaking, try_publish_breaking_news, try_publish_hot_mover, try_publish_rsi_alert, try_publish_binance_alerts, run_telegram_bot):
             try:
                 fn()
             except Exception:
@@ -2407,6 +2407,49 @@ def try_publish_binance_breaking() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def try_publish_breaking_news() -> None:
+    """Срочная новость из RSS (взлом, банкротство, депег, арест, иск): пост сразу, вне расписания и дневного окна."""
+    if not config.BREAKING_NEWS_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    if not queue_manager.should_retry_now("breaking_news"):
+        return
+    if queue_manager.seconds_since_last_post("breaking_news_scan") < 240:
+        return
+    queue_manager.set_last_post_time("breaking_news_scan")
+    if queue_manager.seconds_since_last_post("square_global") < config.MARKET_SHOCK_SPACING_MINUTES * 60:
+        return
+    now = time.time()
+    log = [p for p in (queue_manager._get("square_post_log") or []) if now - p["ts"] < 36 * 3600]
+    if len([p for p in log if p.get("fmt") == "breaking_news" and now - p["ts"] < 86400]) >= config.BREAKING_NEWS_MAX_PER_DAY:
+        return
+    state = queue_manager._get("news_radar_state") or {}
+    seen_news = set(state.get("news", []))
+    recent = [p.get("head", "") for p in log if p.get("fmt") in ("news_move", "breaking_news")]
+    n = news_radar.pick_breaking(news_radar.fetch_news(now, 2.0), seen_news, recent, now)
+    if n is None:
+        return
+    ticker = news_radar.coin_in_headline(n["title"])
+    if not ticker or not coin_whitelist.is_allowed(ticker):
+        ticker = "BTC"
+    pct = news_radar.fetch_changes([ticker]).get(ticker)
+    if pct is None:
+        return
+    text = news_radar.build_breaking_text(n, ticker, pct, recent_heads=recent)
+    chart = _coin_chart(ticker, 2)
+    try:
+        _post("breaking_news", text, image_paths=[chart] if chart else None)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации Breaking News: %s", e)
+        _record_publish_error("breaking_news", e)
+        queue_manager.set_retry_backoff("breaking_news", 0.25)
+        return
+    logger.info("Опубликована срочная новость: %s", n["title"][:80])
+    seen_news.add(n["id"])
+    state["news"] = sorted(seen_news)[-200:]
+    queue_manager._set("news_radar_state", state)
+    queue_manager.set_last_post_time("square_global")
+
+
 def try_publish_telegram_poll() -> None:
     """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
     вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
@@ -2938,6 +2981,7 @@ def tick() -> None:
         try_publish_rsi_alert()
         try_publish_market_shock()
         try_publish_binance_breaking()
+        try_publish_breaking_news()
         try_publish_hot_mover()   # срочное: раньше плановых слотов, иначе их интервал задержит пост про скачок
         try_publish_level_check()   # раньше обычных слотов: иначе плотный график постов отодвигает серию
         try_publish_market_digest()
