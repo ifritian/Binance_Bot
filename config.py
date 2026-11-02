@@ -187,6 +187,9 @@ MIN_RISK_REWARD_RATIO = float(os.environ.get("MIN_RISK_REWARD_RATIO", "1.2"))
 # после стоп-аута повышен статистический шанс, что цена продолжает
 # "пилить" в районе того же уровня, а не даёт чистый новый сетап - см.
 # роадмап фазы 2, пункт P1.1.
+# Демо-фьючерсы: не торговать мелкие/тонкие монеты (ложные пробои и выбивания за минуты).
+# Порог - суточный оборот в млн USDT из сигнала; 0 выключает фильтр.
+FUTURES_MIN_QUOTE_VOLUME_M = float(os.environ.get("FUTURES_MIN_QUOTE_VOLUME_M", "40"))
 FUTURES_SYMBOL_COOLDOWN_HOURS = float(os.environ.get("FUTURES_SYMBOL_COOLDOWN_HOURS", "4"))
 
 # Сколько часов реальная futures-позиция может простоять открытой без
