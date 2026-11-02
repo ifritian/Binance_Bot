@@ -18,7 +18,7 @@ def _signal(ticker="SOL", direction="Лонг (перепроданность)",
         ticker=ticker, timeframe="15m", strategy="RSI + Bollinger Touch", direction=direction,
         current_price="101", rsi_now="25.0", score=score, quality="Moderate",
         entry_low=entry_low, entry_high=entry_high, invalidation=invalidation, target=target,
-        change_24h="+1.0%", volume="10M", rsi_live="25.0", created_at="2026-07-29 00:00:00 UTC",
+        change_24h="+1.0%", volume="100M", rsi_live="25.0", created_at="2026-07-29 00:00:00 UTC",
         description="тест", raw_text="тест",
     )
 

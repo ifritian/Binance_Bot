@@ -166,6 +166,16 @@ def execute_signal(
                     signal.ticker, signal.score, min_score)
         return None
 
+    if config.FUTURES_MIN_QUOTE_VOLUME_M > 0:
+        try:
+            vol_m = float(str(signal.volume).replace("M", "").strip())
+        except (TypeError, ValueError):
+            vol_m = None
+        if vol_m is not None and vol_m < config.FUTURES_MIN_QUOTE_VOLUME_M:
+            logger.info("futures_signal_bridge: %s оборот %.1fM < %.0fM - тонкая монета, пропускаю",
+                        signal.ticker, vol_m, config.FUTURES_MIN_QUOTE_VOLUME_M)
+            return None
+
     params = signal_to_trade_params(signal)
     if params is None:
         return None
