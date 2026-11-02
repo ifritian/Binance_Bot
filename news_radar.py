@@ -194,6 +194,32 @@ _MARKET_RE = re.compile(r"\b(hack(?:ed|s)?|exploit(?:ed)?|stolen|ETF|SEC|CFTC|la
                         r"liquidat\w+|Fed|rate (?:cut|hike)|tariffs?|stablecoin|regulat\w+|halt(?:s|ed)?|outage|reserve)\b", re.IGNORECASE)
 
 
+_URGENT_RE = re.compile(r"\b(hack(?:ed|s)?|exploit(?:ed)?|stolen|drain(?:ed|s)?|bankrupt\w*|insolven\w+|collaps\w+|de-?peg\w*|"
+                        r"halts?\s+(?:withdrawals|trading|deposits)|arrest(?:ed|s)?|sues|sued|ban(?:s|ned)?\s+crypto|"
+                        r"liquidat(?:ed|ions)\s+\$?\d)", re.IGNORECASE)
+
+
+def pick_breaking(news: list[dict], seen: set[str], recent_texts: list[str], now_ts: float, max_age_min: float = 90.0) -> dict | None:
+    """Свежий (не старше max_age_min) срочный заголовок: взлом, банкротство, депег, арест, иск, остановка вывода."""
+    for n in news:
+        if n["id"] in seen or now_ts - n["ts"] > max_age_min * 60 or not _URGENT_RE.search(n["title"]):
+            continue
+        if is_repeat(n["title"], recent_texts):
+            continue
+        return n
+    return None
+
+
+def build_breaking_text(news: dict, ticker: str, pct: float, rng=None, recent_heads: list | None = None) -> str:
+    import random as _r
+    import news_hooks
+    rng = rng or _r
+    hook = news_hooks.breaking_hook(recent_heads, rng)
+    ask = rng.choice(["Does this change anything for you?", "How big is this, in your view?", "Noise or a real problem?"])
+    return (f"{hook} {news['title']}\n\nSource: {news['source']}. ${ticker} is {_signed(pct)} over the last 24h.\n\n"
+            f"{ask}\n\nNot financial advice.\n\n#CryptoNews")
+
+
 def pick_market_news(news: list[dict], seen: set[str]) -> dict | None:
     """Свежий заголовок про рынок в целом (хак, ETF, регулятор, ФРС) без конкретной монеты-героя."""
     for n in news:   # news уже отсортированы от свежих к старым
@@ -202,11 +228,12 @@ def pick_market_news(news: list[dict], seen: set[str]) -> dict | None:
     return None
 
 
-def build_market_news_text(news: dict, btc_pct: float, rng=None) -> str:
+def build_market_news_text(news: dict, btc_pct: float, rng=None, recent_heads: list | None = None) -> str:
     import random as _r
+    import news_hooks
     rng = rng or _r
-    lead = rng.choice(["🚨 ", "📰 ", "🗞 "]) if abs(btc_pct) >= 2 else rng.choice(["📰 ", "🗞 ", ""])
-    return (f"{lead}{news['title']} ({news['source']})\n\n$BTC is {_signed(btc_pct)} over the last 24h.\n\n"
+    hook = news_hooks.market_hook(btc_pct, recent_heads, rng)
+    return (f"{hook}\n\n{news['title']} ({news['source']})\n\n$BTC is {_signed(btc_pct)} over the last 24h.\n\n"
             f"{rng.choice(['How do you read this one?', 'Does this change anything for you?', 'Noise or something that matters?'])}"
             "\n\nNot financial advice.\n\n#CryptoNews")
 
@@ -256,22 +283,21 @@ def build_radar_text(items: list[dict], changes: dict[str, float] | None = None)
     return body + ("\n\n#Binance #Crypto" if "$" in body else "\n\n$BNB #Binance #Crypto")
 
 
-def build_news_text(news: dict, ticker: str, pct: float, binance_item: dict | None = None, rng=None) -> str:
+def build_news_text(news: dict, ticker: str, pct: float, binance_item: dict | None = None, rng=None,
+                    recent_heads: list | None = None) -> str:
     import random as _r
+    import news_hooks
     rng = rng or _r
     title, src, mv = news["title"], news["source"], _signed(pct)
-    # 🚨 только при заметном движении цены: "тревога" у спокойной новости выглядит шаблонно и фальшиво
-    lead = rng.choice(["🚨 ", "🚨 ", "📰 "]) if abs(pct) >= 5 else rng.choice(["📰 ", "📰 ", "🗞 ", "", "", ""])
-    layout = rng.choice(["a", "b", "c", "d"])
+    hook = news_hooks.coin_hook(ticker, pct, recent_heads, rng)
+    layout = rng.choice(["a", "b", "c"])
     if layout == "a":
-        body = f"{lead}{title} ({src})\n\n${ticker} is {mv} over the last 24h."
+        body = f"{hook}\n\n{title} ({src})"
     elif layout == "b":
-        body = f"{lead}{title}\n\nVia {src}. ${ticker} {mv} in 24h."
-    elif layout == "c":
-        body = f"{lead}${ticker}: {title}\n\nPrice so far: {mv} (24h). Source: {src}."
+        body = f"{hook}\n\n\u201c{title}\u201d\nVia {src}."
     else:
-        body = f"{lead}{title} - {src}\n\nMeanwhile ${ticker} trades {mv} on the day."
-    body += rng.choice([" Tap the tag for the live price.", " Live price one tap away.", "", ""])
+        body = f"{hook}\n\n{title}\nSource: {src}."
+    body += rng.choice(["\n\nTap the tag for the live price.", "", ""])
     if binance_item:
         body += f"\nOn Binance: {clean_title(binance_item['title'])}"
     caveat = rng.choice(["The headline and the move may or may not be related.",

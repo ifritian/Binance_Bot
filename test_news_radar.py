@@ -131,10 +131,36 @@ def test_coin_must_be_subject_of_headline():
     assert nr.pick_news_move(news, {"SOL": 9.0}, set(), 1.0) is None
 
 
-def test_siren_only_for_big_moves():
+def test_news_hook_first_line_is_a_hook_not_a_siren():
     import random
     for i in range(40):
-        calm = nr.build_news_text({"title": "Ethereum settlement plan", "source": "X"}, "ETH", 1.2, None, random.Random(i))
-        assert "🚨" not in calm
-    big = {nr.build_news_text({"title": "Hack", "source": "X"}, "ETH", -8.0, None, random.Random(i))[:2] for i in range(40)}
-    assert "🚨" in "".join(big)
+        t = nr.build_news_text({"title": "Hack", "source": "X"}, "ETH", -8.0, None, random.Random(i))
+        first = t.split("\n")[0]
+        assert "$ETH" in first or "ETH" in first
+        assert "🚨" not in t and "http" not in t
+        calm = nr.build_news_text({"title": "Plan", "source": "X"}, "ETH", 1.2, None, random.Random(i))
+        assert calm.split("\n")[0].endswith(":") or "$ETH" in calm.split("\n")[0]
+
+
+def test_hook_avoids_recent_opening():
+    import random
+    import news_hooks
+    first = news_hooks.coin_hook("ETH", -8.0, [], random.Random(0))
+    for i in range(30):
+        assert news_hooks.coin_hook("ETH", -8.0, [first], random.Random(i))[:22].lower() != first[:22].lower()
+
+
+
+def test_pick_breaking_fresh_urgent_only():
+    now = 100000.0
+    news = [{"id": "1", "title": "Exchange hacked, $50M stolen", "source": "X", "ts": now - 600},
+            {"id": "2", "title": "Old hack story", "source": "X", "ts": now - 9000},
+            {"id": "3", "title": "Analyst expects calm week", "source": "X", "ts": now - 60}]
+    assert nr.pick_breaking(news, set(), [], now)["id"] == "1"
+    assert nr.pick_breaking(news, {"1"}, [], now) is None
+    assert nr.pick_breaking(news, set(), ["Exchange hacked, $50M stolen"], now) is None
+
+
+def test_breaking_text():
+    t = nr.build_breaking_text({"title": "Exchange hacked", "source": "X"}, "BTC", -2.5)
+    assert t.startswith(("BREAKING:", "Just in:", "Developing right now:", "Just now:")) and "−2.5%" in t and "http" not in t
