@@ -31,8 +31,18 @@ def test_rally_by_fast_move():
 
 def test_text_has_no_links_and_uses_unicode_minus():
     ev = ms.detect(_coins([-5, -6, -4, -7, -3, -6, -5, -4, -8, -2]), -3.0)
-    t = ms.build_text(ev, lambda x: f"{x:.0f}", random.Random(1))
+    t = ms.build_text(ev, lambda x: f"{x:.0f}", fng={"value": 72, "label": "Greed", "prev": 70}, context="ctx line", rng=random.Random(1))
     assert "http" not in t and "-5" not in t and "Not financial advice" in t
+    assert "Fear & Greed Index: 72" in t and "still greedy" in t and "ctx line" in t
+    assert t.split("\n")[0].startswith(("STOP", "Wait"))
+
+
+def test_context_line_counts_days():
+    ev = {"kind": "crash", "btc24": -5.0}
+    bars = [(i, 100.0, 0, 0, 99.0, 0) for i in range(60)]   # -1% days
+    bars[10] = (10, 100.0, 0, 0, 90.0, 0)                  # -10% day, 49 days before the last full bar
+    bars.append((61, 100.0, 0, 0, 95.0, 0))                # current partial bar, ignored
+    assert "49 days" in ms.context_line(bars, ev)
 
 
 def test_chart_created(tmp_path):

@@ -59,25 +59,66 @@ def detect(coins: list, btc_fast: float | None) -> dict | None:
             "breadth": down if kind == "crash" else up, "n": len(coins), "leaders": top}
 
 
-def build_text(ev: dict, px, rng: random.Random | None = None) -> str:
+def context_line(daily: list, ev: dict) -> str | None:
+    """Факт-контекст: "самое большое дневное падение/рост BTC за N дней" по дневным свечам (последняя - текущая, не считается)."""
+    bars = daily[:-1] if daily else []
+    if len(bars) < 30:
+        return None
+    moves = [(c / o - 1) * 100 for _t, o, _h, _l, c, _v in bars if o]
+    cur = ev["btc24"]
+    crash = ev["kind"] == "crash"
+    back = next((i for i, m in enumerate(reversed(moves), 1) if (m <= cur if crash else m >= cur)), None)
+    days = len(moves) if back is None else back - 1
+    if days < 14:
+        return None
+    word = "drop" if crash else "gain"
+    return f"The biggest daily {word} for $BTC in {days} days." if back is not None else f"The biggest daily {word} for $BTC in at least {days} days."
+
+
+def sentiment_line(ev: dict, fng: dict | None) -> str | None:
+    """Связка со Страхом и Жадностью: что говорит толпа и совпадает ли это с ценой."""
+    if not fng:
+        return None
+    v, label, prev = fng["value"], fng["label"], fng.get("prev")
+    base = f"Fear & Greed Index: {v} ({label})" + (f", was {prev} yesterday." if prev is not None else ".")
+    crash = ev["kind"] == "crash"
+    if crash and v >= 55:
+        tail = "Sentiment was still greedy when this hit. Sharp drops hurt most when nobody expects them."
+    elif crash and v <= 25:
+        tail = "The crowd was already scared before this. Extreme fear can last a long time."
+    elif crash:
+        tail = "Fear is building fast."
+    elif v <= 35:
+        tail = "Price is jumping while the crowd is still scared. Sentiment has not caught up yet."
+    elif v >= 75:
+        tail = "Greed is already high. Fast rallies in greedy markets can turn just as fast."
+    else:
+        tail = "Sentiment is moving with price."
+    return base + " " + tail
+
+
+def build_text(ev: dict, px, fng: dict | None = None, context: str | None = None, rng: random.Random | None = None) -> str:
     rng = rng or random
     crash = ev["kind"] == "crash"
     b24, fast = ev["btc24"], ev["btc_fast"]
     if crash:
-        head = rng.choice([f"The whole market is red: $BTC {b24:+.1f}% in 24h", f"Broad sell-off right now. $BTC {b24:+.1f}% on the day",
-                           f"Crypto is falling together: $BTC {b24:+.1f}% in 24h"])
+        head = rng.choice(["STOP. Look at what is happening to the market right now.", "STOP SCROLLING. The whole market is bleeding.",
+                           "Wait. Check your portfolio. Everything is red.", "STOP. Something just broke across crypto."])
     else:
-        head = rng.choice([f"The whole market is green: $BTC {b24:+.1f}% in 24h", f"Broad rally right now. $BTC {b24:+.1f}% on the day",
-                           f"Crypto is rising together: $BTC {b24:+.1f}% in 24h"])
-    lines = [head, "", f"$BTC {px(ev['btc_price'])}" + (f", {fast:+.1f}% in the last hour." if fast is not None and abs(fast) >= 0.5 else ".")]
-    lines.append(f"{round(ev['breadth'] * ev['n'])} of {ev['n']} liquid coins are {'down' if crash else 'up'}; the median move is {ev['median']:+.1f}%.")
-    lead = ", ".join(f"${t} {p:+.1f}%" for t, _pr, p, _v in ev["leaders"])
-    lines.append(f"{'Hardest hit' if crash else 'Strongest'}: {lead}.")
-    lines += ["", rng.choice(["Moves this wide are usually about the whole market, not one coin. I am not calling a bottom or a top.",
-                             "When everything moves together, it is the market, not a single story. No prediction here.",
-                             "A move this broad says little about what comes next. I will check back on it."]),
+        head = rng.choice(["STOP. The whole market is ripping higher right now.", "STOP SCROLLING. Everything is green at the same time.",
+                           "Wait. Check the charts. Crypto is jumping across the board."])
+    lines = [head, "", f"$BTC {px(ev['btc_price'])}: {b24:+.1f}% in 24h" + (f", {fast:+.1f}% in the last hour." if fast is not None and abs(fast) >= 0.5 else ".")]
+    if context:
+        lines.append(context)
+    lines.append(f"{round(ev['breadth'] * ev['n'])} of {ev['n']} liquid coins are {'down' if crash else 'up'}. Median move: {ev['median']:+.1f}%.")
+    lines.append(f"{'Hardest hit' if crash else 'Leading'}: " + ", ".join(f"${t} {p:+.1f}%" for t, _pr, p, _v in ev["leaders"]) + ".")
+    sent = sentiment_line(ev, fng)
+    if sent:
+        lines += ["", sent]
+    lines += ["", rng.choice(["Panic or opportunity? Tell me what you are doing.", "Is this the start of something bigger, or just noise? What is your read?",
+                             "How are you handling this one? I will check back on it."]),
               "", "Not financial advice.", "", "#Bitcoin #Crypto"]
-    return "\n".join(l.replace(" -", " −") for l in lines)
+    return "\n".join(l.replace(" -", " −").replace(": -", ": −") for l in lines)
 
 
 def chart(ev: dict, coins: list, out: Path) -> Path | None:

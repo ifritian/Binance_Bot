@@ -820,9 +820,12 @@ MARKET_SHOCK_MAX_PER_DAY = int(os.environ.get("MARKET_SHOCK_MAX_PER_DAY") or 2)
 MARKET_SHOCK_SAME_KIND_COOLDOWN_HOURS = float(os.environ.get("MARKET_SHOCK_SAME_KIND_COOLDOWN_HOURS") or 10)
 MARKET_SHOCK_SPACING_MINUTES = float(os.environ.get("MARKET_SHOCK_SPACING_MINUTES") or 15)
 
+BINANCE_BREAKING_ENABLED = (os.environ.get("BINANCE_BREAKING_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+BINANCE_BREAKING_MAX_PER_DAY = int(os.environ.get("BINANCE_BREAKING_MAX_PER_DAY") or 2)
+
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
 CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
-                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,anchor,rsi_extreme,market_shock,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
+                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,anchor,rsi_extreme,market_shock,binance_breaking,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
 # Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
 LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 
