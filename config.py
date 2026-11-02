@@ -811,9 +811,18 @@ NEWS_MOVE_MIN_PCT = float(os.environ.get("NEWS_MOVE_MIN_PCT") or 1.0)
 NEWS_MOVE_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_MOVE_MIN_INTERVAL_HOURS") or 5)
 NEWS_RADAR_MIN_INTERVAL_HOURS = float(os.environ.get("NEWS_RADAR_MIN_INTERVAL_HOURS") or 20)
 
+# Market Shock (market_shock.py): резкий обвал/рывок всего рынка, вне расписания и вне дневного окна.
+MARKET_SHOCK_ENABLED = (os.environ.get("MARKET_SHOCK_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+SHOCK_BTC_FAST_PCT = float(os.environ.get("SHOCK_BTC_FAST_PCT") or 2.0)   # BTC за ~час
+SHOCK_BTC_DAY_PCT = float(os.environ.get("SHOCK_BTC_DAY_PCT") or 4.0)     # BTC за сутки
+SHOCK_MEDIAN_PCT = float(os.environ.get("SHOCK_MEDIAN_PCT") or 4.0)       # медиана по ликвидным монетам
+MARKET_SHOCK_MAX_PER_DAY = int(os.environ.get("MARKET_SHOCK_MAX_PER_DAY") or 2)
+MARKET_SHOCK_SAME_KIND_COOLDOWN_HOURS = float(os.environ.get("MARKET_SHOCK_SAME_KIND_COOLDOWN_HOURS") or 10)
+MARKET_SHOCK_SPACING_MINUTES = float(os.environ.get("MARKET_SHOCK_SPACING_MINUTES") or 15)
+
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
 CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
-                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,anchor,rsi_extreme,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
+                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,anchor,rsi_extreme,market_shock,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
 # Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
 LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 
