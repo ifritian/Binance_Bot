@@ -1117,6 +1117,23 @@ def _telegram_mover_poll(ticker: str, pct: float, minutes: int | None, price: fl
         queue_manager._set(crowd.KEY_POLLS, polls[-10:])
 
 
+def _crosspost_video(caption: str, mp4, poster, duration: float) -> None:
+    """Видео дублируется в Telegram и Bluesky сразу (без отложенной очереди: файл слишком большой для хранения в БД).
+    Каждая площадка независима, любая ошибка только логируется."""
+    if not config.VIDEO_CROSSPOST_ENABLED:
+        return
+    if telegram_publisher.is_configured():
+        try:
+            telegram_publisher.publish_video(caption, Path(mp4), Path(poster) if poster else None, duration)
+        except Exception as e:
+            logger.warning("Видео в Telegram не отправлено: %s", e)
+    if bluesky_publisher.is_configured():
+        try:
+            bluesky_publisher.publish_video(caption, mp4)
+        except Exception as e:
+            logger.warning("Видео в Bluesky не отправлено: %s", e)
+
+
 def try_publish_video() -> None:
     """Раз в сутки: 15-секундное видео с реальными данными рынка (эксперимент). Любая проблема (нет ffmpeg,
     ошибка API видео) просто откладывает попытку: текстовые посты это не затрагивает."""
@@ -1166,6 +1183,7 @@ def try_publish_video() -> None:
     logger.info("Опубликовано видео: %s", result)
     if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
         queue_manager.set_last_post_time("square_global")
+        _crosspost_video(text, mp4, poster, dur)
     queue_manager._set("video_done", today)
 
 
@@ -1202,6 +1220,7 @@ def _publish_video_kind(fmt: str, hour: int, parity: int, build) -> None:
     logger.info("Опубликовано видео %s: %s", fmt, result)
     if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
         queue_manager.set_last_post_time("square_global")
+        _crosspost_video(caption, mp4, poster, dur)
     queue_manager._set(f"{fmt}_done", today)
 
 
@@ -2614,6 +2633,7 @@ def try_publish_video_news() -> None:
     logger.info("Опубликована видео-новость (голос: %s): %s", voiced, story["title"][:80])
     if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
         queue_manager.set_last_post_time("square_global")
+        _crosspost_video(caption, mp4, poster, total)
     queue_manager._set("video_news_state", {"times": times + [now], "seen": (seen + [story["title"]])[-30:]})
 
 

@@ -101,6 +101,33 @@ def publish_post(text: str, image_path: Optional[Path] = None) -> dict:
     return result
 
 
+def publish_video(caption: str, video_path: Path, poster_path: Optional[Path] = None, duration: float | None = None,
+                  width: int = 720, height: int = 1280) -> dict:
+    """Видео в канал (sendVideo, потоковое воспроизведение). Подпись до 1024 символов; длиннее - обрезаем по строке,
+    остаток отдельным сообщением. TelegramPublishError при любой проблеме."""
+    chat_id = config.TELEGRAM_PUBLISH_CHANNEL
+    rest = ""
+    if len(caption) > _CAPTION_LIMIT:
+        cut = caption.rfind("\n", 0, _CAPTION_LIMIT)
+        cut = cut if cut > 200 else _CAPTION_LIMIT
+        caption, rest = caption[:cut].rstrip(), caption[cut:].strip()
+    data = {"chat_id": chat_id, "caption": caption, "supports_streaming": "true", "width": width, "height": height}
+    if duration:
+        data["duration"] = int(round(duration))
+    files = {"video": open(video_path, "rb")}
+    if poster_path is not None and Path(poster_path).exists():
+        files["thumbnail"] = open(poster_path, "rb")
+    try:
+        result = _post("sendVideo", data=data, files=files)
+    finally:
+        for f in files.values():
+            f.close()
+    if rest:
+        _post("sendMessage", data={"chat_id": chat_id, "text": rest})
+    logger.info("Видео опубликовано в Telegram: message_id=%s", result.get("message_id"))
+    return result
+
+
 def publish_poll(question: str, options: list, is_anonymous: bool = True) -> dict:
     """
     Публикует нативный Telegram-опрос (не обычное сообщение) - формат
