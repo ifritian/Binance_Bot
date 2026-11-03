@@ -207,6 +207,73 @@ def publish_post(
     return data
 
 
+_VIDEO_BASE = "https://video.bsky.app/xrpc"
+
+
+def _trim(text: str, limit: int = 295) -> str:
+    """Текст поста Bluesky - до 300 символов: режем по строкам/предложениям, не посреди слова."""
+    if len(text) <= limit:
+        return text
+    cut = max(text.rfind("\n", 0, limit), text.rfind(". ", 0, limit))
+    return (text[:cut] if cut > 80 else text[:limit].rsplit(" ", 1)[0]).rstrip()
+
+
+def _pds_host(session: dict) -> str:
+    for svc in (session.get("didDoc") or {}).get("service", []):
+        if str(svc.get("id", "")).endswith("#atproto_pds"):
+            return str(svc.get("serviceEndpoint", "")).replace("https://", "").rstrip("/")
+    return "bsky.social"
+
+
+def _upload_video(session: dict, video_bytes: bytes, name: str, wait_s: float = 150.0) -> dict:
+    """Загрузка видео через video.bsky.app: сервисный токен -> uploadVideo -> опрос задачи -> blob."""
+    import time as _t
+    token = session["accessJwt"]
+    did = session["did"]
+    try:
+        r = requests.get(f"{_PDS_BASE}/com.atproto.server.getServiceAuth",
+                         params={"aud": f"did:web:{_pds_host(session)}", "lxm": "com.atproto.repo.uploadBlob",
+                                 "exp": int(_t.time()) + 1800},
+                         headers={"Authorization": f"Bearer {token}"}, timeout=30)
+        auth = _parse(r, "getServiceAuth")["token"]
+        r = requests.post(f"{_VIDEO_BASE}/app.bsky.video.uploadVideo", params={"did": did, "name": name}, data=video_bytes,
+                          headers={"Authorization": f"Bearer {auth}", "Content-Type": "video/mp4"}, timeout=120)
+        data = r.json() if r.content else {}
+        job = data.get("jobId") or (data.get("jobStatus") or {}).get("jobId")
+        if not job:
+            raise BlueskyPublishError(f"Bluesky не принял видео: {data}")
+        deadline = _t.time() + wait_s
+        while _t.time() < deadline:
+            st = requests.get(f"{_VIDEO_BASE}/app.bsky.video.getJobStatus", params={"jobId": job}, timeout=30).json().get("jobStatus", {})
+            if st.get("blob"):
+                return st["blob"]
+            if st.get("state") == "JOB_STATE_FAILED":
+                raise BlueskyPublishError(f"Обработка видео в Bluesky не удалась: {st.get('error') or st}")
+            _t.sleep(3)
+    except requests.RequestException as e:
+        raise BlueskyPublishError(f"Сетевая ошибка при загрузке видео в Bluesky: {e}") from e
+    raise BlueskyPublishError("Видео в Bluesky не обработалось за отведённое время")
+
+
+def publish_video(text: str, video_path, alt: str = "Crypto market video", width: int = 720, height: int = 1280) -> dict:
+    """Пост с видео (app.bsky.embed.video). BlueskyPublishError при любой проблеме (в т.ч. аккаунт без подтверждённой почты)."""
+    from pathlib import Path as _P
+    path = _P(video_path)
+    session = _create_session()
+    blob = _upload_video(session, path.read_bytes(), path.name)
+    record = {"$type": "app.bsky.feed.post", "text": _trim(text), "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+              "embed": {"$type": "app.bsky.embed.video", "video": blob, "alt": alt, "aspectRatio": {"width": width, "height": height}}}
+    try:
+        resp = requests.post(f"{_PDS_BASE}/com.atproto.repo.createRecord",
+                             json={"repo": session["did"], "collection": "app.bsky.feed.post", "record": record},
+                             headers={"Authorization": f"Bearer {session['accessJwt']}"}, timeout=30)
+    except requests.RequestException as e:
+        raise BlueskyPublishError(f"Сетевая ошибка при публикации видео: {e}") from e
+    data = _parse(resp, "createRecord")
+    logger.info("Видео опубликовано в Bluesky: %s", data.get("uri"))
+    return data
+
+
 def publish_thread(posts: list, image_bytes: Optional[bytes] = None, image_content_type: str = "image/png") -> list:
     """
     Публикует цепочку постов как тред (первый пост - обычный, остальные -

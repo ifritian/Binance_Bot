@@ -827,6 +827,7 @@ WRY_ENABLED = (os.environ.get("WRY_ENABLED") or "true").strip().lower() in ("1",
 WRY_MIN_GAP_HOURS = float(os.environ.get("WRY_MIN_GAP_HOURS") or 44)
 WRY_MAX_PER_WEEK = int(os.environ.get("WRY_MAX_PER_WEEK") or 3)
 # Видео-новость (news_video.py): значимый сюжет, подтверждённый >=2 изданиями, ~30 с с голосом, графиком и субтитрами.
+VIDEO_CROSSPOST_ENABLED = (os.environ.get("VIDEO_CROSSPOST_ENABLED") or "true").strip().lower() in ("1", "true", "yes")   # видео также в Telegram и Bluesky
 VIDEO_VOICE_ENABLED = (os.environ.get("VIDEO_VOICE_ENABLED") or "true").strip().lower() in ("1", "true", "yes")   # голос+музыка в обычных видео
 VIDEO_NEWS_ENABLED = (os.environ.get("VIDEO_NEWS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 VIDEO_NEWS_MIN_GAP_HOURS = float(os.environ.get("VIDEO_NEWS_MIN_GAP_HOURS") or 20)
