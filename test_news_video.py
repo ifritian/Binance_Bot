@@ -28,6 +28,7 @@ def test_script_and_spoken_text():
     segs = nv.build_script(story, {"ticker": "SOL", "pct": 6.4, "btc_price": 73412.0, "btc_pct": -1.2, "fng": {"value": 34, "label": "Fear"}})
     assert [s["scene"] for s in segs] == ["story", "story", "chart", "context", "outro"]
     assert "S E C" in segs[0]["say"] and "E T F" in segs[0]["say"] and "$" not in segs[2]["say"]
+    assert "financial advice" not in segs[-1]["text"].lower() and "Vektor" in segs[-1]["text"]
     assert "73.4 thousand dollars" in segs[3]["say"] and "down 1.2 percent" in segs[3]["say"]
 
 
