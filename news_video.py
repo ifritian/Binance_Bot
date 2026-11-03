@@ -126,7 +126,16 @@ def _tts_dir() -> Path:
     return Path(os.environ.get("VEKTOR_TTS_DIR") or Path.home() / ".cache" / "vektor_tts")
 
 
+_TTS = {}
+
+
 def ensure_tts():
+    if "k" not in _TTS:
+        _TTS["k"] = _load_tts()
+    return _TTS["k"]
+
+
+def _load_tts():
     """Kokoro или None (нет сети/пакета/модели). Пакет и модель (~120 МБ) ставятся один раз, только когда видео реально собирается."""
     try:
         try:
@@ -428,11 +437,11 @@ def timeline(segs: list, durs: list, lead: float = LEAD_S) -> list:
     return out
 
 
-def _subtitle_state(tl: list, T: float):
+def _subtitle_state(tl: list, T: float, chunk: int = 6):
     for seg in tl:
         if seg["start"] <= T < seg["end"]:
             words = seg["text"].split()
-            chunks = [words[i:i + 6] for i in range(0, len(words), 6)]
+            chunks = [words[i:i + chunk] for i in range(0, len(words), chunk)]
             speech = seg["end"] - seg["start"] - 0.3
             tot = sum(len(w) + 1 for w in words)
             pos = (T - seg["start"]) / max(speech, 0.1) * tot

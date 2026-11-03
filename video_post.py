@@ -78,10 +78,10 @@ def scenes(duration: float = 15.0) -> dict:
     return {"majors": (0, 4.0 * k), "gainers": (4.0 * k, 8.5 * k), "losers": (8.5 * k, 12.0 * k), "mood": (12.0 * k, duration)}
 
 
-def _frame(t: float, data: dict, fng: dict | None, ts: datetime, duration: float = 15.0) -> Image.Image:
+def _frame(t: float, data: dict, fng: dict | None, ts: datetime, duration: float = 15.0, sc: dict | None = None) -> Image.Image:
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    sc = scenes(duration)
+    sc = sc or scenes(duration)
     _header(d, ts)
     name = next(n for n, (a, b) in sc.items() if t < b) if t < duration else "mood"
     a0, b0 = sc[name]
@@ -143,7 +143,6 @@ def _frame(t: float, data: dict, fng: dict | None, ts: datetime, duration: float
             d.rounded_rectangle([mx - 5, y - 14, mx + 5, y + 36], 4, fill=WHITE)
             _text(d, (x0, y + 56), "Fear", _font(26, False), MUTED)
             _text(d, (x1, y + 56), "Greed", _font(26, False), MUTED, "ra")
-        _text(d, (W // 2, 1100), "Not financial advice", _font(28, False), MUTED, "ma", fade)
         _text(d, (W // 2, 1160), "Full numbers in the post", _font(28, False), GOLD, "ma", fade)
     _progress(d, t, duration)
     return img
@@ -237,7 +236,6 @@ def _replay_frame(t: float, ticker: str, bars: list, ts: datetime, duration: flo
         cx = x0 + cw * (i + 0.5)
         d.line([(cx, sy(h)), (cx, sy(l))], fill=col, width=2)
         d.rectangle([cx - cw * 0.32, min(sy(o), sy(c)), cx + cw * 0.32, max(sy(o), sy(c)) + 2], fill=col)
-    _text(d, (W // 2, 1180), "Not financial advice", _font(26, False), MUTED, "ma")
     _progress(d, t, duration)
     return img
 
@@ -268,8 +266,8 @@ def replay_caption(ticker: str, bars: list, rng: random.Random | None = None) ->
                       "", voice_variety.disclaimer(rng), "", f"#{ticker}"])
 
 
-def frame(t, data, fng, ts, duration=15.0):
-    return _sting(_frame(t, data, fng, ts, duration), t)
+def frame(t, data, fng, ts, duration=15.0, sc=None):
+    return _sting(_frame(t, data, fng, ts, duration, sc), t)
 
 
 def map_frame(t, tiles, ts, duration=12.0):
