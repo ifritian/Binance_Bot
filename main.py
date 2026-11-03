@@ -46,6 +46,7 @@ import market_shock
 import binance_breaking
 import emoji_accent
 import wry
+import news_video
 import anchors
 import funding_radar
 import brand
@@ -2530,6 +2531,58 @@ def try_publish_wry() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def try_publish_video_news() -> None:
+    """Видео-новость: значимый сюжет (>=2 издания) в стиле новостной сводки с голосом, графиком и субтитрами."""
+    if not (config.VIDEO_ENABLED and config.VIDEO_NEWS_ENABLED) or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    if not queue_manager.should_retry_now("video_news") or not _square_slot_available():
+        return
+    now = time.time()
+    st = queue_manager._get("video_news_state") or {}
+    times = [t for t in st.get("times", []) if now - t < 7 * 86400]
+    if len(times) >= config.VIDEO_NEWS_MAX_PER_WEEK or (times and now - max(times) < config.VIDEO_NEWS_MIN_GAP_HOURS * 3600):
+        return
+    if queue_manager.seconds_since_last_post("video_news_scan") < 1800:
+        return
+    queue_manager.set_last_post_time("video_news_scan")
+    seen = list(st.get("seen", []))
+    story = news_video.pick_story(news_radar.fetch_news(now, 12.0), seen, now)
+    if story is None:
+        return
+    try:
+        rows = market_digest.fetch_ticker_rows()
+        coins = market_shock.collect(rows, coin_whitelist.allowed_tickers(), market_digest.HOT_MIN_VOLUME_USD) if rows else []
+        btc = next((c for c in coins if c[0] == "BTC"), None)
+        if btc is None:
+            return
+        ticker = story["ticker"] if story["ticker"] and any(c[0] == story["ticker"] for c in coins) else "BTC"
+        coin = next(c for c in coins if c[0] == ticker)
+        bars = mover_setups.fetch_klines(ticker, "1h", 48)
+        if len(bars) < 24:
+            queue_manager.set_retry_backoff("video_news", 1)
+            return
+        ctx = {"ticker": ticker, "pct": coin[2], "bars": bars, "btc_price": btc[1], "btc_pct": btc[2], "fng": event_posts.fetch_fng()}
+        tape = [(c[0], c[1], c[2]) for c in coins[:10]]
+        mp4, poster, total, voiced = news_video.render(story, ctx, Path("charts") / "news_video.mp4", tape)
+        caption = news_video.build_caption(story, ctx)
+    except Exception as e:
+        logger.exception("Видео-новость: не удалось собрать: %s", e)
+        queue_manager.set_retry_backoff("video_news", 3)
+        return
+    try:
+        binance_publisher.tag_format("video_news")
+        result = binance_publisher.publish_video(caption, mp4, total, poster)
+    except binance_publisher.PublishError as e:
+        logger.error("Ошибка публикации видео-новости: %s", e)
+        _record_publish_error("video_news", e)
+        queue_manager.set_retry_backoff("video_news", 3)
+        return
+    logger.info("Опубликована видео-новость (голос: %s): %s", voiced, story["title"][:80])
+    if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
+        queue_manager.set_last_post_time("square_global")
+    queue_manager._set("video_news_state", {"times": times + [now], "seen": (seen + [story["title"]])[-30:]})
+
+
 def try_publish_telegram_poll() -> None:
     """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
     вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
@@ -3068,6 +3121,7 @@ def tick() -> None:
         try_publish_fng_post()   # дневной слот: идёт раньше событийных форматов, иначе они забирают окно
         try_publish_square_question()
         try_publish_wry()
+        try_publish_video_news()
         try_publish_mover_result()
         try_publish_mover_followup()
         try_publish_video()
