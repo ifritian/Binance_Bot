@@ -110,7 +110,11 @@ def build_script(story: dict, ctx: dict) -> list:
             txt += f" Fear and Greed Index: {fng['value']}, {fng['label']}."
             say += f" The Fear and Greed Index reads {fng['value']}, {fng['label']}."
         segs.append({"scene": "context", "text": txt, "say": say})
-    segs.append({"scene": "outro", "text": f"This is {config.PROJECT_NAME}. Not financial advice."})
+    closings = [f"That is where things stand. This is {config.PROJECT_NAME}, back with more when the market moves.",
+                f"We will keep watching this one. {config.PROJECT_NAME}, your crypto news in thirty seconds.",
+                f"More updates as the story develops. This is {config.PROJECT_NAME}.",
+                f"That was the story. Stay sharp out there. {config.PROJECT_NAME}."]
+    segs.append({"scene": "outro", "text": closings[sum(map(ord, story["title"])) % len(closings)]})
     for s in segs:
         s.setdefault("say", _say(s["text"]))
     return segs
@@ -388,7 +392,7 @@ def _scene_outro(d, st: float):
     _text(d, (W // 2, 520), config.PROJECT_NAME.upper(), _font(64), GOLD, "mm", a)
     d.rectangle([W // 2 - int(170 * a), 570, W // 2 + int(170 * a), 574], fill=GOLD)
     _text(d, (W // 2, 640), "Market news, charts and honest results", _font(28, False), WHITE, "mm", a)
-    _text(d, (W // 2, 700), "Not financial advice", _font(24, False), MUTED, "mm", a)
+    _text(d, (W // 2, 700), "Follow for more market news", _font(24, False), MUTED, "mm", a)
 
 
 def _subtitle(img: Image.Image, d, words_state: tuple):
@@ -516,7 +520,6 @@ def render(story: dict, ctx: dict, out: Path, tape: list, ts: datetime | None = 
 
 
 def build_caption(story: dict, ctx: dict, rng: random.Random | None = None) -> str:
-    import voice_variety
     rng = rng or random
     t = ctx.get("ticker")
     head = rng.choice(["Crypto news in 30 seconds", "The story everyone is reading, in 30 seconds", "News brief: what happened and what the market did"])
@@ -526,5 +529,5 @@ def build_caption(story: dict, ctx: dict, rng: random.Random | None = None) -> s
     if ctx.get("btc_pct") is not None:
         lines.append(f"$BTC {vp._pct(ctx['btc_pct'])}.")
     lines += ["", rng.choice(["Does this change anything for you?", "Noise or a real shift? Your read?", "Priced in, or not yet?"]),
-              "", voice_variety.disclaimer(rng), "", "#CryptoNews"]
+              "", "#CryptoNews"]
     return "\n".join(lines)
