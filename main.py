@@ -1137,8 +1137,19 @@ def try_publish_video() -> None:
     fng = event_posts.fetch_fng()
     import video_post
     out = Path("charts") / "market_video.mp4"
+    dur = 15.0
     try:
-        mp4, poster = video_post.render(data, fng, out, ts=now)
+        mp4 = poster = None
+        if config.VIDEO_VOICE_ENABLED:
+            try:
+                import video_voice
+                mp4, poster, dur, _voiced = video_voice.render_market(data, fng, out, ts=now)
+            except Exception:
+                logger.exception("Видео: озвучка не удалась, собираю тихую версию")
+                mp4 = None
+        if mp4 is None:
+            dur = 15.0
+            mp4, poster = video_post.render(data, fng, out, ts=now)
     except Exception as e:
         logger.error("Видео: не удалось собрать ролик: %s", e)
         queue_manager.set_retry_backoff("video", 3)
@@ -1146,7 +1157,7 @@ def try_publish_video() -> None:
     text = video_post.build_caption(data, fng)
     try:
         binance_publisher.tag_format("video")
-        result = binance_publisher.publish_video(text, mp4, 15.0, poster)
+        result = binance_publisher.publish_video(text, mp4, dur, poster)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации видео: %s", e)
         _record_publish_error("video", e)
@@ -1178,10 +1189,11 @@ def _publish_video_kind(fmt: str, hour: int, parity: int, build) -> None:
     if built is None:
         queue_manager.set_retry_backoff(fmt, 0.5)
         return
-    mp4, poster, caption = built
+    mp4, poster, caption = built[:3]
+    dur = built[3] if len(built) > 3 else 12.0
     try:
         binance_publisher.tag_format(fmt)
-        result = binance_publisher.publish_video(caption, mp4, 12.0, poster)
+        result = binance_publisher.publish_video(caption, mp4, dur, poster)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации видео %s: %s", fmt, e)
         _record_publish_error(fmt, e)
@@ -1202,8 +1214,19 @@ def try_publish_video_map() -> None:
         tiles = [(r["sym"], r["pct"], r["vol"]) for r in site_heatmap.top_rows(rows, coin_whitelist.allowed_tickers(), 12)]
         if len(tiles) < 6:
             return None
-        mp4, poster = video_post.render_map(tiles, Path("charts") / "map_video.mp4", ts=now)
-        return mp4, poster, video_post.map_caption(tiles)
+        out = Path("charts") / "map_video.mp4"
+        mp4, dur = None, 12.0
+        if config.VIDEO_VOICE_ENABLED:
+            try:
+                import video_voice
+                mp4, poster, dur, _v = video_voice.render_map(tiles, out, ts=now)
+            except Exception:
+                logger.exception("Видео-карта: озвучка не удалась, собираю тихую версию")
+                mp4 = None
+        if mp4 is None:
+            dur = 12.0
+            mp4, poster = video_post.render_map(tiles, out, ts=now)
+        return mp4, poster, video_post.map_caption(tiles), dur
     _publish_video_kind("video_map", config.VIDEO_MAP_HOUR_UTC, 0, build)
 
 
@@ -1218,8 +1241,19 @@ def try_publish_video_replay() -> None:
         bars = mover_setups.fetch_klines(ticker, "1h", 24)
         if len(bars) < 20:
             return None
-        mp4, poster = video_post.render_replay(ticker, bars, Path("charts") / "replay_video.mp4", ts=now)
-        return mp4, poster, video_post.replay_caption(ticker, bars)
+        out = Path("charts") / "replay_video.mp4"
+        mp4, dur = None, 12.0
+        if config.VIDEO_VOICE_ENABLED:
+            try:
+                import video_voice
+                mp4, poster, dur, _v = video_voice.render_replay(ticker, bars, out, ts=now)
+            except Exception:
+                logger.exception("Видео-реплей: озвучка не удалась, собираю тихую версию")
+                mp4 = None
+        if mp4 is None:
+            dur = 12.0
+            mp4, poster = video_post.render_replay(ticker, bars, out, ts=now)
+        return mp4, poster, video_post.replay_caption(ticker, bars), dur
     _publish_video_kind("video_replay", config.VIDEO_REPLAY_HOUR_UTC, 1, build)
 
 
