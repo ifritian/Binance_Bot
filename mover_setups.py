@@ -65,11 +65,12 @@ def atr(bars: list, n: int = ATR_N) -> float | None:
     return sum(trs[-n:]) / n
 
 
-def build_setup(ticker: str, price: float, pct24: float, bars_1h: list) -> dict | None:
+def build_setup(ticker: str, price: float, pct24: float, bars_1h: list, side: str | None = None, mode: str = "momentum") -> dict | None:
+    """side=None - по направлению движения за 24ч (momentum); side='long'/'short' - явная сторона (идея против движения, mode='fade')."""
     a = atr(bars_1h)
-    if a is None or price <= 0 or pct24 == 0:
+    if a is None or price <= 0 or (pct24 == 0 and side is None):
         return None
-    side = "long" if pct24 > 0 else "short"
+    side = side or ("long" if pct24 > 0 else "short")
     dist = max(STOP_ATR * a, price * MIN_STOP_PCT / 100)
     if side == "long":
         stop, target = price - dist, price + RR * dist
@@ -78,7 +79,7 @@ def build_setup(ticker: str, price: float, pct24: float, bars_1h: list) -> dict 
     if stop <= 0 or target <= 0:
         return None
     return {"ticker": ticker, "side": side, "entry": price, "stop": stop, "target": target,
-            "pct24": pct24, "dist_pct": dist / price * 100}
+            "pct24": pct24, "dist_pct": dist / price * 100, "mode": mode}
 
 
 def register(setup: dict, now_ts: float | None = None) -> None:

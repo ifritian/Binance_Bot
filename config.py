@@ -268,6 +268,10 @@ FUNDING_HOUR_UTC = int(os.environ.get("FUNDING_HOUR_UTC") or "9")
 ANCHORS_ENABLED = (os.environ.get("ANCHORS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 TELEGRAM_BOT_ENABLED = (os.environ.get("TELEGRAM_BOT_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 TELEGRAM_BOT_PROMO_PROBABILITY = float(os.environ.get("TELEGRAM_BOT_PROMO_PROBABILITY") or 0.3)
+# Формат "Trade idea" (trade_idea.py): вход/стоп/цель с разным тоном. Доля горячих монет, оформляемых как идея (иначе - пост с уровнями),
+# и вероятность, что RSI-алерт сопровождается идеей против движения.
+TRADE_IDEA_SHARE = float(os.environ.get("TRADE_IDEA_SHARE") or 0.65)
+RSI_IDEA_PROBABILITY = float(os.environ.get("RSI_IDEA_PROBABILITY") or 0.75)
 RSI_ALERT_ENABLED = (os.environ.get("RSI_ALERT_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 RSI_ALERT_MAX_PER_DAY = int(os.environ.get("RSI_ALERT_MAX_PER_DAY") or 3)
 RSI_MIN_MOVE_PCT = float(os.environ.get("RSI_MIN_MOVE_PCT") or 3.0)     # кандидаты: |изменение за 24ч| не меньше
@@ -275,7 +279,7 @@ RSI_SCAN_MIN_GAP_SECONDS = float(os.environ.get("RSI_SCAN_MIN_GAP_SECONDS") or 2
 LEVEL_CHECK_ENABLED = (os.environ.get("LEVEL_CHECK_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 LEVEL_CHECK_HOUR_UTC = int(os.environ.get("LEVEL_CHECK_HOUR_UTC") or "11")
 HOT_MOVER_SPACING_MINUTES = float(os.environ.get("HOT_MOVER_SPACING_MINUTES") or "20")
-MOVER_SETUPS_ENABLED = (os.environ.get("MOVER_SETUPS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
+MOVER_SETUPS_ENABLED = (os.environ.get("MOVER_SETUPS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 # Сигналы по корзине индекса (index_signal_scanner) и "Забрали профит!" строятся на тех
 # же стратегиях, что и старый сканер (отрицательное ожидание) - по умолчанию выключены.
 INDEX_SIGNALS_ENABLED = (os.environ.get("INDEX_SIGNALS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
