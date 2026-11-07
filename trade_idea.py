@@ -38,8 +38,8 @@ def _levels(setup: dict, s: dict | None, mode_label: str) -> list:
     tp_sign, st_sign = ("+", "-") if side == "long" else ("-", "+")
     return [f"Entry: {ms._px(setup['entry'])}",
             f"Stop: {ms._px(setup['stop'])} ({st_sign}{risk:.1f}%)",
-            f"Target: {ms._px(setup['target'])} ({tp_sign}{risk * ms.RR:.1f}%)",
-            f"{mode_label}. Risk/reward 1:{ms.RR:.0f}. Idea expires after 24h."]
+            f"Target: {ms._px(setup['target'])} ({tp_sign}{risk * setup.get('rr', ms.RR):.1f}%)",
+            f"{mode_label}. Risk/reward 1:{setup.get('rr', ms.RR):g}. Idea expires after {setup.get('hold_h', 24)}h."]
 
 
 def _hook(setup: dict, tone: str, rsi: dict | None, rng) -> str:
