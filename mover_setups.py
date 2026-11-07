@@ -28,6 +28,15 @@ STOP_ATR = 1.5
 MIN_STOP_PCT = 1.0
 RR = 2.0
 HOLD_S = 24 * 3600
+# Параметры по режимам - из годового бэктеста (sweep_ideas.py, 60 монет, 448 конфигураций): ни одна конфигурация не плюсовая со значимостью,
+# но эти две плюсовые в обеих половинах истории (momentum >=15% за сутки: +0.17%/идею, fade >=10% с широким стопом: +0.13%/идею),
+# а прежнее правило (1.5 ATR, 1:2, 24ч, порог 6%) давало -0.27%/идею при t=-4.8. Это ГИПОТЕЗА для живой проверки, не доказанная стратегия.
+PARAMS = {"momentum": {"stop_atr": 1.5, "rr": 1.5, "hold_h": 24, "min_pct": 15.0},
+          "fade": {"stop_atr": 3.0, "rr": 2.0, "hold_h": 72, "min_pct": 10.0}}
+
+
+def eligible(mode: str, pct24: float) -> bool:
+    return abs(pct24) >= PARAMS[mode]["min_pct"]
 COST_PCT = 0.15
 CLOSED_CAP = 300
 MIN_RECORD = 5   # столько закрытых идей нужно, чтобы показывать счёт в постах
@@ -71,15 +80,16 @@ def build_setup(ticker: str, price: float, pct24: float, bars_1h: list, side: st
     if a is None or price <= 0 or (pct24 == 0 and side is None):
         return None
     side = side or ("long" if pct24 > 0 else "short")
-    dist = max(STOP_ATR * a, price * MIN_STOP_PCT / 100)
+    prm = PARAMS.get(mode, PARAMS["momentum"])
+    dist = max(prm["stop_atr"] * a, price * MIN_STOP_PCT / 100)
     if side == "long":
-        stop, target = price - dist, price + RR * dist
+        stop, target = price - dist, price + prm["rr"] * dist
     else:
-        stop, target = price + dist, price - RR * dist
+        stop, target = price + dist, price - prm["rr"] * dist
     if stop <= 0 or target <= 0:
         return None
     return {"ticker": ticker, "side": side, "entry": price, "stop": stop, "target": target,
-            "pct24": pct24, "dist_pct": dist / price * 100, "mode": mode}
+            "pct24": pct24, "dist_pct": dist / price * 100, "mode": mode, "rr": prm["rr"], "hold_h": prm["hold_h"]}
 
 
 def register(setup: dict, now_ts: float | None = None) -> None:
@@ -110,7 +120,7 @@ def evaluate_one(pos: dict, bars: list, now_ts: float) -> dict | None:
             return {"outcome": "stop", "exit": pos["stop"], "net": _net(pos["side"], pos["entry"], pos["stop"])}
         if hit_tp:
             return {"outcome": "target", "exit": pos["target"], "net": _net(pos["side"], pos["entry"], pos["target"])}
-    if now_ts - pos["t0"] >= HOLD_S:
+    if now_ts - pos["t0"] >= pos.get("hold_h", 24) * 3600:
         last = bars[-1][4] if bars else pos["entry"]
         return {"outcome": "time", "exit": last, "net": _net(pos["side"], pos["entry"], last)}
     return None
@@ -122,10 +132,10 @@ def advance(now_ts: float | None = None, fetch=None) -> None:
     st = _state()
     still = []
     for pos in st["open"]:
-        bars = fetch(pos["ticker"], "15m", 200, int(pos["t0"] * 1000))
+        bars = fetch(pos["ticker"], "15m", 500, int(pos["t0"] * 1000))
         res = evaluate_one(pos, bars, now_ts) if bars else None
         if res is None:
-            if now_ts - pos["t0"] > HOLD_S + 6 * 3600:   # данные так и не получили - не копим
+            if now_ts - pos["t0"] > pos.get("hold_h", 24) * 3600 + 6 * 3600:   # данные так и не получили - не копим
                 continue
             still.append(pos)
             continue

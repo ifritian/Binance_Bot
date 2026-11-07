@@ -1068,7 +1068,7 @@ def try_publish_hot_mover() -> None:
     fp, fm = ev["fast_pct"], ev["fast_min"]
     setup = levels = None
     if config.SQUARE_TEMPLATE_LANG == "en":
-        if config.MOVER_SETUPS_ENABLED and random.random() < config.TRADE_IDEA_SHARE:
+        if config.MOVER_SETUPS_ENABLED and mover_setups.eligible("momentum", pct) and random.random() < config.TRADE_IDEA_SHARE:
             setup = mover_setups.build_setup(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 60))
         if setup is None:
             levels = mover_levels.build_levels(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 72),
@@ -2397,7 +2397,7 @@ def try_publish_rsi_alert() -> None:
         return
     t, pct, price, bars, d = hit
     setup = None
-    if config.MOVER_SETUPS_ENABLED and random.random() < config.RSI_IDEA_PROBABILITY:
+    if config.MOVER_SETUPS_ENABLED and mover_setups.eligible("fade", pct) and random.random() < config.RSI_IDEA_PROBABILITY:
         setup = mover_setups.build_setup(t, price, pct, bars[-60:], side="short" if d["kind"] == "high" else "long", mode="fade")
     text = _trade_idea_text(setup, d) if setup else rsi_alert.build_text(t, d, price, pct, mover_setups._px)
     img = rsi_alert.chart(t, bars, d, Path("charts") / f"{t}_rsi.png")

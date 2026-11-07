@@ -18,7 +18,7 @@ def _bars(n=30, price=100.0, rng=1.0):
 def test_build_setup_long_and_short():
     s = ms.build_setup("SOL", 100.0, 8.0, _bars())
     assert s["side"] == "long" and s["stop"] < 100 < s["target"]
-    assert abs((s["target"] - 100) - 2 * (100 - s["stop"])) < 1e-9
+    assert abs((s["target"] - 100) - s["rr"] * (100 - s["stop"])) < 1e-9 and s["rr"] == 1.5
     d = ms.build_setup("SOL", 100.0, -8.0, _bars())
     assert d["side"] == "short" and d["stop"] > 100 > d["target"]
     assert s["dist_pct"] >= ms.MIN_STOP_PCT
@@ -63,3 +63,13 @@ def test_register_advance_stats_and_texts():
 def test_record_line_with_enough_closed():
     line = ms.record_line({"closed": 10, "wins": 4, "avg_net": -0.3, "open": 0})
     assert "4/10" in line and "-0.30%" in line
+
+
+def test_mode_params_and_eligibility():
+    assert ms.eligible("momentum", 16.0) and not ms.eligible("momentum", 8.0)
+    assert ms.eligible("fade", -11.0) and not ms.eligible("fade", 7.0)
+    f = ms.build_setup("SOL", 100.0, 12.0, _bars(), side="short", mode="fade")
+    assert f["rr"] == 2.0 and f["hold_h"] == 72 and (f["stop"] - 100) >= 1.0
+    # 72-часовая идея не закрывается по времени раньше срока
+    assert ms.evaluate_one(dict(f, t0=0.0), [(0, 100, 100.2, 99.9, 100)], 48 * 3600) is None
+    assert ms.evaluate_one(dict(f, t0=0.0), [(0, 100, 100.2, 99.9, 100)], 73 * 3600)["outcome"] == "time"
