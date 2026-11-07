@@ -46,6 +46,7 @@ import market_shock
 import binance_breaking
 import emoji_accent
 import wry
+import trade_idea
 import news_video
 import anchors
 import funding_radar
@@ -947,6 +948,14 @@ def try_publish_trend_breakout() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def _trade_idea_text(setup: dict, rsi: dict | None = None) -> str:
+    """Текст идеи (вход/стоп/цель) в одном из тонов; тон подряд не повторяется."""
+    last = queue_manager._get("trade_idea_last_tone")
+    tone = trade_idea.pick_tone(setup["ticker"], last, rsi["kind"] if rsi else None)
+    queue_manager._set("trade_idea_last_tone", tone)
+    return trade_idea.build_text(setup, tone, rsi=rsi)
+
+
 def _mover_setup_chart(setup: dict):
     """График сетапа: часовые свечи + линии входа/стопа/цели. None при сбое."""
     try:
@@ -957,7 +966,7 @@ def _mover_setup_chart(setup: dict):
                     "volume": b[5] if len(b) > 5 else 0.0} for b in bars]
         return chart_generator.generate_trade_chart(
             setup["ticker"], candles, entry=setup["entry"], stop=setup["stop"], target=setup["target"],
-            title=f"Momentum {setup['side']} idea", suffix="_mover", tf_label="1h",
+            title=f"{'Counter-trend' if setup.get('mode') == 'fade' else 'Momentum'} {setup['side']} idea", suffix="_mover", tf_label="1h",
             sketch_side=setup["side"])
     except Exception:
         logger.exception("Не удалось построить график сетапа %s", setup.get("ticker"))
@@ -1059,13 +1068,13 @@ def try_publish_hot_mover() -> None:
     fp, fm = ev["fast_pct"], ev["fast_min"]
     setup = levels = None
     if config.SQUARE_TEMPLATE_LANG == "en":
-        if config.MOVER_SETUPS_ENABLED:
+        if config.MOVER_SETUPS_ENABLED and random.random() < config.TRADE_IDEA_SHARE:
             setup = mover_setups.build_setup(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 60))
-        else:
+        if setup is None:
             levels = mover_levels.build_levels(ticker, price, pct, mover_setups.fetch_klines(ticker, "1h", 72),
                                                fast_pct=fp, fast_min=fm)
     if setup:
-        text = mover_setups.build_text(setup)
+        text = _trade_idea_text(setup)
         chart = _mover_setup_chart(setup)
     elif levels:
         text = mover_levels.build_text(levels)
@@ -2387,16 +2396,26 @@ def try_publish_rsi_alert() -> None:
     if hit is None:
         return
     t, pct, price, bars, d = hit
-    text = rsi_alert.build_text(t, d, price, pct, mover_setups._px)
+    setup = None
+    if config.MOVER_SETUPS_ENABLED and random.random() < config.RSI_IDEA_PROBABILITY:
+        setup = mover_setups.build_setup(t, price, pct, bars[-60:], side="short" if d["kind"] == "high" else "long", mode="fade")
+    text = _trade_idea_text(setup, d) if setup else rsi_alert.build_text(t, d, price, pct, mover_setups._px)
     img = rsi_alert.chart(t, bars, d, Path("charts") / f"{t}_rsi.png")
+    imgs = [img] if img else []
+    if setup:
+        sc = _mover_setup_chart(setup)
+        if sc:
+            imgs.append(sc)
     try:
-        _post("rsi_extreme", text, image_paths=[img] if img else None)
+        _post("rsi_extreme", text, image_paths=imgs or None)
     except binance_publisher.PublishError as e:
         logger.error("Ошибка публикации RSI-алерта: %s", e)
         _record_publish_error("rsi_extreme", e)
         queue_manager.set_retry_backoff("rsi_alert", 1)
         return
-    logger.info("Опубликован RSI-алерт %s (RSI %.0f)", t, d["rsi"])
+    logger.info("Опубликован RSI-алерт %s (RSI %.0f%s)", t, d["rsi"], ", с идеей" if setup else "")
+    if setup:
+        mover_setups.register(setup, now)
     log[t] = now
     queue_manager._set(rsi_alert.KEY, log)
     fl = [f for f in (queue_manager._get("mover_followups") or []) if now - f["ts"] < 48 * 3600]
