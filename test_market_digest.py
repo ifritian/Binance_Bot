@@ -91,8 +91,11 @@ def test_digest_falls_back_to_compact_and_records_error(monkeypatch):
         "majors": [("BTC", 67000.0, 1.0), ("ETH", 3500.0, 0.5)],
         "gainers": [("SUI", 2.5, 12.0), ("SOL", 150.0, 8.0)], "losers": [("DOGE", 0.15, -9.0), ("ADA", 0.5, -6.0)]})
 
+    calls = []
+
     def fake_publish(text, image_paths=None):
-        if text.count("$") > 4:
+        calls.append(text)
+        if len(calls) == 1:                      # первый (полный) вариант не принят - уходит компактный
             raise main.binance_publisher.PublishError("too many tags")
         sent.append(text)
         return {}

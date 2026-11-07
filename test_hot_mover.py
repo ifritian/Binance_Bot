@@ -46,9 +46,10 @@ def test_publish_with_setup_registers_idea(monkeypatch):
     import mover_setups
     sent, reg = [], []
     monkeypatch.setattr(market_digest, "fetch_ticker_rows", lambda: [])
-    monkeypatch.setattr(market_digest, "pick_hot_event", lambda *a, **k: {"ticker": "SUI", "price": 2.5, "pct24": 12.0, "fast_pct": None, "fast_min": None})
+    monkeypatch.setattr(market_digest, "pick_hot_event", lambda *a, **k: {"ticker": "SUI", "price": 2.5, "pct24": 18.0, "fast_pct": None, "fast_min": None})
     monkeypatch.setattr(main.config, "SQUARE_TEMPLATE_LANG", "en")
     monkeypatch.setattr(main.config, "MOVER_SETUPS_ENABLED", True)
+    monkeypatch.setattr(main.config, "TRADE_IDEA_SHARE", 1.0)
     bars = [(i * 3600_000, 2.5, 2.55, 2.45, 2.5) for i in range(40)]
     monkeypatch.setattr(mover_setups, "fetch_klines", lambda *a, **k: bars)
     monkeypatch.setattr(mover_setups, "register", lambda s, now=None: reg.append(s))

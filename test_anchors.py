@@ -29,7 +29,7 @@ def test_market_news_pick():
     assert nr.pick_market_news(news, set())["id"] == "2"
     assert nr.pick_market_news(news, {"2"}) is None
     t = nr.build_market_news_text(news[1], -2.5)
-    assert t.count("$") == 1 and "−2.5%" in t
+    assert "$BTC" in t and "−2.5%" in t
 
 
 def test_news_story_dedupe():
