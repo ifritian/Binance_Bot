@@ -31,14 +31,23 @@ HOLD_S = 24 * 3600
 # Параметры по режимам - из годового бэктеста (sweep_ideas.py, 60 монет, 448 конфигураций): ни одна конфигурация не плюсовая со значимостью,
 # но эти две плюсовые в обеих половинах истории (momentum >=15% за сутки: +0.17%/идею, fade >=10% с широким стопом: +0.13%/идею),
 # а прежнее правило (1.5 ATR, 1:2, 24ч, порог 6%) давало -0.27%/идею при t=-4.8. Это ГИПОТЕЗА для живой проверки, не доказанная стратегия.
-PARAMS = {"momentum": {"stop_atr": 1.5, "rr": 1.5, "hold_h": 24, "min_pct": 15.0},
-          "fade": {"stop_atr": 3.0, "rr": 2.0, "hold_h": 72, "min_pct": 10.0}}
+PARAMS = {"momentum": {"stop_atr": 2.0, "rr": 1.0, "hold_h": 12, "min_pct": 15.0, "name": "m2.0/1.0/12h"},
+          "fade": {"stop_atr": 3.0, "rr": 2.0, "hold_h": 72, "min_pct": 10.0, "name": "f3.0/2.0/72h"}}
+# Теневые варианты: те же сигналы отслеживаются тихо (без постов) с другим стопом/целью/сроком, чтобы быстрее понять, какое соотношение
+# риск/прибыль работает вживую. В постах - только основной вариант (PARAMS). Итоги по вариантам: variant_stats().
+VARIANTS = {"momentum": [{"stop_atr": 1.5, "rr": 1.5, "hold_h": 24, "name": "m1.5/1.5/24h"},
+                         {"stop_atr": 1.5, "rr": 2.0, "hold_h": 24, "name": "m1.5/2.0/24h"},
+                         {"stop_atr": 2.0, "rr": 1.5, "hold_h": 24, "name": "m2.0/1.5/24h"},
+                         {"stop_atr": 3.0, "rr": 1.0, "hold_h": 24, "name": "m3.0/1.0/24h"}],
+            "fade": [{"stop_atr": 3.0, "rr": 1.5, "hold_h": 72, "name": "f3.0/1.5/72h"},
+                     {"stop_atr": 3.0, "rr": 1.0, "hold_h": 72, "name": "f3.0/1.0/72h"},
+                     {"stop_atr": 2.0, "rr": 2.0, "hold_h": 48, "name": "f2.0/2.0/48h"}]}
 
 
 def eligible(mode: str, pct24: float) -> bool:
     return abs(pct24) >= PARAMS[mode]["min_pct"]
 COST_PCT = 0.15
-CLOSED_CAP = 300
+CLOSED_CAP = 800
 MIN_RECORD = 5   # столько закрытых идей нужно, чтобы показывать счёт в постах
 
 
@@ -74,13 +83,14 @@ def atr(bars: list, n: int = ATR_N) -> float | None:
     return sum(trs[-n:]) / n
 
 
-def build_setup(ticker: str, price: float, pct24: float, bars_1h: list, side: str | None = None, mode: str = "momentum") -> dict | None:
+def build_setup(ticker: str, price: float, pct24: float, bars_1h: list, side: str | None = None, mode: str = "momentum",
+                variant: dict | None = None) -> dict | None:
     """side=None - по направлению движения за 24ч (momentum); side='long'/'short' - явная сторона (идея против движения, mode='fade')."""
     a = atr(bars_1h)
     if a is None or price <= 0 or (pct24 == 0 and side is None):
         return None
     side = side or ("long" if pct24 > 0 else "short")
-    prm = PARAMS.get(mode, PARAMS["momentum"])
+    prm = variant if variant else PARAMS.get(mode, PARAMS["momentum"])
     dist = max(prm["stop_atr"] * a, price * MIN_STOP_PCT / 100)
     if side == "long":
         stop, target = price - dist, price + prm["rr"] * dist
@@ -89,7 +99,36 @@ def build_setup(ticker: str, price: float, pct24: float, bars_1h: list, side: st
     if stop <= 0 or target <= 0:
         return None
     return {"ticker": ticker, "side": side, "entry": price, "stop": stop, "target": target,
-            "pct24": pct24, "dist_pct": dist / price * 100, "mode": mode, "rr": prm["rr"], "hold_h": prm["hold_h"]}
+            "pct24": pct24, "dist_pct": dist / price * 100, "mode": mode, "rr": prm["rr"], "hold_h": prm["hold_h"], "variant": prm.get("name", mode)}
+
+
+def build_shadows(ticker: str, price: float, pct24: float, bars_1h: list, side: str | None, mode: str) -> list:
+    """Теневые варианты той же идеи (без поста): другой стоп/цель/срок."""
+    out = []
+    for v in VARIANTS.get(mode, []):
+        sh = build_setup(ticker, price, pct24, bars_1h, side=side, mode=mode, variant=v)
+        if sh:
+            out.append(sh)
+    return out
+
+
+def register_with_shadows(setup: dict, shadows: list, now_ts: float | None = None) -> None:
+    register(setup, now_ts)
+    for sh in shadows:
+        register(dict(sh, shadow=True), now_ts)
+
+
+def variant_stats() -> dict:
+    """{вариант: {n, wins, avg_net, live}} по закрытым идеям, включая теневые."""
+    out = {}
+    for c in _state()["closed"]:
+        v = c.get("variant") or c.get("mode", "momentum")
+        d = out.setdefault(v, {"n": 0, "wins": 0, "sum": 0.0, "live": False})
+        d["n"] += 1
+        d["wins"] += 1 if c["net"] > 0 else 0
+        d["sum"] += c["net"]
+        d["live"] = d["live"] or not c.get("shadow")
+    return {k: {"n": d["n"], "wins": d["wins"], "avg_net": round(d["sum"] / d["n"], 2), "live": d["live"]} for k, d in out.items()}
 
 
 def register(setup: dict, now_ts: float | None = None) -> None:
@@ -150,7 +189,7 @@ def pending_result():
     """Закрытая идея, по которой ещё не было поста об итоге (свежее 12ч)."""
     now = time.time()
     for c in _state()["closed"]:
-        if not c.get("posted_result") and now - c.get("closed_t", 0) < 12 * 3600:
+        if not c.get("posted_result") and not c.get("shadow") and now - c.get("closed_t", 0) < 12 * 3600:
             return c
     return None
 
@@ -165,10 +204,10 @@ def mark_result_posted(closed_t: float) -> None:
 
 def stats() -> dict:
     st = _state()
-    cl = st["closed"]
+    cl = [c for c in st["closed"] if not c.get("shadow")]
     wins = sum(1 for c in cl if c["net"] > 0)
     avg = round(sum(c["net"] for c in cl) / len(cl), 2) if cl else 0.0
-    return {"closed": len(cl), "open": len(st["open"]), "wins": wins, "avg_net": avg}
+    return {"closed": len(cl), "open": len([o for o in st["open"] if not o.get("shadow")]), "wins": wins, "avg_net": avg}
 
 
 def _px(x: float) -> str:

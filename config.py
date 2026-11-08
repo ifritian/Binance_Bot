@@ -831,6 +831,11 @@ WRY_ENABLED = (os.environ.get("WRY_ENABLED") or "true").strip().lower() in ("1",
 WRY_MIN_GAP_HOURS = float(os.environ.get("WRY_MIN_GAP_HOURS") or 44)
 WRY_MAX_PER_WEEK = int(os.environ.get("WRY_MAX_PER_WEEK") or 3)
 # Видео-новость (news_video.py): значимый сюжет, подтверждённый >=2 изданиями, ~30 с с голосом, графиком и субтитрами.
+# Volume alert (volume_alert.py): всплеск объёма (мем-коины в приоритете) или затишье у крупных монет.
+VOLUME_ALERT_ENABLED = (os.environ.get("VOLUME_ALERT_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+VOLUME_ALERT_MAX_PER_DAY = int(os.environ.get("VOLUME_ALERT_MAX_PER_DAY") or 3)
+VOLUME_ALERT_COIN_COOLDOWN_HOURS = float(os.environ.get("VOLUME_ALERT_COIN_COOLDOWN_HOURS") or 12)
+VOLUME_ALERT_MEME_MIN_VOLUME_USD = float(os.environ.get("VOLUME_ALERT_MEME_MIN_VOLUME_USD") or 30_000_000)
 VIDEO_CROSSPOST_ENABLED = (os.environ.get("VIDEO_CROSSPOST_ENABLED") or "true").strip().lower() in ("1", "true", "yes")   # видео также в Telegram и Bluesky
 VIDEO_VOICE_ENABLED = (os.environ.get("VIDEO_VOICE_ENABLED") or "true").strip().lower() in ("1", "true", "yes")   # голос+музыка в обычных видео
 VIDEO_NEWS_ENABLED = (os.environ.get("VIDEO_NEWS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
@@ -842,7 +847,7 @@ BINANCE_BREAKING_MAX_PER_DAY = int(os.environ.get("BINANCE_BREAKING_MAX_PER_DAY"
 
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
 CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
-                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,anchor,rsi_extreme,market_shock,binance_breaking,breaking_news,wry,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
+                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,anchor,rsi_extreme,market_shock,binance_breaking,breaking_news,wry,volume_alert,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
 # Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
 LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 
