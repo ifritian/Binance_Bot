@@ -23,7 +23,7 @@ import queue_manager
 PROJECT = config.PROJECT_NAME
 SQUARE_POST_URL = "https://www.binance.com/en/square/post/{id}"
 FMT_LABELS = {"digest": "Market snapshot", "fear_greed": "Fear & Greed", "breakout": "Trend idea",
-              "hot_mover": "Hot mover", "mover_followup": "Follow-up", "level_check": "Level Check", "funding": "Funding radar", "anchor": "Macro day", "rsi_extreme": "RSI extreme", "market_shock": "Market shock", "binance_breaking": "Binance breaking", "breaking_news": "Breaking news", "wry": "Wry", "video_news": "Video", "video": "Video", "video_map": "Video", "video_replay": "Video", "binance_radar": "Binance Radar", "news_move": "News + price",
+              "hot_mover": "Hot mover", "mover_followup": "Follow-up", "level_check": "Level Check", "funding": "Funding radar", "anchor": "Macro day", "rsi_extreme": "RSI extreme", "market_shock": "Market shock", "binance_breaking": "Binance breaking", "breaking_news": "Breaking news", "wry": "Wry", "volume_alert": "Volume alert", "video_news": "Video", "video": "Video", "video_map": "Video", "video_replay": "Video", "binance_radar": "Binance Radar", "news_move": "News + price",
               "listing": "New listing", "listing_report": "Listing report", "altcoin_basket": "Altcoin basket", "weekly_brief": "Weekly review",
               "question": "Question", "opinion": "Opinion"}
 
@@ -81,6 +81,7 @@ def collect() -> dict:
         "crowd": g("crowd_record") or {"right": 0, "total": 0},
         "followups": g("mover_followups") or [],
         "futures": g("closed_futures_positions") or [],
+        "idea_variants": _variant_stats((g("mover_setups") or {}).get("closed", [])),
         "futures_since": g("futures_enabled_since"),
     }
 
@@ -556,6 +557,18 @@ def render(d: dict, now_ts: float | None = None, live: dict | None = None, ls: l
 
 
 
+def _variant_stats(closed: list) -> dict:
+    out = {}
+    for c in closed:
+        v = c.get("variant") or c.get("mode", "momentum")
+        d = out.setdefault(v, {"n": 0, "wins": 0, "sum": 0.0, "live": False})
+        d["n"] += 1
+        d["wins"] += 1 if c.get("net", 0) > 0 else 0
+        d["sum"] += c.get("net", 0)
+        d["live"] = d["live"] or not c.get("shadow")
+    return out
+
+
 def render_receipts(d: dict, now_ts: float | None = None, ls: list | None = None) -> str:
     """Страница "Receipts": все проверяемые результаты в одном месте, убытки тоже."""
     now_ts = now_ts or time.time()
@@ -593,6 +606,12 @@ def render_receipts(d: dict, now_ts: float | None = None, ls: list | None = None
                 f'not real trading. Every closed trade is listed, losses included. A back-test of this method was negative, so this is an experiment, not a track record to copy.</p>'
                 + (_fut_stats("Since restart:", fs_new) if fs_new else "") + _fut_stats("All time:", fs_all)
                 + _table(["Coin", "Closed", "Side", "Result, USDT", "Exit"], fut_rows) + "</section>") if fut else ""
+    var = d.get("idea_variants") or {}
+    var_rows = [f"<tr><td>{_e(k)}{' (posted)' if v['live'] else ''}</td><td>{v['n']}</td><td>{v['wins']}</td>"
+                f"<td class=\"{_cls(v['sum'])}\">{v['sum'] / v['n']:+.2f}%</td></tr>" for k, v in sorted(var.items()) if v["n"]]
+    var_html = ('<section><h2 class="s">Trade idea variants</h2><p class="sub">Every idea is also tracked silently with other stop/target/time settings, '
+                'so we can see which risk/reward setup works. Only the posted variant appears in posts. Results are after fees; small samples prove nothing yet.</p>'
+                + _table(["Variant (stop ATR / reward:risk / hours)", "Ideas", "In profit", "Avg after fees"], var_rows) + "</section>") if var_rows else ""
     ls_html = f'<nav class="follow">{_links_html(ls)}</nav>' if ls else ""
     upd = datetime.fromtimestamp(now_ts, timezone.utc).strftime("%b %d, %Y, %H:%M UTC")
     return f"""<!doctype html>
@@ -611,7 +630,7 @@ def render_receipts(d: dict, now_ts: float | None = None, ls: list | None = None
 {_table(["Coin", "Date", "Range", "What happened"], lv_rows)}</section>
 <section><h2 class="s">Hot mover follow-ups</h2><p class="sub">Coins we posted about after a sharp move, and whether we went back to check.</p>
 {_table(["Coin", "Date", "Price then", "Status"], fu_rows)}</section>
-{fut_html}
+{fut_html}{var_html}
 <footer>Not financial advice. Past results do not predict future results. Rebuilt {upd}.</footer>
 </div></body></html>"""
 

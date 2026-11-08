@@ -57,7 +57,7 @@ def test_publish_with_setup_registers_idea(monkeypatch):
     monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, image_paths=None: sent.append(text) or {})
     main.try_publish_hot_mover()
     assert len(sent) == 1 and "Entry:" in sent[0] and "Stop:" in sent[0] and "Target:" in sent[0]
-    assert len(reg) == 1 and reg[0]["ticker"] == "SUI"
+    assert reg and reg[0]["ticker"] == "SUI" and not reg[0].get("shadow") and all(r.get("shadow") for r in reg[1:])
 
 
 def test_publish_levels_post_by_default(monkeypatch):

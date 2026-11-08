@@ -47,6 +47,7 @@ import binance_breaking
 import emoji_accent
 import wry
 import trade_idea
+import volume_alert
 import news_video
 import anchors
 import funding_radar
@@ -1091,7 +1092,8 @@ def try_publish_hot_mover() -> None:
         return
     logger.info("Опубликовано (Горячая монета %s 24ч %+.1f%%, быстро %s): %s", ticker, pct, fp, result)
     if setup:
-        mover_setups.register(setup, now)
+        bars_sh = mover_setups.fetch_klines(ticker, "1h", 60)
+        mover_setups.register_with_shadows(setup, mover_setups.build_shadows(ticker, price, pct, bars_sh, None, "momentum"), now)
     if levels:
         fl = [f for f in (queue_manager._get("mover_followups") or []) if now - f["ts"] < 48 * 3600]
         fl.append(micro_moments.followup_record(ev, levels, now))
@@ -1588,7 +1590,7 @@ def fast_lane(seconds: float | None = None, interval: float | None = None) -> No
     deadline = time.time() + seconds
     while time.time() + interval < deadline:
         time.sleep(interval)
-        for fn in (try_publish_listing_announcement, try_publish_market_shock, try_publish_binance_breaking, try_publish_breaking_news, try_publish_hot_mover, try_publish_rsi_alert, try_publish_binance_alerts, run_telegram_bot):
+        for fn in (try_publish_listing_announcement, try_publish_market_shock, try_publish_binance_breaking, try_publish_breaking_news, try_publish_volume_alert, try_publish_hot_mover, try_publish_rsi_alert, try_publish_binance_alerts, run_telegram_bot):
             try:
                 fn()
             except Exception:
@@ -2415,7 +2417,7 @@ def try_publish_rsi_alert() -> None:
         return
     logger.info("Опубликован RSI-алерт %s (RSI %.0f%s)", t, d["rsi"], ", с идеей" if setup else "")
     if setup:
-        mover_setups.register(setup, now)
+        mover_setups.register_with_shadows(setup, mover_setups.build_shadows(t, price, pct, bars[-60:], setup["side"], "fade"), now)
     log[t] = now
     queue_manager._set(rsi_alert.KEY, log)
     fl = [f for f in (queue_manager._get("mover_followups") or []) if now - f["ts"] < 48 * 3600]
@@ -2654,6 +2656,75 @@ def try_publish_video_news() -> None:
         queue_manager.set_last_post_time("square_global")
         _crosspost_video(caption, mp4, poster, total)
     queue_manager._set("video_news_state", {"times": times + [now], "seen": (seen + [story["title"]])[-30:]})
+
+
+def try_publish_volume_alert() -> None:
+    """Всплеск объёма (мем-коины в приоритете) или затишье у крупных монет: пост сразу, со своими лимитами."""
+    if not config.VOLUME_ALERT_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    if not queue_manager.should_retry_now("volume_alert"):
+        return
+    if queue_manager.seconds_since_last_post("volume_alert_scan") < 300:
+        return
+    queue_manager.set_last_post_time("volume_alert_scan")
+    if queue_manager.seconds_since_last_post("square_global") < config.MARKET_SHOCK_SPACING_MINUTES * 60:
+        return
+    now = time.time()
+    log = {k: v for k, v in (queue_manager._get(volume_alert.KEY) or {}).items() if now - v < 86400}
+    if len(log) >= config.VOLUME_ALERT_MAX_PER_DAY:
+        return
+    rows = market_digest.fetch_ticker_rows()
+    if not rows:
+        return
+    allowed = set(coin_whitelist.allowed_tickers()) | trade_idea.MEME
+    cands = []
+    for r in rows:
+        sym = r.get("symbol", "")
+        if not sym.endswith("USDT"):
+            continue
+        t = sym[:-4]
+        try:
+            vol, pct, price = float(r["quoteVolume"]), float(r["priceChangePercent"]), float(r["lastPrice"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        meme = trade_idea.is_meme(t)
+        if t not in allowed or t in log and now - log[t] < config.VOLUME_ALERT_COIN_COOLDOWN_HOURS * 3600:
+            continue
+        if vol < (config.VOLUME_ALERT_MEME_MIN_VOLUME_USD if meme else market_digest.HOT_MIN_VOLUME_USD):
+            continue
+        cands.append((0 if meme else 1, -abs(pct), t, price, pct))
+    cands.sort()
+    for _m, _p, t, price, pct in cands[:20]:
+        bars = mover_setups.fetch_klines(t, "15m", 192)
+        d = volume_alert.detect(t, bars)
+        if d is None:
+            continue
+        setup = levels = None
+        if d["kind"] == "spike" and mover_setups.eligible("momentum", pct):
+            b1 = mover_setups.fetch_klines(t, "1h", 60)
+            setup = mover_setups.build_setup(t, price, pct, b1)
+            if setup:
+                label = f"{'Long' if setup['side'] == 'long' else 'Short'} idea with the move"
+                levels = trade_idea._levels(setup, None, label) + [mover_setups.record_line(mover_setups.stats())]
+        text = volume_alert.build_text(t, d, price, pct, mover_setups._px, levels=levels)
+        img = volume_alert.chart(t, bars, d, Path("charts") / f"{t}_volume.png")
+        try:
+            _post("volume_alert", text, image_paths=[img] if img else None)
+        except binance_publisher.PublishError as e:
+            logger.error("Ошибка публикации Volume alert: %s", e)
+            _record_publish_error("volume_alert", e)
+            queue_manager.set_retry_backoff("volume_alert", 1)
+            return
+        logger.info("Опубликован Volume alert %s (%s, %.1fx)", t, d["kind"], d["ratio"])
+        if setup:
+            mover_setups.register_with_shadows(setup, mover_setups.build_shadows(t, price, pct, b1, None, "momentum"), now)
+        log[t] = now
+        queue_manager._set(volume_alert.KEY, log)
+        fl = [f for f in (queue_manager._get("mover_followups") or []) if now - f["ts"] < 48 * 3600]
+        fl.append(micro_moments.followup_record({"ticker": t, "price": price}, None, now))
+        queue_manager._set("mover_followups", fl[-10:])
+        queue_manager.set_last_post_time("square_global")
+        return
 
 
 def try_publish_telegram_poll() -> None:
@@ -3188,6 +3259,7 @@ def tick() -> None:
         try_publish_market_shock()
         try_publish_binance_breaking()
         try_publish_breaking_news()
+        try_publish_volume_alert()
         try_publish_hot_mover()   # срочное: раньше плановых слотов, иначе их интервал задержит пост про скачок
         try_publish_level_check()   # раньше обычных слотов: иначе плотный график постов отодвигает серию
         try_publish_market_digest()
