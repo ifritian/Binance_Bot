@@ -148,7 +148,7 @@ MIN_POST_INTERVAL_HOURS = float(os.environ.get("MIN_POST_INTERVAL_HOURS", "2"))
 MIN_SQUARE_POST_SPACING_MINUTES = float(os.environ.get("MIN_SQUARE_POST_SPACING_MINUTES", "45"))
 # Режим "меньше, но лучше": суточный потолок постов в Square и дневное окно (UTC).
 # Ночью и сверх потолка публикуются только срочные форматы (URGENT_SQUARE_FORMATS не проверяют это).
-SQUARE_MAX_POSTS_PER_DAY = int(os.environ.get("SQUARE_MAX_POSTS_PER_DAY", "6"))
+SQUARE_MAX_POSTS_PER_DAY = int(os.environ.get("SQUARE_MAX_POSTS_PER_DAY", "8"))
 SQUARE_ACTIVE_HOUR_START_UTC = int(os.environ.get("SQUARE_ACTIVE_HOUR_START_UTC", "6"))
 SQUARE_ACTIVE_HOUR_END_UTC = int(os.environ.get("SQUARE_ACTIVE_HOUR_END_UTC", "21"))
 # Публикуем (и кладём в очередь сканера - см. scanner.py) только сигналы
@@ -832,6 +832,10 @@ WRY_MIN_GAP_HOURS = float(os.environ.get("WRY_MIN_GAP_HOURS") or 44)
 WRY_MAX_PER_WEEK = int(os.environ.get("WRY_MAX_PER_WEEK") or 3)
 # Видео-новость (news_video.py): значимый сюжет, подтверждённый >=2 изданиями, ~30 с с голосом, графиком и субтитрами.
 # Volume alert (volume_alert.py): всплеск объёма (мем-коины в приоритете) или затишье у крупных монет.
+# Quick setup (quick_setup.py): частый мини-формат "вход/стоп/цель" на любом заметном движении (комиссии).
+QUICK_SETUP_ENABLED = (os.environ.get("QUICK_SETUP_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+QUICK_SETUP_MAX_PER_DAY = int(os.environ.get("QUICK_SETUP_MAX_PER_DAY") or 4)
+QUICK_SETUP_MIN_GAP_HOURS = float(os.environ.get("QUICK_SETUP_MIN_GAP_HOURS") or 2.5)
 VOLUME_ALERT_ENABLED = (os.environ.get("VOLUME_ALERT_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 VOLUME_ALERT_MAX_PER_DAY = int(os.environ.get("VOLUME_ALERT_MAX_PER_DAY") or 3)
 VOLUME_ALERT_COIN_COOLDOWN_HOURS = float(os.environ.get("VOLUME_ALERT_COIN_COOLDOWN_HOURS") or 12)
@@ -847,7 +851,7 @@ BINANCE_BREAKING_MAX_PER_DAY = int(os.environ.get("BINANCE_BREAKING_MAX_PER_DAY"
 
 # Дублирование новых форматов Square в Telegram и Bluesky (английский, как и Square).
 CROSSPOST_FORMATS = {x.strip() for x in (os.environ.get("CROSSPOST_FORMATS") or
-                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,anchor,rsi_extreme,market_shock,binance_breaking,breaking_news,wry,volume_alert,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
+                     "digest,fear_greed,breakout,hot_mover,mover_result,mover_followup,level_check,funding,anchor,rsi_extreme,market_shock,binance_breaking,breaking_news,wry,volume_alert,quick_setup,momentum,binance_radar,news_move,listing,listing_report,weekly_brief").split(",") if x.strip()}
 # Старые русскоязычные форматы Telegram/Bluesky (глоссарий, ребаланс, мини-урок, hot take, вопрос аудитории).
 LEGACY_CHANNEL_FORMATS_ENABLED = (os.environ.get("LEGACY_CHANNEL_FORMATS_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 

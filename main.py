@@ -48,6 +48,7 @@ import emoji_accent
 import wry
 import trade_idea
 import volume_alert
+import quick_setup
 import news_video
 import anchors
 import funding_radar
@@ -957,7 +958,7 @@ def _trade_idea_text(setup: dict, rsi: dict | None = None) -> str:
     return trade_idea.build_text(setup, tone, rsi=rsi)
 
 
-def _mover_setup_chart(setup: dict):
+def _mover_setup_chart(setup: dict, title: str | None = None):
     """График сетапа: часовые свечи + линии входа/стопа/цели. None при сбое."""
     try:
         bars = mover_setups.fetch_klines(setup["ticker"], "1h", 72)
@@ -967,7 +968,7 @@ def _mover_setup_chart(setup: dict):
                     "volume": b[5] if len(b) > 5 else 0.0} for b in bars]
         return chart_generator.generate_trade_chart(
             setup["ticker"], candles, entry=setup["entry"], stop=setup["stop"], target=setup["target"],
-            title=f"{'Counter-trend' if setup.get('mode') == 'fade' else 'Momentum'} {setup['side']} idea", suffix="_mover", tf_label="1h",
+            title=title or f"{'Counter-trend' if setup.get('mode') == 'fade' else 'Momentum'} {setup['side']} idea", suffix="_mover", tf_label="1h",
             sketch_side=setup["side"])
     except Exception:
         logger.exception("Не удалось построить график сетапа %s", setup.get("ticker"))
@@ -2727,6 +2728,58 @@ def try_publish_volume_alert() -> None:
         return
 
 
+def try_publish_quick_setup() -> None:
+    """Частый мини-формат: введение, вход, стоп, цель, дисклеймер, тикер и хэштеги + график с пометками от руки."""
+    if not config.QUICK_SETUP_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
+        return
+    if not queue_manager.should_retry_now("quick_setup") or not _square_slot_available():
+        return
+    if queue_manager.seconds_since_last_post("quick_setup_scan") < 600:
+        return
+    queue_manager.set_last_post_time("quick_setup_scan")
+    now = time.time()
+    st = queue_manager._get("quick_setup_state") or {}
+    times = [x for x in st.get("times", []) if now - x < 86400]
+    if len(times) >= config.QUICK_SETUP_MAX_PER_DAY or (times and now - max(times) < config.QUICK_SETUP_MIN_GAP_HOURS * 3600):
+        return
+    rows = market_digest.fetch_ticker_rows()
+    if not rows:
+        return
+    log = st.get("coins", {})
+    recent = " ".join(p.get("head", "") for p in (queue_manager._get("square_post_log") or []) if now - p["ts"] < 6 * 3600)
+    allowed = set(coin_whitelist.allowed_tickers()) | trade_idea.MEME
+    for _m, _p, t, price, pct in quick_setup.pick_candidates(rows, allowed, log, now, recent, config.VOLUME_ALERT_MEME_MIN_VOLUME_USD,
+                                                           market_digest.HOT_MIN_VOLUME_USD)[:8]:
+        bars = mover_setups.fetch_klines(t, "1h", 72)
+        if len(bars) < 40:
+            continue
+        rsi = (rsi_alert.rsi_series([b[4] for b in bars]) or [None])[-1]
+        setup = quick_setup.build(t, price, pct, bars[-60:], rsi)
+        if setup is None:
+            continue
+        vols = [b[5] for b in bars]
+        vol_x = (sum(vols[-3:]) / 3) / (sum(vols[-27:-3]) / 24) if sum(vols[-27:-3]) > 0 else None
+        d = quick_setup.rsi_info(rsi)
+        last = queue_manager._get("trade_idea_last_tone")
+        tone = trade_idea.pick_tone(t, last, d["kind"] if d else None)
+        queue_manager._set("trade_idea_last_tone", tone)
+        text = quick_setup.build_text(setup, tone, d)
+        chart = _mover_setup_chart(setup, quick_setup.chart_title(setup, rsi, vol_x))
+        try:
+            _post("quick_setup", text, image_paths=[chart] if chart else None)
+        except binance_publisher.PublishError as e:
+            logger.error("Ошибка публикации Quick setup: %s", e)
+            _record_publish_error("quick_setup", e)
+            queue_manager.set_retry_backoff("quick_setup", 1)
+            return
+        logger.info("Опубликован Quick setup %s (%s, %s)", t, setup["side"], setup["variant"])
+        mover_setups.register_with_shadows(setup, mover_setups.build_shadows(t, price, pct, bars[-60:], setup["side"], setup["mode"]), now)
+        log[t] = now
+        queue_manager._set("quick_setup_state", {"times": times + [now], "coins": {k: v for k, v in log.items() if now - v < 86400}})
+        queue_manager.set_last_post_time("square_global")
+        return
+
+
 def try_publish_telegram_poll() -> None:
     """Нативный Telegram-опрос (sendPoll) - без LLM, статический пул
     вопросов (см. docstring telegram_engagement.py). Публикует ТОЛЬКО
@@ -3266,6 +3319,7 @@ def tick() -> None:
         try_publish_fng_post()   # дневной слот: идёт раньше событийных форматов, иначе они забирают окно
         try_publish_square_question()
         try_publish_wry()
+        try_publish_quick_setup()
         try_publish_video_news()
         try_publish_mover_result()
         try_publish_mover_followup()
