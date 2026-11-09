@@ -34,3 +34,28 @@ def test_pick_candidates_prefers_memes_and_skips_recent():
     c = qs.pick_candidates(rows, {"PEPE", "SOL", "DOGE", "ADA"}, {}, 1e6, "post about $ADA", 3e7, 1e8)
     assert [x[2] for x in c] == ["PEPE", "SOL"]
     assert qs.pick_candidates(rows, {"PEPE"}, {"PEPE": 1e6 - 3600}, 1e6, "", 3e7, 1e8) == []
+
+
+def test_try_publish_quick_setup_end_to_end(monkeypatch, tmp_path):
+    import main
+    import queue_manager as qm
+    posted = {}
+    monkeypatch.setattr(main.config, "QUICK_SETUP_ENABLED", True)
+    monkeypatch.setattr(main.config, "SQUARE_TEMPLATE_LANG", "en")
+    monkeypatch.setattr(main, "_square_slot_available", lambda *a, **k: True)
+    monkeypatch.setattr(main.market_digest, "fetch_ticker_rows", lambda: [
+        {"symbol": "PEPEUSDT", "quoteVolume": "9e7", "priceChangePercent": "-6", "lastPrice": "100"}])
+    monkeypatch.setattr(main.mover_setups, "fetch_klines", lambda *a, **k: _bars(72))
+    monkeypatch.setattr(main, "_mover_setup_chart", lambda s, title=None: None)
+    monkeypatch.setattr(main, "_post", lambda fmt, text, image_paths=None: posted.update(fmt=fmt, text=text))
+    registered = []
+    monkeypatch.setattr(main.mover_setups, "register_with_shadows", lambda s, sh, now: registered.append(s))
+    store = {}
+    monkeypatch.setattr(qm, "_get", lambda k: store.get(k))
+    monkeypatch.setattr(qm, "_set", lambda k, v: store.__setitem__(k, v))
+    monkeypatch.setattr(qm, "should_retry_now", lambda k: True)
+    monkeypatch.setattr(qm, "seconds_since_last_post", lambda k: 1e9)
+    monkeypatch.setattr(qm, "set_last_post_time", lambda *a, **k: None)
+    main.try_publish_quick_setup()
+    assert posted["fmt"] == "quick_setup" and "Stop-loss:" in posted["text"] and registered
+    assert "PEPE" in store["quick_setup_state"]["coins"]
