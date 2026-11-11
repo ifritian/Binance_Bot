@@ -1159,7 +1159,7 @@ def try_publish_video() -> None:
         return
     if queue_manager._get("video_done") == today:
         return
-    if not queue_manager.should_retry_now("video") or not _square_slot_available():
+    if not queue_manager.should_retry_now("video") or not _square_slot_available(40, check_cap=False):
         return
     data = market_digest.fetch_movers()
     if data is None:
@@ -1210,7 +1210,7 @@ def _publish_video_kind(fmt: str, hour: int, parity: int, build) -> None:
     today = now.strftime("%Y-%m-%d")
     if now.toordinal() % 2 != parity or not (hour <= now.hour <= hour + 4):
         return
-    if queue_manager._get(f"{fmt}_done") == today or not queue_manager.should_retry_now(fmt) or not _square_slot_available():
+    if queue_manager._get(f"{fmt}_done") == today or not queue_manager.should_retry_now(fmt) or not _square_slot_available(40, check_cap=False):
         return
     try:
         built = build(now)
@@ -2612,7 +2612,7 @@ def try_publish_video_news() -> None:
     """Видео-новость: значимый сюжет (>=2 издания) в стиле новостной сводки с голосом, графиком и субтитрами."""
     if not (config.VIDEO_ENABLED and config.VIDEO_NEWS_ENABLED) or config.SQUARE_TEMPLATE_LANG != "en":
         return
-    if not queue_manager.should_retry_now("video_news") or not _square_slot_available():
+    if not queue_manager.should_retry_now("video_news") or not _square_slot_available(40, check_cap=False):
         return
     now = time.time()
     st = queue_manager._get("video_news_state") or {}
