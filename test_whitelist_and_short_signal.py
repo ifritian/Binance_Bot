@@ -138,7 +138,7 @@ def test_pending_post_filter_also_applies_to_image_fallback(monkeypatch):
 def test_try_publish_currency_post_passes_whitelist_filter(monkeypatch):
     monkeypatch.setattr(main.queue_manager, "seconds_since_last_post", lambda t="currency": 10 ** 9)
     monkeypatch.setattr(main.queue_manager, "get_jitter_seconds", lambda t: 0)
-    monkeypatch.setattr(main, "_square_slot_available", lambda: True)
+    monkeypatch.setattr(main, "_square_slot_available", lambda *a, **k: True)
     seen = {}
 
     def fake_pending(min_score=0, allowed_fn=None):

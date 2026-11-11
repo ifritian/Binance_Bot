@@ -13,7 +13,7 @@ import post_cards
 def tmp_env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
     monkeypatch.setattr(chart_generator, "_CHARTS_DIR", tmp_path / "charts")
-    monkeypatch.setattr(main, "_square_slot_available", lambda: True)
+    monkeypatch.setattr(main, "_square_slot_available", lambda *a, **k: True)
 
 
 DATA = {"majors": [("BTC", 81616.0, -0.8), ("ETH", 2740.5, 1.9)],
