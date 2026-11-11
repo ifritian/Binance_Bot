@@ -259,6 +259,7 @@ HOT_FAST_PCT = float(os.environ.get("HOT_FAST_PCT") or "3")
 TELEGRAM_MOVER_POLL_MIN_GAP_HOURS = float(os.environ.get("TELEGRAM_MOVER_POLL_MIN_GAP_HOURS") or "24")
 # Видео "Рынок за 15 секунд" (video_post.py): раз в сутки в окне VIDEO_HOUR_UTC .. +5 часов. Эксперимент: сравниваем просмотры с картинками.
 VIDEO_ENABLED = (os.environ.get("VIDEO_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+VIDEO_MIN_GAP_HOURS = float(os.environ.get("VIDEO_MIN_GAP_HOURS") or 44)   # одно видео (любого вида) раз в ~2 суток
 VIDEO_HOUR_UTC = int(os.environ.get("VIDEO_HOUR_UTC") or "15")
 VIDEO_MAP_HOUR_UTC = int(os.environ.get("VIDEO_MAP_HOUR_UTC") or "19")      # чётные сутки
 VIDEO_REPLAY_HOUR_UTC = int(os.environ.get("VIDEO_REPLAY_HOUR_UTC") or "19")  # нечётные сутки
@@ -834,9 +835,10 @@ WRY_MAX_PER_WEEK = int(os.environ.get("WRY_MAX_PER_WEEK") or 3)
 # Volume alert (volume_alert.py): всплеск объёма (мем-коины в приоритете) или затишье у крупных монет.
 # Quick setup (quick_setup.py): частый мини-формат "вход/стоп/цель" на любом заметном движении (комиссии).
 QUICK_SETUP_ENABLED = (os.environ.get("QUICK_SETUP_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
-QUICK_SETUP_MAX_PER_DAY = int(os.environ.get("QUICK_SETUP_MAX_PER_DAY") or 4)
+QUICK_SETUP_MIN_VOLUME_USD = float(os.environ.get("QUICK_SETUP_MIN_VOLUME_USD") or 15_000_000)
+QUICK_SETUP_MAX_PER_DAY = int(os.environ.get("QUICK_SETUP_MAX_PER_DAY") or 6)
 QUICK_SETUP_GLOBAL_SPACING_MINUTES = float(os.environ.get("QUICK_SETUP_GLOBAL_SPACING_MINUTES") or 40)
-QUICK_SETUP_MIN_GAP_HOURS = float(os.environ.get("QUICK_SETUP_MIN_GAP_HOURS") or 2.5)
+QUICK_SETUP_MIN_GAP_HOURS = float(os.environ.get("QUICK_SETUP_MIN_GAP_HOURS") or 1.5)
 VOLUME_ALERT_ENABLED = (os.environ.get("VOLUME_ALERT_ENABLED") or "false").strip().lower() in ("1", "true", "yes")
 VOLUME_ALERT_MAX_PER_DAY = int(os.environ.get("VOLUME_ALERT_MAX_PER_DAY") or 3)
 VOLUME_ALERT_COIN_COOLDOWN_HOURS = float(os.environ.get("VOLUME_ALERT_COIN_COOLDOWN_HOURS") or 12)

@@ -752,6 +752,26 @@ def _publish_win_celebrations(closed_records: list) -> None:
             logger.exception("Неожиданная ошибка при публикации 'Забрали профит!' для %s", record.get("ticker"))
 
 
+# Видео и статьи - отдельные "ленты" Square (свои просмотры в Creator Center): в лимит обычных постов не входят.
+NON_POST_FORMATS = frozenset({"video", "video_map", "video_replay", "video_news", "article"})
+VIDEO_ROTATION = ("video", "video_map", "video_replay")
+
+
+def _video_allowed(fmt: str) -> bool:
+    """Одно видео на все видео-форматы раз в VIDEO_MIN_GAP_HOURS; обычные форматы идут по очереди."""
+    if queue_manager.seconds_since_last_post("video_any") < config.VIDEO_MIN_GAP_HOURS * 3600:
+        return False
+    if fmt in VIDEO_ROTATION:
+        return VIDEO_ROTATION[int(queue_manager._get("video_rot") or 0) % len(VIDEO_ROTATION)] == fmt
+    return True
+
+
+def _video_published(fmt: str) -> None:
+    queue_manager.set_last_post_time("video_any")
+    if fmt in VIDEO_ROTATION:
+        queue_manager._set("video_rot", int(queue_manager._get("video_rot") or 0) + 1)
+
+
 def _square_slot_available(spacing_minutes: float | None = None, check_cap: bool = True) -> bool:
     """Общий "антидребезг" между ЛЮБЫМИ двумя постами в Binance Square -
     см. config.MIN_SQUARE_POST_SPACING_MINUTES. Вызывать в начале КАЖДОЙ
@@ -776,7 +796,7 @@ def _square_slot_available(spacing_minutes: float | None = None, check_cap: bool
         return True
     now = time.time()
     log = queue_manager._get("square_post_log") or []
-    if sum(1 for p in log if now - p.get("ts", 0) < 24 * 3600) >= config.SQUARE_MAX_POSTS_PER_DAY:
+    if sum(1 for p in log if now - p.get("ts", 0) < 24 * 3600 and p.get("fmt") not in NON_POST_FORMATS) >= config.SQUARE_MAX_POSTS_PER_DAY:
         return False
     return True
 
@@ -960,7 +980,7 @@ def _trade_idea_text(setup: dict, rsi: dict | None = None) -> str:
     return trade_idea.build_text(setup, tone, rsi=rsi)
 
 
-def _mover_setup_chart(setup: dict, title: str | None = None):
+def _mover_setup_chart(setup: dict, title: str | None = None, palette: str | None = None):
     """График сетапа: часовые свечи + линии входа/стопа/цели. None при сбое."""
     try:
         bars = mover_setups.fetch_klines(setup["ticker"], "1h", 72)
@@ -971,7 +991,7 @@ def _mover_setup_chart(setup: dict, title: str | None = None):
         return chart_generator.generate_trade_chart(
             setup["ticker"], candles, entry=setup["entry"], stop=setup["stop"], target=setup["target"],
             title=title or f"{'Counter-trend' if setup.get('mode') == 'fade' else 'Momentum'} {setup['side']} idea", suffix="_mover", tf_label="1h",
-            sketch_side=setup["side"])
+            sketch_side=setup["side"], palette=palette)
     except Exception:
         logger.exception("Не удалось построить график сетапа %s", setup.get("ticker"))
         return None
@@ -1157,7 +1177,7 @@ def try_publish_video() -> None:
     today = now.strftime("%Y-%m-%d")
     if now.hour < config.VIDEO_HOUR_UTC or now.hour - config.VIDEO_HOUR_UTC > 5:
         return
-    if queue_manager._get("video_done") == today:
+    if queue_manager._get("video_done") == today or not _video_allowed("video"):
         return
     if not queue_manager.should_retry_now("video") or not _square_slot_available(40, check_cap=False):
         return
@@ -1196,8 +1216,8 @@ def try_publish_video() -> None:
         return
     logger.info("Опубликовано видео: %s", result)
     if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
-        queue_manager.set_last_post_time("square_global")
         _crosspost_video(text, mp4, poster, dur)
+    _video_published("video")
     queue_manager._set("video_done", today)
 
 
@@ -1208,7 +1228,7 @@ def _publish_video_kind(fmt: str, hour: int, parity: int, build) -> None:
         return
     now = event_posts.now_utc()
     today = now.strftime("%Y-%m-%d")
-    if now.toordinal() % 2 != parity or not (hour <= now.hour <= hour + 4):
+    if not (hour <= now.hour <= hour + 4) or not _video_allowed(fmt):
         return
     if queue_manager._get(f"{fmt}_done") == today or not queue_manager.should_retry_now(fmt) or not _square_slot_available(40, check_cap=False):
         return
@@ -1233,8 +1253,8 @@ def _publish_video_kind(fmt: str, hour: int, parity: int, build) -> None:
         return
     logger.info("Опубликовано видео %s: %s", fmt, result)
     if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
-        queue_manager.set_last_post_time("square_global")
         _crosspost_video(caption, mp4, poster, dur)
+    _video_published(fmt)
     queue_manager._set(f"{fmt}_done", today)
 
 
@@ -2612,7 +2632,7 @@ def try_publish_video_news() -> None:
     """Видео-новость: значимый сюжет (>=2 издания) в стиле новостной сводки с голосом, графиком и субтитрами."""
     if not (config.VIDEO_ENABLED and config.VIDEO_NEWS_ENABLED) or config.SQUARE_TEMPLATE_LANG != "en":
         return
-    if not queue_manager.should_retry_now("video_news") or not _square_slot_available(40, check_cap=False):
+    if not queue_manager.should_retry_now("video_news") or not _video_allowed("video_news") or not _square_slot_available(40, check_cap=False):
         return
     now = time.time()
     st = queue_manager._get("video_news_state") or {}
@@ -2656,8 +2676,8 @@ def try_publish_video_news() -> None:
         return
     logger.info("Опубликована видео-новость (голос: %s): %s", voiced, story["title"][:80])
     if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
-        queue_manager.set_last_post_time("square_global")
         _crosspost_video(caption, mp4, poster, total)
+        _video_published("video_news")
     queue_manager._set("video_news_state", {"times": times + [now], "seen": (seen + [story["title"]])[-30:]})
 
 
@@ -2749,9 +2769,7 @@ def try_publish_quick_setup() -> None:
         return
     log = st.get("coins", {})
     recent = " ".join(p.get("head", "") for p in (queue_manager._get("square_post_log") or []) if now - p["ts"] < 6 * 3600)
-    allowed = set(coin_whitelist.allowed_tickers()) | trade_idea.MEME
-    for _m, _p, t, price, pct in quick_setup.pick_candidates(rows, allowed, log, now, recent, config.VOLUME_ALERT_MEME_MIN_VOLUME_USD,
-                                                           market_digest.HOT_MIN_VOLUME_USD)[:8]:
+    for _p, t, price, pct in quick_setup.pick_candidates(rows, log, now, recent, config.QUICK_SETUP_MIN_VOLUME_USD)[:12]:
         bars = mover_setups.fetch_klines(t, "1h", 72)
         if len(bars) < 40:
             continue
@@ -2762,11 +2780,8 @@ def try_publish_quick_setup() -> None:
         vols = [b[5] for b in bars]
         vol_x = (sum(vols[-3:]) / 3) / (sum(vols[-27:-3]) / 24) if sum(vols[-27:-3]) > 0 else None
         d = quick_setup.rsi_info(rsi)
-        last = queue_manager._get("trade_idea_last_tone")
-        tone = trade_idea.pick_tone(t, last, d["kind"] if d else None)
-        queue_manager._set("trade_idea_last_tone", tone)
-        text = quick_setup.build_text(setup, tone, d)
-        chart = _mover_setup_chart(setup, quick_setup.chart_title(setup, rsi, vol_x))
+        text = quick_setup.build_text(setup, rsi, vol_x)
+        chart = _mover_setup_chart(setup, quick_setup.chart_title(setup, rsi, vol_x), palette="alert")
         try:
             _post("quick_setup", text, image_paths=[chart] if chart else None)
         except binance_publisher.PublishError as e:
@@ -3101,7 +3116,6 @@ def try_publish_article_post() -> None:
     # не URL - см. bluesky_publisher).
     _crosspost_to_bluesky(f"{title}\n\n{body}", cover_path)
     queue_manager.set_last_post_time("article")
-    queue_manager.set_last_post_time("square_global")
     queue_manager.roll_new_jitter("article", config.ARTICLE_JITTER_HOURS * 3600)
 
 
