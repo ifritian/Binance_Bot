@@ -72,7 +72,10 @@ def test_try_publish_video_once_a_day_and_survives_failures(monkeypatch, _mem, t
     main.try_publish_video()
     assert len(sent) == 1 and _mem["video_done"] == "2026-10-24"
     # ошибка API: слот не считается выполненным, ставится пауза
+    main.try_publish_video()
+    assert len(sent) == 1          # пауза между видео (44ч) держит второй ролик
     _mem.pop("video_done")
+    _mem.pop("last_post_time:video_any", None); _mem.pop("video_rot", None)
     monkeypatch.setattr(bp, "publish_video", lambda *a: (_ for _ in ()).throw(bp.PublishError("boom")))
     monkeypatch.setattr(main, "_record_publish_error", lambda *a: None)
     main.try_publish_video()

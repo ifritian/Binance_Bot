@@ -37,6 +37,8 @@ _UP_COLOR = "#F0B90B"
 _DOWN_COLOR = "#8C93A1"
 _NEG_COLOR = "#F6465D"
 _BG_COLOR = "#0B0E11"
+_ALERT_DOWN_COLOR = "#E5384F"   # насыщенный малиново-красный для "горячих" графиков: хорошо сочетается с золотом
+_DOWN_OVERRIDE: list = []
 _GRID_COLOR = "#1E2329"
 _AXIS_TEXT_COLOR = "#848E9C"
 _WATERMARK_COLOR = "#FFFFFF"
@@ -165,7 +167,7 @@ def _draw_candles(ax, candles: list[dict]) -> None:
 
     width = 0.6
     for i, c in enumerate(candles):
-        color = _UP_COLOR if c["close"] >= c["open"] else _DOWN_COLOR
+        color = _UP_COLOR if c["close"] >= c["open"] else (_DOWN_OVERRIDE[-1] if _DOWN_OVERRIDE else _DOWN_COLOR)
         ax.plot([i, i], [c["low"], c["high"]], color=color, linewidth=1, solid_capstyle="round")
         body_low = min(c["open"], c["close"])
         body_height = max(abs(c["close"] - c["open"]), min_body_height)
@@ -195,7 +197,7 @@ def _draw_volume(ax, candles: list[dict]) -> None:
     max_vol = max(volumes) if volumes else 1.0
 
     for i, c in enumerate(candles):
-        color = _UP_COLOR if c["close"] >= c["open"] else _DOWN_COLOR
+        color = _UP_COLOR if c["close"] >= c["open"] else (_DOWN_OVERRIDE[-1] if _DOWN_OVERRIDE else _DOWN_COLOR)
         ax.add_patch(Rectangle((i - width / 2, 0), width, c["volume"], color=color, alpha=0.55, linewidth=0))
 
     # Отступ сверху ~25% - бары "дышат", не упираются в край панели
@@ -679,13 +681,25 @@ def generate_trade_chart(ticker: str, candles: list[dict], entry: float, stop: f
                          suffix: str = "_tb", target: float | None = None,
                          tf_label: str = "4h", sketch_side: str | None = None,
                          extra_levels: list | None = None, entry_label: str = "Entry",
-                         sketch_levels: dict | None = None) -> Path | None:
+                         sketch_levels: dict | None = None, palette: str | None = None) -> Path | None:
     """График идеи на 4ч свечах (trend_breakout.py): линия входа, стартовый
     стоп, уровень пробоя; для закрытой сделки - ещё цена выхода и метки
     входа/выхода. candles - как из fetch_klines. Подписи только английские
     (картинка одна для RU и EN постов). None при любой проблеме."""
     if len(candles) < 5 or entry <= 0:
         return None
+    if palette == "alert":
+        _DOWN_OVERRIDE.append(_ALERT_DOWN_COLOR)
+    try:
+        return _trade_chart_impl(ticker, candles, entry, stop, level, exit_price, title, entry_t, exit_t, suffix, target,
+                                 tf_label, sketch_side, extra_levels, entry_label, sketch_levels)
+    finally:
+        if palette == "alert":
+            _DOWN_OVERRIDE.pop()
+
+
+def _trade_chart_impl(ticker, candles, entry, stop, level, exit_price, title, entry_t, exit_t, suffix, target,
+                      tf_label, sketch_side, extra_levels, entry_label, sketch_levels):
     try:
         _CHARTS_DIR.mkdir(exist_ok=True)
         out_path = _CHARTS_DIR / f"{ticker}{suffix}_chart.png"
