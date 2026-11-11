@@ -126,7 +126,7 @@ def test_publish_flow_marks_event_posted(monkeypatch):
     import time
     st["outbox"].append({"kind": "entry", "ticker": "SOL", "entry": 150.0, "stop": 140.0, "risk_pct": 6.7, "ts": time.time()})
     tb._save(st)
-    monkeypatch.setattr(main, "_square_slot_available", lambda: True)
+    monkeypatch.setattr(main, "_square_slot_available", lambda *a, **k: True)
     monkeypatch.setattr(main.binance_publisher, "publish_post", lambda text, image_paths=None: sent.append(text) or {})
     main.try_publish_trend_breakout()
     assert len(sent) == 1 and tb._state()["outbox"] == []

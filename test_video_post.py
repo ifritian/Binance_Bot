@@ -64,7 +64,7 @@ def test_try_publish_video_once_a_day_and_survives_failures(monkeypatch, _mem, t
     monkeypatch.setattr(event_posts, "now_utc", lambda: datetime(2026, 10, 24, 16, tzinfo=timezone.utc))
     monkeypatch.setattr(market_digest, "fetch_movers", lambda rows=None: DATA)
     monkeypatch.setattr(event_posts, "fetch_fng", lambda: FNG)
-    monkeypatch.setattr(main, "_square_slot_available", lambda: True)
+    monkeypatch.setattr(main, "_square_slot_available", lambda *a, **k: True)
     monkeypatch.setattr(vp, "render", lambda *a, **k: (tmp_path / "v.mp4", tmp_path / "p.png"))
     sent = []
     monkeypatch.setattr(bp, "publish_video", lambda text, v, d, c: sent.append(text) or {"id": "1", "status": "ok"})
