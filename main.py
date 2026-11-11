@@ -752,7 +752,7 @@ def _publish_win_celebrations(closed_records: list) -> None:
             logger.exception("Неожиданная ошибка при публикации 'Забрали профит!' для %s", record.get("ticker"))
 
 
-def _square_slot_available(spacing_minutes: float | None = None) -> bool:
+def _square_slot_available(spacing_minutes: float | None = None, check_cap: bool = True) -> bool:
     """Общий "антидребезг" между ЛЮБЫМИ двумя постами в Binance Square -
     см. config.MIN_SQUARE_POST_SPACING_MINUTES. Вызывать в начале КАЖДОЙ
     try_publish_*, которая может опубликовать что-то в Square, сразу
@@ -772,6 +772,8 @@ def _square_slot_available(spacing_minutes: float | None = None) -> bool:
     hour = time.gmtime().tm_hour
     if not (config.SQUARE_ACTIVE_HOUR_START_UTC <= hour < config.SQUARE_ACTIVE_HOUR_END_UTC):
         return False
+    if not check_cap:
+        return True
     now = time.time()
     log = queue_manager._get("square_post_log") or []
     if sum(1 for p in log if now - p.get("ts", 0) < 24 * 3600) >= config.SQUARE_MAX_POSTS_PER_DAY:
@@ -2732,7 +2734,7 @@ def try_publish_quick_setup() -> None:
     """Частый мини-формат: введение, вход, стоп, цель, дисклеймер, тикер и хэштеги + график с пометками от руки."""
     if not config.QUICK_SETUP_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
         return
-    if not queue_manager.should_retry_now("quick_setup") or not _square_slot_available(config.QUICK_SETUP_GLOBAL_SPACING_MINUTES):
+    if not queue_manager.should_retry_now("quick_setup") or not _square_slot_available(config.QUICK_SETUP_GLOBAL_SPACING_MINUTES, check_cap=False):
         return
     if queue_manager.seconds_since_last_post("quick_setup_scan") < 600:
         return
