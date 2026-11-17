@@ -24,6 +24,7 @@ import video_post as vp
 from video_post import BG, GOLD, GOLD2, GRID, MUTED, PANEL, RED, WHITE, H, W, _font, _text, ease
 
 FPS = nv.FPS
+VOICE_SPEED, GAP_S = 1.28, 0.12          # быстрее диктор и короче паузы: ролик плотнее
 _MAP_FILE = Path(__file__).resolve().parent / "data" / "world_lowres.json"
 OCEAN, LAND, LAND_EDGE = (7, 12, 20), (17, 29, 46), (42, 66, 100)
 EU = ("Germany", "France", "Italy", "Spain", "Poland", "Netherlands", "Belgium", "Austria", "Sweden", "Finland", "Denmark", "Ireland",
@@ -130,8 +131,8 @@ def _pill(d, xy, text, color, font, fill=None):
 
 
 def _scene_map(img, d, T, st, seg, ctx):
-    cam = _lerp_cam(seg.get("cam_from", WORLD_CAM), seg.get("cam", EU_CAM), st / 3.0)
-    base = render_map(cam, set(seg.get("hl", ())), T, seg.get("pulse") if st > 2.2 else None)
+    cam = _lerp_cam(seg.get("cam_from", WORLD_CAM), seg.get("cam", EU_CAM), st / 2.2)
+    base = render_map(cam, set(seg.get("hl", ())), T, seg.get("pulse") if st > 1.6 else None)
     img.paste(base)
     d = ImageDraw.Draw(img)
     return d
@@ -147,8 +148,8 @@ def _map_overlay(d, st, seg):
         _text(d, (72, y + 78), big, _font(62), GOLD2, "lm", a)
         if seg.get("tag"):
             _pill(d, (48, y + 132), seg["tag"], RED, _font(22), fill=(8, 10, 13))
-    if seg.get("map_label") and st > 3.0:
-        _text(d, (W // 2, 905), seg["map_label"], _font(26), WHITE, "mm", ease((st - 3.0) / 0.5))
+    if seg.get("map_label") and st > 2.0:
+        _text(d, (W // 2, 905), seg["map_label"], _font(26), WHITE, "mm", ease((st - 2.0) / 0.5))
 
 
 def _scene_route(img, d, T, st, seg):
@@ -221,6 +222,8 @@ def _scene_clip(img, d, T, st, seg):
     a = ease(st / 0.55)
     ang = -2.4 + (1 - a) * 6
     card = card.rotate(ang, resample=Image.BICUBIC, expand=True)
+    zoom = 1.0 + 0.012 * min(st, 6.0)                                     # медленный наезд: кадр не стоит на месте
+    card = card.resize((int(card.width * zoom), int(card.height * zoom)), Image.BICUBIC)
     shadow = Image.new("RGBA", card.size, (0, 0, 0, 0))
     shadow.paste((0, 0, 0, 150), (0, 0), card.split()[3])
     shadow = shadow.filter(ImageFilter.GaussianBlur(14))
@@ -242,7 +245,8 @@ def _scene_compare(img, d, T, st, seg):
     top = max(i["value"] for i in items)
     for j, it in enumerate(items):
         y = 310 + j * 270
-        a = ease((st - 0.3 - j * 0.6) / 0.6)
+        show = seg.get("show", len(items))
+        a = 1.0 if j < show - 1 else (ease(st / 0.6) if j == show - 1 else 0.0)
         if a <= 0:
             continue
         _text(d, (48, y), it["label"], _font(30), WHITE, "lm", a)
@@ -253,7 +257,7 @@ def _scene_compare(img, d, T, st, seg):
         _text(d, (W - 60 if wbar > 260 else 48 + wbar + 14, y + 115), it["text"], _font(34), (11, 14, 17) if wbar > 260 else WHITE,
               "rm" if wbar > 260 else "lm", a)
     if seg.get("footnote"):
-        _text(d, (48, 880), seg["footnote"], _font(22, False), MUTED, alpha=ease((st - 1.8) / 0.5))
+        _text(d, (48, 880), seg["footnote"], _font(22, False), MUTED, alpha=ease((st - 0.4) / 0.5))
 
 
 # ---------------- Кадр ----------------
@@ -281,7 +285,7 @@ def frame(T: float, tl: list, ts: datetime, total: float) -> Image.Image:
         _scene_clip(img, d, T, seg_t, seg)
         d = ImageDraw.Draw(img)
     elif sc == "compare":
-        _scene_compare(img, d, T, st, seg)
+        _scene_compare(img, d, T, seg_t, seg)
     elif sc == "outro":
         nv._scene_outro(d, st)
     if st < 0.3 and T > nv.LEAD_S and sc != "map":
@@ -300,6 +304,7 @@ def build_script(story: dict) -> list:
     segs = [dict(s) for s in story["scenes"]]
     for s in segs:
         s.setdefault("say", nv._say(s["text"]))
+        s["gap"] = GAP_S
     return segs
 
 
@@ -310,7 +315,7 @@ def render(story: dict, out: Path, ts: datetime | None = None, tts="auto") -> tu
     ts = ts or datetime.now(timezone.utc)
     segs = build_script(story)
     engine = nv.ensure_tts() if tts == "auto" else tts
-    voice, durs = nv.synth(segs, engine)
+    voice, durs = nv.synth(segs, engine, speed=VOICE_SPEED, gap_s=GAP_S)
     tl = nv.timeline(segs, durs)
     total = tl[-1]["end"] + nv.TAIL_S
     audio = nv.mix(voice, nv.music(total), nv.LEAD_S)
