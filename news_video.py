@@ -62,7 +62,8 @@ def pick_story(news: list, seen_titles: list, now_ts: float, max_age_h: float = 
             continue
         score = len(sources) * 2 + (1 if news_radar._URGENT_RE.search(n["title"]) else 0) + n["ts"] / 1e10
         if best is None or score > best[0]:
-            best = (score, {"title": n["title"], "sources": sources[:3], "ticker": news_radar.coin_in_headline(n["title"]), "ts": n["ts"]})
+            best = (score, {"title": n["title"], "sources": sources[:3], "ticker": news_radar.coin_in_headline(n["title"]), "ts": n["ts"],
+                            "items": [n] + [m for m in group if m is not n and m["source"] != n["source"]][:3]})
     return best[1] if best else None
 
 
@@ -163,15 +164,15 @@ def estimate_duration(text: str) -> float:
     return max(2.4, len(text.split()) * 0.38 + 0.4)
 
 
-def synth(segs: list, tts=None) -> tuple:
+def synth(segs: list, tts=None, speed: float = 1.06, gap_s: float = 0.3) -> tuple:
     """-> (голос float32 mono @SR или None, длительности сегментов). Паузы между фразами ~0.3 с."""
     if tts is None:
         return None, [estimate_duration(s["text"]) for s in segs]
     chunks, durs = [], []
-    gap = np.zeros(int(0.3 * SR), dtype=np.float32)
+    gap = np.zeros(int(gap_s * SR), dtype=np.float32)
     for s in segs:
         try:
-            audio, sr = tts.create(s["say"], voice=VOICE, speed=1.06, lang="en-us")
+            audio, sr = tts.create(s["say"], voice=VOICE, speed=speed, lang="en-us")
             audio = np.asarray(audio, dtype=np.float32)
             n = int(len(audio) * SR / sr)
             audio = np.interp(np.linspace(0, len(audio) - 1, n), np.arange(len(audio)), audio).astype(np.float32)
@@ -179,7 +180,7 @@ def synth(segs: list, tts=None) -> tuple:
             logger.warning("Озвучка фразы не удалась (%s): %s", s["say"][:40], e)
             return None, [estimate_duration(x["text"]) for x in segs]
         chunks.append(np.concatenate([audio, gap]))
-        durs.append(len(audio) / SR + 0.3)
+        durs.append(len(audio) / SR + gap_s)
     return np.concatenate(chunks), durs
 
 
@@ -442,7 +443,7 @@ def _subtitle_state(tl: list, T: float, chunk: int = 6):
         if seg["start"] <= T < seg["end"]:
             words = seg["text"].split()
             chunks = [words[i:i + chunk] for i in range(0, len(words), chunk)]
-            speech = seg["end"] - seg["start"] - 0.3
+            speech = seg["end"] - seg["start"] - seg.get("gap", 0.3)
             tot = sum(len(w) + 1 for w in words)
             pos = (T - seg["start"]) / max(speech, 0.1) * tot
             acc = 0

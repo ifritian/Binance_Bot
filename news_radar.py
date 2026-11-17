@@ -103,7 +103,7 @@ def parse_rss(xml_text: str, source: str, now_ts: float, max_age_h: float) -> li
             continue
         if not title or now_ts - ts > max_age_h * 3600 or ts > now_ts + 600:
             continue
-        out.append({"id": link or title, "title": title, "ts": ts, "source": source})
+        out.append({"id": link or title, "title": title, "ts": ts, "source": source, "link": link, "summary": it.findtext("description") or ""})
     return out
 
 

@@ -845,6 +845,7 @@ VOLUME_ALERT_COIN_COOLDOWN_HOURS = float(os.environ.get("VOLUME_ALERT_COIN_COOLD
 VOLUME_ALERT_MEME_MIN_VOLUME_USD = float(os.environ.get("VOLUME_ALERT_MEME_MIN_VOLUME_USD") or 30_000_000)
 VIDEO_CROSSPOST_ENABLED = (os.environ.get("VIDEO_CROSSPOST_ENABLED") or "true").strip().lower() in ("1", "true", "yes")   # видео также в Telegram и Bluesky
 VIDEO_VOICE_ENABLED = (os.environ.get("VIDEO_VOICE_ENABLED") or "true").strip().lower() in ("1", "true", "yes")   # голос+музыка в обычных видео
+STORY_VIDEO_ENABLED = (os.environ.get("STORY_VIDEO_ENABLED") or "true").strip().lower() in ("1", "true", "yes")   # видео-разбор новости со сценами
 VIDEO_NEWS_ENABLED = (os.environ.get("VIDEO_NEWS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 VIDEO_NEWS_MIN_GAP_HOURS = float(os.environ.get("VIDEO_NEWS_MIN_GAP_HOURS") or 20)
 VIDEO_NEWS_MAX_PER_WEEK = int(os.environ.get("VIDEO_NEWS_MAX_PER_WEEK") or 4)
