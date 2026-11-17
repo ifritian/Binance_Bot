@@ -311,6 +311,11 @@ def build_script(story: dict) -> list:
 def render(story: dict, out: Path, ts: datetime | None = None, tts="auto") -> tuple:
     """-> (mp4, poster, длительность, есть_ли_голос)."""
     if not shutil.which("ffmpeg"):
+        try:
+            subprocess.run("sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg", shell=True, check=True, timeout=240)
+        except Exception:
+            pass
+    if not shutil.which("ffmpeg"):
         raise RuntimeError("ffmpeg не найден")
     ts = ts or datetime.now(timezone.utc)
     segs = build_script(story)

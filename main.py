@@ -17,6 +17,7 @@ main.py - точка входа.
 """
 import base64
 import logging
+from datetime import datetime, timezone
 import mimetypes
 import random
 import re
@@ -2628,6 +2629,25 @@ def try_publish_wry() -> None:
     queue_manager.set_last_post_time("square_global")
 
 
+def _build_story_video(story: dict):
+    """Видео-разбор со сценами (карта, схема, вырезки) из текста источников. None, если сценарий не собрался
+    или проверенных сцен мало: тогда вызывающий код делает обычное видео-новость."""
+    if not config.STORY_VIDEO_ENABLED:
+        return None
+    try:
+        import story_script
+        import story_video
+        plan = story_script.build(story, config.PROJECT_NAME)
+        if plan is None:
+            logger.info("Видео-разбор: проверенных сцен мало, делаю обычное видео-новость")
+            return None
+        mp4, poster, total, voiced = story_video.render(plan, Path("charts") / "story_video.mp4", ts=datetime.now(timezone.utc))
+        return mp4, poster, total, voiced, news_video.build_caption(story, {})
+    except Exception:
+        logger.exception("Видео-разбор не собрался, делаю обычное видео-новость")
+        return None
+
+
 def try_publish_video_news() -> None:
     """Видео-новость: значимый сюжет (>=2 издания) в стиле новостной сводки с голосом, графиком и субтитрами."""
     if not (config.VIDEO_ENABLED and config.VIDEO_NEWS_ENABLED) or config.SQUARE_TEMPLATE_LANG != "en":
@@ -2645,6 +2665,23 @@ def try_publish_video_news() -> None:
     seen = list(st.get("seen", []))
     story = news_video.pick_story(news_radar.fetch_news(now, 12.0), seen, now)
     if story is None:
+        return
+    built_story = _build_story_video(story)
+    if built_story is not None:
+        mp4, poster, total, voiced, caption = built_story
+        try:
+            binance_publisher.tag_format("video_news")
+            result = binance_publisher.publish_video(caption, mp4, total, poster)
+        except binance_publisher.PublishError as e:
+            logger.error("Ошибка публикации видео-разбора: %s", e)
+            _record_publish_error("video_news", e)
+            queue_manager.set_retry_backoff("video_news", 3)
+            return
+        logger.info("Опубликован видео-разбор новости (голос: %s): %s", voiced, story["title"][:80])
+        if isinstance(result, dict) and result.get("status") != "duplicate_skipped":
+            _crosspost_video(caption, mp4, poster, total)
+            _video_published("video_news")
+        queue_manager._set("video_news_state", {"times": times + [now], "seen": (seen + [story["title"]])[-30:]})
         return
     try:
         rows = market_digest.fetch_ticker_rows()

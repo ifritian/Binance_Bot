@@ -62,7 +62,8 @@ def pick_story(news: list, seen_titles: list, now_ts: float, max_age_h: float = 
             continue
         score = len(sources) * 2 + (1 if news_radar._URGENT_RE.search(n["title"]) else 0) + n["ts"] / 1e10
         if best is None or score > best[0]:
-            best = (score, {"title": n["title"], "sources": sources[:3], "ticker": news_radar.coin_in_headline(n["title"]), "ts": n["ts"]})
+            best = (score, {"title": n["title"], "sources": sources[:3], "ticker": news_radar.coin_in_headline(n["title"]), "ts": n["ts"],
+                            "items": [n] + [m for m in group if m is not n and m["source"] != n["source"]][:3]})
     return best[1] if best else None
 
 
