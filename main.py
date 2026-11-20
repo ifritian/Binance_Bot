@@ -50,6 +50,7 @@ import wry
 import trade_idea
 import volume_alert
 import quick_setup
+import smart_money
 import news_video
 import anchors
 import funding_radar
@@ -2787,6 +2788,12 @@ def try_publish_volume_alert() -> None:
         return
 
 
+def run_smart_money_watch() -> None:
+    """Суточное наблюдение за позициями топ-трейдеров: только запись событий и результатов, постов нет."""
+    if config.SMART_MONEY_WATCH_ENABLED and queue_manager.seconds_since_last_post("sm_scan") >= 20 * 3600:
+        smart_money.run_if_due(market_digest.fetch_ticker_rows())
+
+
 def try_publish_quick_setup() -> None:
     """Частый мини-формат: введение, вход, стоп, цель, дисклеймер, тикер и хэштеги + график с пометками от руки."""
     if not config.QUICK_SETUP_ENABLED or config.SQUARE_TEMPLATE_LANG != "en":
@@ -3373,6 +3380,7 @@ def tick() -> None:
         try_publish_square_question()
         try_publish_wry()
         try_publish_quick_setup()
+        run_smart_money_watch()
         try_publish_video_news()
         try_publish_mover_result()
         try_publish_mover_followup()
