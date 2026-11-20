@@ -1,0 +1,22 @@
+name: Probe Binance endpoints
+
+# Только вручную: какие адреса Binance доступны из GitHub Actions (для выбора источника данных).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe
+        run: |
+          for u in \
+            "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1h&limit=2" \
+            "https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=BTCUSDT&period=1h&limit=2" \
+            "https://fapi.binance.com/futures/data/openInterestHist?symbol=BTCUSDT&period=1h&limit=2" \
+            "https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=2" \
+            "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2026-11-10.zip"; do
+            code=$(curl -s -m 20 -o /tmp/o -w "%{http_code}" "$u"); echo "$code $u"; head -c 200 /tmp/o | tr '\n' ' '; echo; done
