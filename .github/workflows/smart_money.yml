@@ -1,0 +1,45 @@
+name: Smart money research
+
+# Только вручную. Проверка идеи "крупные игроки знают больше": позиции топ-трейдеров, открытый интерес, агрессивные
+# покупки/продажи (бесплатные файлы data.binance.vision) против движения цены. Отчёт - вкладка Summary и ветка
+# research-results-smart-money.
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/smart-money]
+
+permissions:
+  contents: write
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run research
+        run: python smart_money_research.py --days 365 --top 40 --out smart_money_report.md 2> coverage.log
+      - name: Show in summary
+        if: always()
+        run: |
+          cat smart_money_report.md >> "$GITHUB_STEP_SUMMARY" || true
+          tail -50 coverage.log >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Publish report
+        if: always()
+        run: |
+          git config user.name "research-bot"
+          git config user.email "research-bot@users.noreply.github.com"
+          cp smart_money_report.md /tmp/smart_money_report.md || echo "no report" > /tmp/smart_money_report.md
+          cp coverage.log /tmp/coverage.log || true
+          git checkout --orphan research-results-smart-money
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/smart_money_report.md smart_money_report.md
+          cp /tmp/coverage.log coverage.log || true
+          git add smart_money_report.md coverage.log
+          git commit -m "Smart money report $(date -u +%F)"
+          git push -f origin research-results-smart-money
