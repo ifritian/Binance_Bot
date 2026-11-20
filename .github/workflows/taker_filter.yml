@@ -1,0 +1,41 @@
+name: Taker filter research
+
+# Только вручную (или пуш в research/taker-filter). Честное сравнение стратегий бота
+# и кандидата (см. taker_filter_research.py). Отчёт - вкладка Summary и ветка
+# research-results-taker-filter.
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/taker-filter]
+
+permissions:
+  contents: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run comparison
+        run: python taker_filter_research.py --days 240 --top 30 --out taker_filter_report.md
+      - name: Show in summary
+        if: always()
+        run: cat taker_filter_report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Publish report
+        if: always()
+        run: |
+          git config user.name "research-bot"
+          git config user.email "research-bot@users.noreply.github.com"
+          cp taker_filter_report.md /tmp/taker_filter_report.md
+          git checkout --orphan research-results-taker-filter
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/taker_filter_report.md taker_filter_report.md
+          git add taker_filter_report.md
+          git commit -m "Taker filter report $(date -u +%F)"
+          git push -f origin research-results-taker-filter
