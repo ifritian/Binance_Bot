@@ -834,6 +834,7 @@ WRY_MAX_PER_WEEK = int(os.environ.get("WRY_MAX_PER_WEEK") or 3)
 # Видео-новость (news_video.py): значимый сюжет, подтверждённый >=2 изданиями, ~30 с с голосом, графиком и субтитрами.
 # Volume alert (volume_alert.py): всплеск объёма (мем-коины в приоритете) или затишье у крупных монет.
 # Quick setup (quick_setup.py): частый мини-формат "вход/стоп/цель" на любом заметном движении (комиссии).
+SMART_MONEY_WATCH_ENABLED = (os.environ.get("SMART_MONEY_WATCH_ENABLED") or "true").strip().lower() in ("1", "true", "yes")   # наблюдение за позициями топ-трейдеров (без постов)
 QUICK_SETUP_ENABLED = (os.environ.get("QUICK_SETUP_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 QUICK_SETUP_MIN_VOLUME_USD = float(os.environ.get("QUICK_SETUP_MIN_VOLUME_USD") or 15_000_000)
 QUICK_SETUP_MAX_PER_DAY = int(os.environ.get("QUICK_SETUP_MAX_PER_DAY") or 6)

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import config
 import queue_manager
+import smart_money
 
 PROJECT = config.PROJECT_NAME
 SQUARE_POST_URL = "https://www.binance.com/en/square/post/{id}"
@@ -83,6 +84,7 @@ def collect() -> dict:
         "futures": g("closed_futures_positions") or [],
         "idea_variants": _variant_stats((g("mover_setups") or {}).get("closed", [])),
         "futures_since": g("futures_enabled_since"),
+        "smart_money": smart_money.stats(g("sm_events") or []),
     }
 
 
@@ -612,6 +614,16 @@ def render_receipts(d: dict, now_ts: float | None = None, ls: list | None = None
     var_html = ('<section><h2 class="s">Trade idea variants</h2><p class="sub">Every idea is also tracked silently with other stop/target/time settings, '
                 'so we can see which risk/reward setup works. Only the posted variant appears in posts. Results are after fees; small samples prove nothing yet.</p>'
                 + _table(["Variant (stop ATR / reward:risk / hours)", "Ideas", "In profit", "Avg after fees"], var_rows) + "</section>") if var_rows else ""
+    sm_names = {"tt_pos": "Top-trader positions", "tt_acc": "Top-trader accounts", "retail": "All accounts", "div": "Top traders vs crowd",
+                "taker": "Aggressive buys vs sells", "d_tt_pos": "Change in top-trader positions", "oi_chg": "Open interest change",
+                "oi_price_up": "OI up while price up", "oi_price_dn": "OI up while price down"}
+    sm_rows = [f"<tr><td>{_e(sm_names.get(r['f'], r['f']))}</td><td>{'With the signal' if r['mode'] == 'follow' else 'Against it'}</td><td>{r['h']}h</td>"
+               f"<td>{r['n']}</td><td class=\"{_cls(r['excess'])}\">{r['excess']:+.2f}%</td><td>{r['hit']:.0%}</td></tr>"
+               for r in (d.get("smart_money") or []) if r["n"] >= 5][:16]
+    sm_html = ('<section><h2 class="s">Smart-money watch</h2><p class="sub">Observation only, no trades and no posts. When top Binance Futures traders, '
+               'open interest or aggressive buying move far from normal, we log it and check later what the price did versus BTC. '
+               'Small samples prove nothing; this is here so the idea is judged on data, not on a good-looking chart.</p>'
+               + _table(["Signal", "Trade", "After", "Cases", "Avg vs BTC", "Right"], sm_rows) + "</section>") if sm_rows else ""
     ls_html = f'<nav class="follow">{_links_html(ls)}</nav>' if ls else ""
     upd = datetime.fromtimestamp(now_ts, timezone.utc).strftime("%b %d, %Y, %H:%M UTC")
     return f"""<!doctype html>
@@ -630,7 +642,7 @@ def render_receipts(d: dict, now_ts: float | None = None, ls: list | None = None
 {_table(["Coin", "Date", "Range", "What happened"], lv_rows)}</section>
 <section><h2 class="s">Hot mover follow-ups</h2><p class="sub">Coins we posted about after a sharp move, and whether we went back to check.</p>
 {_table(["Coin", "Date", "Price then", "Status"], fu_rows)}</section>
-{fut_html}{var_html}
+{fut_html}{var_html}{sm_html}
 <footer>Not financial advice. Past results do not predict future results. Rebuilt {upd}.</footer>
 </div></body></html>"""
 
