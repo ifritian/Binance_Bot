@@ -806,11 +806,11 @@ PORTFOLIO_REBALANCE_DRIFT_THRESHOLD_PCT = float(os.environ.get("PORTFOLIO_REBALA
 def validate_config() -> list[str]:
     """Возвращает список незаполненных обязательных переменных."""
     required = {
-        "FOLLOWUP_CHANNEL_USERNAME": FOLLOWUP_CHANNEL_USERNAME,
-        "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
         "BINANCE_SQUARE_API_KEY": BINANCE_SQUARE_API_KEY,
         "GROQ_API_KEY": GROQ_API_KEY,
     }
+    if PROFILE != "b":      # второй аккаунт работает без Telegram
+        required = {"FOLLOWUP_CHANNEL_USERNAME": FOLLOWUP_CHANNEL_USERNAME, "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN, **required}
     return [name for name, value in required.items() if not value]
 # Новости + события Binance (news_radar.py): сводка объявлений и заголовок с ценой за 24ч.
 NEWS_RADAR_ENABLED = (os.environ.get("NEWS_RADAR_ENABLED") or "true").strip().lower() in ("1", "true", "yes")

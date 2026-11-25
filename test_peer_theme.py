@@ -50,3 +50,14 @@ def test_peer_missing_file(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PEER_DB_PATH", tmp_path / "none.db")
     assert peer.recent_heads() == "" and not peer.clashes("$NEAR")
     assert peer.seconds_since_last_post() > 10 ** 6
+
+
+def test_profile_b_does_not_require_telegram(monkeypatch):
+    monkeypatch.setattr(config, "PROFILE", "b")
+    monkeypatch.setattr(config, "BINANCE_SQUARE_API_KEY", "k")
+    monkeypatch.setattr(config, "GROQ_API_KEY", "g")
+    monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setattr(config, "FOLLOWUP_CHANNEL_USERNAME", "")
+    assert config.validate_config() == []
+    monkeypatch.setattr(config, "PROFILE", "")
+    assert set(config.validate_config()) == {"TELEGRAM_BOT_TOKEN", "FOLLOWUP_CHANNEL_USERNAME"}
