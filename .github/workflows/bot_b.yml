@@ -36,10 +36,13 @@ jobs:
           cache: pip
       - name: Install
         run: pip install -r requirements.txt
-      - name: Install ffmpeg
+      - name: Install ffmpeg (video window only)
+        continue-on-error: true
         run: |
           H=$(date -u +%H)
-          if [ "$H" -ge 6 ] && [ "$H" -lt 21 ]; then sudo apt-get install -y ffmpeg >/dev/null; fi
+          if [ "$H" -ge 6 ] && [ "$H" -lt 21 ]; then
+            command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          fi
       - name: Run bot
         if: ${{ env.BINANCE_SQUARE_API_KEY != '' }}
         run: python main.py --once
