@@ -7,6 +7,7 @@ outro. Субтитры, голос, музыка, заставка и шапк�
 Честность: в сценарий попадают только факты из источника; на карточках всегда источник и дата, а неподтверждённое
 помечается плашкой UNCONFIRMED. Карта - Natural Earth (общественное достояние), картинок людей и чужих кадров нет.
 """
+import theme
 import json
 import math
 import random
@@ -329,14 +330,14 @@ def render(story: dict, out: Path, ts: datetime | None = None, tts="auto") -> tu
     wav = out.with_suffix(".wav")
     nv.write_wav(wav, audio)
     poster = out.with_suffix(".png")
-    frame(tl[1]["start"] + 3.4, tl, ts, total).save(poster)
+    theme.apply(frame(tl[1]["start"] + 3.4, tl, ts, total)).save(poster)
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", str(wav), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "24", "-c:a", "aac", "-b:a", "128k",
            "-shortest", "-movflags", "+faststart", str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for i in range(int(total * FPS)):
-            proc.stdin.write(frame(i / FPS, tl, ts, total).tobytes())
+            proc.stdin.write(theme.apply(frame(i / FPS, tl, ts, total)).tobytes())
         proc.stdin.close()
         err = proc.stderr.read().decode(errors="ignore")
         if proc.wait() != 0:

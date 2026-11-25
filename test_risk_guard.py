@@ -3,6 +3,7 @@
 Тесты risk_guard.py - на ПОДДЕЛЬНОМ FuturesClient (никакой реальной
 сети) и с monkeypatch queue_manager (никакой реальной SQLite - как в
 test_strategy_tuner.py)."""
+import pytest
 import time
 
 import risk_guard
@@ -584,3 +585,8 @@ if __name__ == "__main__":
 
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
+@pytest.fixture(autouse=True)
+def _no_live_streak_cutoff(monkeypatch):
+    """Тесты не должны зависеть от живой bot_state.db (там выставлена отсечка серии убытков)."""
+    monkeypatch.setattr(risk_guard.queue_manager, "get_risk_streak_ignore_before", lambda: 0.0)

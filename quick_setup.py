@@ -5,6 +5,7 @@
 Каждая идея ведётся в трекере вместе с теневыми вариантами стопа/цели (mover_setups), итоги публикуются, убытки тоже.
 Честная оговорка: по годовому бэктесту такие идеи на небольших движениях в среднем не прибыльны, поэтому формат помечен
 отдельным вариантом (q...) и его результат считается отдельно - по накопленной статистике решаем, оставлять ли его."""
+import config
 import random
 
 import mover_setups as ms
@@ -56,6 +57,9 @@ def hook(ticker: str, pct: float, rsi: float | None, vol_x: float | None, rng) -
     else:
         pool = [f"🚨 ${t} just dropped {pct:+.1f}% in 24h. Keep an eye on this coin.",
                 f"🔴 STOP. ${t} is sliding hard: {pct:+.1f}% on the day. Take a close look."]
+    if config.PROFILE == "b":      # второй аккаунт: другая подача, тот же смысл
+        pool = [p.replace("🚨 STOP. ", "💜 Heads up: ").replace("🔴 STOP. ", "💜 Heads up: ").replace("🚨", "💜").replace("🔴", "💜")
+                .replace("Keep an eye on this coin.", "Worth a look.").replace("Take a close look.", "Worth a look.") for p in pool]
     line = rng.choice(pool)
     if vol:
         line += f" Volume is {vol_x:.0f}x normal."

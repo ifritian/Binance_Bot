@@ -7,6 +7,7 @@
 Честность: заголовок и источники - чужие, показываем с атрибуцией; цифры (цена, изменение, индекс) - реальные с биржи;
 причин и прогнозов не выдумываем. Если голос недоступен, ролик собирается с субтитрами и музыкой.
 """
+import theme
 import logging
 import math
 import os
@@ -510,14 +511,14 @@ def render(story: dict, ctx: dict, out: Path, tape: list, ts: datetime | None = 
     write_wav(wav, audio)
     strip = tape_strip(tape) if tape else None
     poster = out.with_suffix(".png")
-    frame(tl[2]["start"] + 1.8 if len(tl) > 2 else 2.5, tl, story, ctx, ts, strip, total).save(poster)
+    theme.apply(frame(tl[2]["start"] + 1.8 if len(tl) > 2 else 2.5, tl, story, ctx, ts, strip, total)).save(poster)
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", str(wav), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "24", "-c:a", "aac", "-b:a", "128k",
            "-shortest", "-movflags", "+faststart", str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for i in range(int(total * FPS)):
-            proc.stdin.write(frame(i / FPS, tl, story, ctx, ts, strip, total).tobytes())
+            proc.stdin.write(theme.apply(frame(i / FPS, tl, story, ctx, ts, strip, total)).tobytes())
         proc.stdin.close()
         err = proc.stderr.read().decode(errors="ignore")
         if proc.wait() != 0:

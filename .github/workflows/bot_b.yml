@@ -1,0 +1,58 @@
+name: Square Bot B (MissTreasury)
+
+on:
+  schedule:
+    - cron: "5-59/10 * * * *"     # со сдвигом 5 минут относительно основного аккаунта
+  workflow_dispatch:
+
+concurrency:
+  group: square-signal-bot-b
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      BOT_PROFILE: b
+      PROJECT_NAME: MissTreasury
+      BINANCE_SQUARE_API_KEY: ${{ secrets.BINANCE_SQUARE_API_KEY_B }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      SQUARE_MAX_POSTS_PER_DAY: "6"
+      QUICK_SETUP_ENABLED: "true"
+      MOVER_SETUPS_ENABLED: "true"
+      VOLUME_ALERT_ENABLED: "false"
+      SMART_MONEY_WATCH_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Install ffmpeg
+        run: |
+          H=$(date -u +%H)
+          if [ "$H" -ge 6 ] && [ "$H" -lt 21 ]; then sudo apt-get install -y ffmpeg >/dev/null; fi
+      - name: Run bot
+        if: ${{ env.BINANCE_SQUARE_API_KEY != '' }}
+        run: python main.py --once
+      - name: Save state
+        if: ${{ always() && env.BINANCE_SQUARE_API_KEY != '' }}
+        run: |
+          git config user.name "square-bot-b"
+          git config user.email "square-bot-b@users.noreply.github.com"
+          for i in 1 2 3 4 5; do
+            git add bot_state_b.db 2>/dev/null || true
+            git diff --cached --quiet && exit 0
+            git commit -m "state b $(date -u +%FT%TZ)" >/dev/null
+            if git push; then exit 0; fi
+            git pull --rebase -X theirs origin main || true
+            sleep $((i*3))
+          done

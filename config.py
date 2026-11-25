@@ -451,7 +451,12 @@ REBALANCE_REVIEW_JITTER_HOURS = float(os.environ.get("REBALANCE_REVIEW_JITTER_HO
 TREASURY_COMPOSITION_INTERVAL_POSTS = int(os.environ.get("TREASURY_COMPOSITION_INTERVAL_POSTS", "14"))
 ARTICLE_JITTER_HOURS = float(os.environ.get("ARTICLE_JITTER_HOURS", "12"))
 
-DB_PATH = BASE_DIR / "bot_state.db"
+# Профиль аккаунта: "" - основной (Vektor Daily), "b" - второй (свой файл состояния, своя тема, не повторяет монеты основного).
+PROFILE = (os.environ.get("BOT_PROFILE") or "").strip().lower()
+DB_PATH = BASE_DIR / ("bot_state_b.db" if PROFILE == "b" else "bot_state.db")
+PEER_DB_PATH = BASE_DIR / ("bot_state.db" if PROFILE == "b" else "bot_state_b.db")
+THEME = (os.environ.get("BOT_THEME") or ("violet" if PROFILE == "b" else "")).strip().lower()
+PEER_SPACING_MINUTES = float(os.environ.get("PEER_SPACING_MINUTES") or 25)      # пауза между постами двух аккаунтов
 LOG_PATH = BASE_DIR / "bot.log"
 
 # --- Сигналы по монетам Treasury Index (index_signal_scanner.py) ---
@@ -867,7 +872,7 @@ LISTING_TRACKER_ENABLED = (os.environ.get("LISTING_TRACKER_ENABLED") or "true").
 BINANCE_ALERTS_ENABLED = (os.environ.get("BINANCE_ALERTS_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 
 # Название проекта: на карточках, на публичной странице.
-PROJECT_NAME = (os.environ.get("PROJECT_NAME") or "Vektor Daily").strip()
+PROJECT_NAME = (os.environ.get("PROJECT_NAME") or ("MissTreasury" if PROFILE == "b" else "Vektor Daily")).strip()
 # Недельный обзор (weekly_brief.py): воскресенье вечером UTC.
 WEEKLY_BRIEF_ENABLED = (os.environ.get("WEEKLY_BRIEF_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
 WEEKLY_BRIEF_HOUR_UTC = int(os.environ.get("WEEKLY_BRIEF_HOUR_UTC") or 17)

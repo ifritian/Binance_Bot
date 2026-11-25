@@ -3,6 +3,7 @@
 Границы сцен берутся из длительности фраз, поэтому слова и картинка совпадают. Если голос недоступен, видео собирается
 с субтитрами и музыкой и теми же сценами по оценке длительности. Любая ошибка выше по стеку откатывается к тихой версии.
 """
+import theme
 import logging
 import shutil
 import subprocess
@@ -53,7 +54,7 @@ def _encode(frame_fn, tl, total, out: Path, voice, fps: int = vp.FPS):
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for i in range(int(total * fps)):
-            proc.stdin.write(with_subs(i / fps).tobytes())
+            proc.stdin.write(theme.apply(with_subs(i / fps)).tobytes())
         proc.stdin.close()
         err = proc.stderr.read().decode(errors="ignore")
         if proc.wait() != 0:
@@ -127,7 +128,7 @@ def render_market(data: dict, fng: dict | None, out: Path, ts: datetime | None =
     frame_fn = lambda t: vp.frame(t, data, fng, ts, total, sc)
     out = Path(out)
     poster = out.with_suffix(".png")
-    frame_fn(sc["gainers"][0] + 2.0).save(poster)
+    theme.apply(frame_fn(sc["gainers"][0] + 2.0)).save(poster)
     _encode(frame_fn, tl, total, out, voice, fps)
     return out, poster, total, voice is not None
 
@@ -151,7 +152,7 @@ def render_map(tiles: list, out: Path, ts: datetime | None = None, tts="auto", f
     frame_fn = lambda t: vp.map_frame(t, tiles, ts, total)
     out = Path(out)
     poster = out.with_suffix(".png")
-    frame_fn(total - 0.5).save(poster)
+    theme.apply(frame_fn(total - 0.5)).save(poster)
     _encode(frame_fn, tl, total, out, voice, fps)
     return out, poster, total, voice is not None
 
@@ -173,6 +174,6 @@ def render_replay(ticker: str, bars: list, out: Path, ts: datetime | None = None
     frame_fn = lambda t: vp.replay_frame(t, ticker, bars, ts, total)
     out = Path(out)
     poster = out.with_suffix(".png")
-    frame_fn(total - 0.5).save(poster)
+    theme.apply(frame_fn(total - 0.5)).save(poster)
     _encode(frame_fn, tl, total, out, voice, fps)
     return out, poster, total, voice is not None
