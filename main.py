@@ -15,6 +15,8 @@ main.py - точка входа.
 каждом тике; для opinion/article новый контент генерируется "с нуля"
 в момент публикации, без отдельной очереди.
 """
+import theme
+import peer
 import base64
 import logging
 from datetime import datetime, timezone
@@ -794,6 +796,8 @@ def _square_slot_available(spacing_minutes: float | None = None, check_cap: bool
     hour = time.gmtime().tm_hour
     if not (config.SQUARE_ACTIVE_HOUR_START_UTC <= hour < config.SQUARE_ACTIVE_HOUR_END_UTC):
         return False
+    if peer.seconds_since_last_post() < config.PEER_SPACING_MINUTES * 60:
+        return False            # второй аккаунт только что опубликовал: не ставим посты в одну минуту
     if not check_cap:
         return True
     now = time.time()
@@ -843,7 +847,7 @@ def _post(fmt: str, *args, **kwargs):
             kwargs["text"] = brand.tag_text(kwargs["text"])
         imgs = kwargs.get("image_paths")
         if imgs:
-            kwargs["image_paths"] = [brand.stamp(p, fmt) for p in imgs]
+            kwargs["image_paths"] = [theme.recolor_file(brand.stamp(p, fmt)) for p in imgs]
     result = binance_publisher.publish_post(*args, **kwargs)
     if isinstance(result, dict) and result.get("status") == "duplicate_skipped":
         return result   # дубль не публикуем и не кросспостим
@@ -2812,7 +2816,7 @@ def try_publish_quick_setup() -> None:
     if not rows:
         return
     log = st.get("coins", {})
-    recent = " ".join(p.get("head", "") for p in (queue_manager._get("square_post_log") or []) if now - p["ts"] < 6 * 3600)
+    recent = " ".join(p.get("head", "") for p in (queue_manager._get("square_post_log") or []) if now - p["ts"] < 6 * 3600) + " " + peer.recent_heads(12)
     for _p, t, price, pct in quick_setup.pick_candidates(rows, log, now, recent, config.QUICK_SETUP_MIN_VOLUME_USD)[:12]:
         bars = mover_setups.fetch_klines(t, "1h", 72)
         if len(bars) < 40:

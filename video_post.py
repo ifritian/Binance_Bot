@@ -4,6 +4,7 @@
 BTC/ETH за 24ч, лидеры и аутсайдеры (полосы растут), индекс страха и жадности. Всё считается из реальных данных,
 ничего не обещает. Публикация - binance_publisher.publish_video.
 """
+import theme
 import math
 import random
 import shutil
@@ -154,14 +155,14 @@ def _encode(frame_fn, poster_t: float, out: Path, duration: float, fps: int) -> 
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     poster = out.with_suffix(".png")
-    frame_fn(poster_t).save(poster)
+    theme.apply(frame_fn(poster_t)).save(poster)
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
            "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
            "-crf", "24", "-c:a", "aac", "-b:a", "32k", "-shortest", "-movflags", "+faststart", str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for i in range(int(duration * fps)):
-            proc.stdin.write(frame_fn(i / fps).tobytes())
+            proc.stdin.write(theme.apply(frame_fn(i / fps)).tobytes())
         proc.stdin.close()
         err = proc.stderr.read().decode(errors="ignore")
         if proc.wait() != 0:
@@ -287,14 +288,14 @@ def render(data: dict, fng: dict | None, out: Path, duration: float = 15.0, fps:
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     poster = out.with_suffix(".png")
-    frame(5.5 * duration / 15.0, data, fng, ts, duration).save(poster)   # обложка: сцена с лидерами в полном виде
+    theme.apply(frame(5.5 * duration / 15.0, data, fng, ts, duration)).save(poster)   # обложка: сцена с лидерами в полном виде
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
            "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
            "-crf", "24", "-c:a", "aac", "-b:a", "32k", "-shortest", "-movflags", "+faststart", str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for i in range(int(duration * fps)):
-            proc.stdin.write(frame(i / fps, data, fng, ts, duration).tobytes())
+            proc.stdin.write(theme.apply(frame(i / fps, data, fng, ts, duration)).tobytes())
         proc.stdin.close()
         err = proc.stderr.read().decode(errors="ignore")
         if proc.wait() != 0:
