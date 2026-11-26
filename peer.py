@@ -47,3 +47,12 @@ def clashes(text: str, hours: float = 12.0) -> bool:
     """Есть ли в тексте монета, о которой сосед писал за последние `hours` часов."""
     mine = cashtags(text)
     return bool(mine) and bool(mine & cashtags(recent_heads(hours)))
+
+
+def recent_post_heads(hours: float = 36.0, fmts=None) -> list:
+    """Начала постов соседа списком (для проверки "эта новость уже была"). Только у профиля b: основной аккаунт приоритетный
+    и от второго не зависит."""
+    if config.PROFILE != "b":
+        return []
+    now = time.time()
+    return [p.get("head", "") for p in _peer_log() if now - p.get("ts", 0) < hours * 3600 and (fmts is None or p.get("fmt") in fmts)]

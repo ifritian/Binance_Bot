@@ -61,3 +61,25 @@ def test_profile_b_does_not_require_telegram(monkeypatch):
     assert config.validate_config() == []
     monkeypatch.setattr(config, "PROFILE", "")
     assert set(config.validate_config()) == {"TELEGRAM_BOT_TOKEN", "FOLLOWUP_CHANNEL_USERNAME"}
+
+
+def test_peer_news_heads_only_for_profile_b(tmp_path, monkeypatch):
+    now = time.time()
+    monkeypatch.setattr(config, "PEER_DB_PATH", _peer_db(tmp_path, [{"ts": now - 600, "fmt": "breaking_news", "head": "UK regulator plans tighter DeFi rules"},
+                                                                 {"ts": now - 600, "fmt": "quick_setup", "head": "$NEAR"}]))
+    monkeypatch.setattr(config, "PROFILE", "")
+    assert peer.recent_post_heads(36) == []
+    monkeypatch.setattr(config, "PROFILE", "b")
+    assert peer.recent_post_heads(36, ("news_move", "breaking_news")) == ["UK regulator plans tighter DeFi rules"]
+
+
+def test_post_skips_coin_already_posted_by_main(tmp_path, monkeypatch):
+    import main
+    now = time.time()
+    monkeypatch.setattr(config, "PEER_DB_PATH", _peer_db(tmp_path, [{"ts": now - 60, "fmt": "quick_setup", "head": "$NEAR just jumped"}]))
+    monkeypatch.setattr(config, "PROFILE", "b")
+    called = []
+    monkeypatch.setattr(main.binance_publisher, "publish_post", lambda *a, **k: called.append(1) or {"status": "ok"})
+    assert main._post("quick_setup", "$NEAR long entry")["status"] == "duplicate_skipped"
+    assert not called
+    assert main._post("quick_setup", "$UNI long entry")["status"] == "ok"
