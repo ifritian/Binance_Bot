@@ -50,12 +50,21 @@ jobs:
         if: ${{ always() && env.BINANCE_SQUARE_API_KEY != '' }}
         run: |
           git config user.name "square-bot-b"
-          git config user.email "square-bot-b@users.noreply.github.com"
-          for i in 1 2 3 4 5; do
-            git add bot_state_b.db 2>/dev/null || true
-            git diff --cached --quiet && exit 0
-            git commit -m "state b $(date -u +%FT%TZ)" >/dev/null
+          git config user.email "actions@users.noreply.github.com"
+          git add bot_state_b.db
+          git diff --quiet --cached || git commit -m "Состояние бота B [skip ci]"
+          # Основной бот коммитит свою базу каждые ~10 минут, поэтому push часто отклоняется:
+          # сохраняем свежую базу, берём актуальный main, кладём базу поверх и пушим снова.
+          for attempt in 1 2 3 4 5 6; do
             if git push; then exit 0; fi
-            git pull --rebase -X theirs origin main || true
-            sleep $((i*3))
+            echo "push отклонён (попытка $attempt), синхронизируюсь с main"
+            cp bot_state_b.db /tmp/bot_state_b_latest.db
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/bot_state_b_latest.db bot_state_b.db
+            git add bot_state_b.db
+            git diff --quiet --cached || git commit -m "Состояние бота B [skip ci]"
+            sleep $((attempt * 3))
           done
+          echo "Не удалось сохранить состояние бота B"
+          exit 1

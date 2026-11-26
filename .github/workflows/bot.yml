@@ -21,6 +21,7 @@ on:
 # минут - убирали это по ошибке (см. историю коммитов), вернули назад.
 permissions:
   contents: write
+  actions: write     # запуск второго аккаунта (bot_b.yml) из этого воркфлоу
 
 # Защита от параллельных запусков - если предыдущий прогон ещё не
 # закончился (например, нажали "Run workflow" вручную во время
@@ -128,6 +129,13 @@ jobs:
       SIGNAL_EXPLAIN_INTERVAL_HOURS: ${{ secrets.SIGNAL_EXPLAIN_INTERVAL_HOURS || '48' }}
       SQUARE_GENERAL_HASHTAGS: ${{ secrets.SQUARE_GENERAL_HASHTAGS || '#Crypto,#Trading,#Altcoins,#CryptoTrading' }}
     steps:
+      - name: Kick second account (bot B)
+        # Расписание GitHub для bot_b.yml срабатывает редко; основной бот запускается каждые ~10 минут, поэтому будит и второй.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run bot_b.yml --ref main --repo "$GITHUB_REPOSITORY"
+
       - name: Checkout repository
         # ВАЖНО: ref: main. Без этого запуск, который стоял в очереди за предыдущим, берёт коммит на момент постановки
         # в очередь, то есть СТАРУЮ bot_state.db без результатов предыдущего запуска: отсюда повторные посты и потерянное состояние.
