@@ -820,6 +820,11 @@ def _record_publish_error(fmt: str, error) -> None:
 
 def _post(fmt: str, *args, **kwargs):
     """binance_publisher.publish_post + метка формата для журнала публикаций."""
+    if config.PROFILE == "b":
+        _t = args[0] if args and isinstance(args[0], str) else kwargs.get("text")
+        if isinstance(_t, str) and peer.clashes(_t, 12):
+            logger.info("Пост %s пропущен: основной аккаунт недавно писал о той же монете", fmt)
+            return {"status": "duplicate_skipped"}
     binance_publisher.tag_format(fmt)
     if config.EMOJI_ACCENT_ENABLED:
         try:
@@ -1400,7 +1405,7 @@ def try_publish_news_radar() -> None:
     news_posts = [p for p in log if p.get("fmt") == "news_move"]
     if len([p for p in news_posts if now - p["ts"] < 86400]) >= config.NEWS_MOVE_MAX_PER_DAY:
         news_due = False
-    recent_texts = [p.get("head", "") for p in news_posts]
+    recent_texts = [p.get("head", "") for p in news_posts] + peer.recent_post_heads(36, ("news_move", "breaking_news"))
     cooled = {t for p in news_posts if now - p["ts"] < config.NEWS_COIN_COOLDOWN_HOURS * 3600
               for t in re.findall(r"\$([A-Z0-9]{2,10})", p.get("head", ""))}
     if not (news_due or radar_due):
@@ -2545,7 +2550,7 @@ def try_publish_breaking_news() -> None:
         return
     state = queue_manager._get("news_radar_state") or {}
     seen_news = set(state.get("news", []))
-    recent = [p.get("head", "") for p in log if p.get("fmt") in ("news_move", "breaking_news")]
+    recent = [p.get("head", "") for p in log if p.get("fmt") in ("news_move", "breaking_news")] + peer.recent_post_heads(36, ("news_move", "breaking_news"))
     n = news_radar.pick_breaking(news_radar.fetch_news(now, 2.0), seen_news, recent, now)
     if n is None:
         return
